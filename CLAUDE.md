@@ -159,7 +159,7 @@ The package includes an MCP server that lets Claude Code run tests, list suites,
 
 **Install in Claude Code (once, available in all projects):**
 ```bash
-claude mcp add --transport stdio --scope user e2e-runner -- npx -p @matware/e2e-runner e2e-runner-mcp
+claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
 
 **MCP tools exposed:**

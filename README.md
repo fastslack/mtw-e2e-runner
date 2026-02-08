@@ -322,7 +322,7 @@ The package includes a built-in [MCP server](https://modelcontextprotocol.io/) t
 
 ```bash
 claude mcp add --transport stdio --scope user e2e-runner \
-  -- npx -p @matware/e2e-runner e2e-runner-mcp
+  -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
 
 ### MCP Tools

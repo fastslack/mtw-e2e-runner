@@ -66,7 +66,10 @@ export async function executeAction(page, action, config) {
       break;
 
     case 'screenshot': {
-      const filename = value || `screenshot-${Date.now()}.png`;
+      let filename = value || `screenshot-${Date.now()}.png`;
+      if (!/\.(png|jpg|jpeg|webp)$/i.test(filename)) {
+        filename += '.png';
+      }
       const filepath = `${screenshotsDir}/${filename}`;
       await page.screenshot({ path: filepath, fullPage: action.fullPage || false });
       return { screenshot: filepath };

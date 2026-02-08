@@ -27,7 +27,12 @@
     "claude-code"
   ],
   "author": "Matware",
-  "license": "MIT",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fastslack/mtw-e2e-runner.git"
+  },
+  "homepage": "https://github.com/fastslack/mtw-e2e-runner#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "puppeteer-core": "^24.0.0"

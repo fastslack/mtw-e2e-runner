@@ -6,7 +6,7 @@
  * create test files, and manage the Chrome pool.
  *
  * Install once for all Claude Code sessions:
- *   claude mcp add --transport stdio --scope user e2e-runner -- npx -p @matware/e2e-runner e2e-runner-mcp
+ *   claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e2e-runner e2e-runner-mcp
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
