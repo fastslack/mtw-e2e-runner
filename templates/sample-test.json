@@ -1,0 +1,19 @@
+[
+  {
+    "name": "homepage-loads",
+    "actions": [
+      { "type": "goto", "value": "/" },
+      { "type": "wait", "value": "1000" },
+      { "type": "screenshot", "value": "homepage.png" },
+      { "type": "assert_url", "value": "/" }
+    ]
+  },
+  {
+    "name": "homepage-has-title",
+    "actions": [
+      { "type": "goto", "value": "/" },
+      { "type": "wait", "value": "1000" },
+      { "type": "assert_text", "text": "Welcome" }
+    ]
+  }
+]

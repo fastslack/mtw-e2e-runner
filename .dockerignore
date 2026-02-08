@@ -1,0 +1,21 @@
+# Dependencies
+node_modules
+
+# Version control
+.git
+.gitignore
+
+# Runtime artifacts
+.e2e-pool
+e2e
+
+# Build artifacts
+*.tgz
+
+# Documentation (not needed in image)
+*.md
+LICENSE
+
+# OS files
+.DS_Store
+Thumbs.db

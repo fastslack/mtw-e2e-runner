@@ -1,0 +1,69 @@
+# =============================================================================
+# matware/e2e-runner:full — All-in-one image (~2GB+, linux/amd64 only)
+#
+# Bundles browserless/chrome and the test runner in a single container.
+# No external Chrome Pool required. Users mount their tests and config
+# into /workspace.
+#
+# Build:
+#   docker build -t matware/e2e-runner:full -t matware/e2e-runner:1.0.0-full -f Dockerfile.full .
+#
+# Usage:
+#   docker run --rm \
+#     -v $(pwd)/e2e:/workspace/e2e \
+#     -v $(pwd)/e2e.config.js:/workspace/e2e.config.js \
+#     -e BASE_URL=http://host.docker.internal:3000 \
+#     matware/e2e-runner:full
+#
+#   # With custom arguments:
+#   docker run --rm \
+#     -v $(pwd)/e2e:/workspace/e2e \
+#     matware/e2e-runner:full run --suite auth
+# =============================================================================
+
+FROM browserless/chrome:1-puppeteer-21.3.6
+
+USER root
+
+# Install Node.js 20 (base image ships Node 18, runner requires >=20)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" > /etc/apt/sources.list.d/nodesource.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends nodejs && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install the test runner
+WORKDIR /opt/e2e-runner
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY bin/ bin/
+COPY src/ src/
+COPY templates/ templates/
+
+# Install entrypoint script
+COPY docker-entrypoint-full.sh /usr/local/bin/docker-entrypoint-full.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint-full.sh
+
+# Working directory where users mount their tests and config
+RUN mkdir -p /workspace && chown blessuser:blessuser /workspace
+WORKDIR /workspace
+
+# Browserless runs locally inside the container (internal port 3000)
+ENV CHROME_POOL_URL=ws://localhost:3000
+ENV BASE_URL=http://host.docker.internal:3000
+ENV NODE_ENV=production
+ENV MAX_CONCURRENT_SESSIONS=5
+ENV MAX_QUEUE_LENGTH=10
+ENV CONNECTION_TIMEOUT=300000
+ENV PREBOOT_CHROME=false
+ENV ENABLE_CORS=true
+
+# Switch back to non-root browserless user
+USER blessuser
+
+ENTRYPOINT ["dumb-init", "/usr/local/bin/docker-entrypoint-full.sh"]
+CMD []

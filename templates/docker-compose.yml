@@ -1,0 +1,13 @@
+services:
+  chrome-pool:
+    image: browserless/chrome:1-puppeteer-21.3.6
+    container_name: e2e-chrome-pool
+    restart: unless-stopped
+    ports:
+      - "${PORT}:3000"
+    environment:
+      - MAX_CONCURRENT_SESSIONS=${MAX_SESSIONS}
+      - MAX_QUEUE_LENGTH=10
+      - CONNECTION_TIMEOUT=300000
+      - PREBOOT_CHROME=false
+      - ENABLE_CORS=true
