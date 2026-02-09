@@ -345,6 +345,8 @@ claude mcp add --transport stdio --scope user e2e-runner \
 | `e2e_pool_start` | Start the Chrome pool Docker container |
 | `e2e_pool_stop` | Stop the Chrome pool |
 
+All tools accept an optional `cwd` parameter (absolute path to the project root). Claude Code passes its current working directory so the MCP server resolves `e2e/tests/`, `e2e.config.js`, and `.e2e-pool/` relative to the correct project — even when switching between multiple projects in the same session.
+
 Once installed, Claude Code can run tests, analyze failures, create new test files, and manage the Chrome pool as part of its normal workflow. Just ask:
 
 > "Run all E2E tests"

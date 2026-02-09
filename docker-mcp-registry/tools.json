@@ -1,0 +1,123 @@
+[
+  {
+    "name": "e2e_run",
+    "description": "Run E2E browser tests. Specify \"all\" to run every suite, \"suite\" for a specific suite, or \"file\" for a JSON file path. Returns structured results with pass/fail status, duration, and error details.",
+    "arguments": [
+      {
+        "name": "all",
+        "type": "boolean",
+        "desc": "Run all test suites from the tests directory"
+      },
+      {
+        "name": "suite",
+        "type": "string",
+        "desc": "Suite name to run (e.g. \"auth\", \"01-login\"). Matches with or without numeric prefix."
+      },
+      {
+        "name": "file",
+        "type": "string",
+        "desc": "Absolute or relative path to a JSON test file"
+      },
+      {
+        "name": "concurrency",
+        "type": "number",
+        "desc": "Number of parallel workers (default from config)"
+      },
+      {
+        "name": "baseUrl",
+        "type": "string",
+        "desc": "Override the base URL for this run"
+      },
+      {
+        "name": "retries",
+        "type": "number",
+        "desc": "Number of retries for failed tests"
+      },
+      {
+        "name": "cwd",
+        "type": "string",
+        "desc": "Absolute path to the project root directory"
+      }
+    ]
+  },
+  {
+    "name": "e2e_list",
+    "description": "List all available E2E test suites with their test names and counts.",
+    "arguments": [
+      {
+        "name": "cwd",
+        "type": "string",
+        "desc": "Absolute path to the project root directory"
+      }
+    ]
+  },
+  {
+    "name": "e2e_create_test",
+    "description": "Create a new E2E test JSON file. Provide the suite name and an array of test objects, each with a name and actions array.",
+    "arguments": [
+      {
+        "name": "name",
+        "type": "string",
+        "desc": "Suite file name without .json extension (e.g. \"login\", \"05-checkout\")"
+      },
+      {
+        "name": "tests",
+        "type": "array",
+        "desc": "Array of test objects with { name, actions }"
+      },
+      {
+        "name": "hooks",
+        "type": "object",
+        "desc": "Optional hooks: beforeAll, afterAll, beforeEach, afterEach (each an array of actions)"
+      },
+      {
+        "name": "cwd",
+        "type": "string",
+        "desc": "Absolute path to the project root directory"
+      }
+    ]
+  },
+  {
+    "name": "e2e_pool_status",
+    "description": "Get the status of the Chrome pool (browserless/chrome). Shows availability, running sessions, capacity, and queued requests.",
+    "arguments": [
+      {
+        "name": "cwd",
+        "type": "string",
+        "desc": "Absolute path to the project root directory"
+      }
+    ]
+  },
+  {
+    "name": "e2e_pool_start",
+    "description": "Start the Chrome pool (browserless/chrome Docker container). Requires Docker to be running.",
+    "arguments": [
+      {
+        "name": "port",
+        "type": "number",
+        "desc": "Port for the pool (default 3333)"
+      },
+      {
+        "name": "maxSessions",
+        "type": "number",
+        "desc": "Max concurrent Chrome sessions (default 10)"
+      },
+      {
+        "name": "cwd",
+        "type": "string",
+        "desc": "Absolute path to the project root directory"
+      }
+    ]
+  },
+  {
+    "name": "e2e_pool_stop",
+    "description": "Stop the Chrome pool Docker container.",
+    "arguments": [
+      {
+        "name": "cwd",
+        "type": "string",
+        "desc": "Absolute path to the project root directory"
+      }
+    ]
+  }
+]

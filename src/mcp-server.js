@@ -61,6 +61,10 @@ const TOOLS = [
           type: 'number',
           description: 'Number of retries for failed tests',
         },
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
       },
     },
   },
@@ -70,7 +74,12 @@ const TOOLS = [
       'List all available E2E test suites with their test names and counts.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
+      },
     },
   },
   {
@@ -122,6 +131,10 @@ const TOOLS = [
             afterEach: { type: 'array', items: { type: 'object' } },
           },
         },
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
       },
       required: ['name', 'tests'],
     },
@@ -132,7 +145,12 @@ const TOOLS = [
       'Get the status of the Chrome pool (browserless/chrome). Shows availability, running sessions, capacity, and queued requests.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
+      },
     },
   },
   {
@@ -150,6 +168,10 @@ const TOOLS = [
           type: 'number',
           description: 'Max concurrent Chrome sessions (default 10)',
         },
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
       },
     },
   },
@@ -158,7 +180,12 @@ const TOOLS = [
     description: 'Stop the Chrome pool Docker container.',
     inputSchema: {
       type: 'object',
-      properties: {},
+      properties: {
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
+      },
     },
   },
 ];
@@ -171,7 +198,7 @@ async function handleRun(args) {
   if (args.baseUrl) configOverrides.baseUrl = args.baseUrl;
   if (args.retries !== undefined) configOverrides.retries = args.retries;
 
-  const config = await loadConfig(configOverrides);
+  const config = await loadConfig(configOverrides, args.cwd);
 
   await waitForPool(config.poolUrl);
 
@@ -182,7 +209,8 @@ async function handleRun(args) {
   } else if (args.suite) {
     ({ tests, hooks } = loadTestSuite(args.suite, config.testsDir));
   } else if (args.file) {
-    const filePath = path.isAbsolute(args.file) ? args.file : path.resolve(args.file);
+    const cwd = args.cwd || process.cwd();
+    const filePath = path.isAbsolute(args.file) ? args.file : path.resolve(cwd, args.file);
     ({ tests, hooks } = loadTestFile(filePath));
   } else {
     return errorResult('Provide one of: all (true), suite (name), or file (path)');
@@ -219,8 +247,8 @@ async function handleRun(args) {
   return textResult(JSON.stringify(summary, null, 2));
 }
 
-async function handleList() {
-  const config = await loadConfig({});
+async function handleList(args) {
+  const config = await loadConfig({}, args.cwd);
   const suites = listSuites(config.testsDir);
 
   if (suites.length === 0) {
@@ -235,7 +263,7 @@ async function handleList() {
 }
 
 async function handleCreateTest(args) {
-  const config = await loadConfig({});
+  const config = await loadConfig({}, args.cwd);
 
   if (!fs.existsSync(config.testsDir)) {
     fs.mkdirSync(config.testsDir, { recursive: true });
@@ -259,8 +287,8 @@ async function handleCreateTest(args) {
   return textResult(`Created test file: ${filePath}\n\n${args.tests.length} test(s) defined.`);
 }
 
-async function handlePoolStatus() {
-  const config = await loadConfig({});
+async function handlePoolStatus(args) {
+  const config = await loadConfig({}, args.cwd);
   const status = await getPoolStatus(config.poolUrl);
 
   const lines = [
@@ -282,14 +310,14 @@ async function handlePoolStart(args) {
   if (args.port) overrides.poolPort = args.port;
   if (args.maxSessions) overrides.maxSessions = args.maxSessions;
 
-  const config = await loadConfig(overrides);
-  startPool(config);
+  const config = await loadConfig(overrides, args.cwd);
+  startPool(config, args.cwd);
   return textResult(`Chrome pool started on port ${config.poolPort}`);
 }
 
-async function handlePoolStop() {
-  const config = await loadConfig({});
-  stopPool(config);
+async function handlePoolStop(args) {
+  const config = await loadConfig({}, args.cwd);
+  stopPool(config, args.cwd);
   return textResult('Chrome pool stopped');
 }
 
@@ -323,15 +351,15 @@ export async function startMcpServer() {
         case 'e2e_run':
           return await handleRun(args);
         case 'e2e_list':
-          return await handleList();
+          return await handleList(args);
         case 'e2e_create_test':
           return await handleCreateTest(args);
         case 'e2e_pool_status':
-          return await handlePoolStatus();
+          return await handlePoolStatus(args);
         case 'e2e_pool_start':
           return await handlePoolStart(args);
         case 'e2e_pool_stop':
-          return await handlePoolStop();
+          return await handlePoolStop(args);
         default:
           return errorResult(`Unknown tool: ${name}`);
       }

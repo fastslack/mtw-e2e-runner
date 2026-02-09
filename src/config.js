@@ -68,8 +68,8 @@ async function loadConfigFile(cwd) {
   return {};
 }
 
-export async function loadConfig(cliArgs = {}) {
-  const cwd = process.cwd();
+export async function loadConfig(cliArgs = {}, cwd = null) {
+  cwd = cwd || process.cwd();
   const fileConfig = await loadConfigFile(cwd);
   const envConfig = loadEnvVars();
 

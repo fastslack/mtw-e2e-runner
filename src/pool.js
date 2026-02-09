@@ -61,8 +61,8 @@ export async function connectToPool(poolUrl, retries = 3, delay = 2000) {
 }
 
 /** Generates docker-compose.yml and starts the pool */
-export function startPool(config) {
-  const cwd = process.cwd();
+export function startPool(config, cwd = null) {
+  cwd = cwd || process.cwd();
   const poolDir = path.join(cwd, '.e2e-pool');
 
   if (!fs.existsSync(poolDir)) {
@@ -93,8 +93,9 @@ export function startPool(config) {
 }
 
 /** Stops the pool */
-export function stopPool(config) {
-  const composePath = path.join(process.cwd(), '.e2e-pool', 'docker-compose.yml');
+export function stopPool(config, cwd = null) {
+  cwd = cwd || process.cwd();
+  const composePath = path.join(cwd, '.e2e-pool', 'docker-compose.yml');
   if (!fs.existsSync(composePath)) {
     log('⚠️', '.e2e-pool/docker-compose.yml not found');
     return;
@@ -106,9 +107,9 @@ export function stopPool(config) {
 }
 
 /** Restarts the pool */
-export function restartPool(config) {
-  stopPool(config);
-  startPool(config);
+export function restartPool(config, cwd = null) {
+  stopPool(config, cwd);
+  startPool(config, cwd);
 }
 
 /** Gets pool status */

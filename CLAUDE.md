@@ -173,4 +173,6 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 | `e2e_pool_start` | Start the Chrome pool Docker container (optional port, maxSessions) |
 | `e2e_pool_stop` | Stop the Chrome pool |
 
+**Multi-project support (`cwd`):** All MCP tools accept an optional `cwd` parameter — the absolute path to the project root. Because the MCP server is a long-lived process whose `process.cwd()` is fixed at startup, Claude Code passes its current working directory on each tool call. The `cwd` is threaded through `loadConfig(cliArgs, cwd)`, `startPool(config, cwd)`, and `stopPool(config, cwd)` so that config files, test directories, and `.e2e-pool/` are resolved per-project. When `cwd` is omitted (e.g. CLI usage), `process.cwd()` is used as fallback — fully backwards compatible.
+
 **Implementation:** `src/mcp-server.js` uses the low-level `@modelcontextprotocol/sdk` Server class with `StdioServerTransport`. Console output is redirected to stderr to keep the MCP stdio protocol clean. Tools use the same functions as the CLI (`loadConfig`, `runTestsParallel`, `listSuites`, etc.) but skip `printReport()` and return structured JSON results instead.
