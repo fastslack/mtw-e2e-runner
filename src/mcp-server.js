@@ -241,8 +241,17 @@ async function handleRun(args) {
     reportPath: path.join(config.screenshotsDir, 'report.json'),
   };
 
+  const consoleErrors = report.results
+    .filter(r => r.consoleLogs?.some(l => l.type === 'error' || l.type === 'warning'))
+    .map(r => ({ name: r.name, logs: r.consoleLogs.filter(l => l.type === 'error' || l.type === 'warning') }));
+  const networkErrors = report.results
+    .filter(r => r.networkErrors?.length > 0)
+    .map(r => ({ name: r.name, errors: r.networkErrors }));
+
   if (flaky.length > 0) summary.flaky = flaky;
   if (failures.length > 0) summary.failures = failures;
+  if (consoleErrors.length > 0) summary.consoleErrors = consoleErrors;
+  if (networkErrors.length > 0) summary.networkErrors = networkErrors;
 
   return textResult(JSON.stringify(summary, null, 2));
 }

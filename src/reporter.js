@@ -55,6 +55,11 @@ export function generateJUnitXML(report) {
       xml += `      <system-out><![CDATA[${logs}]]></system-out>\n`;
     }
 
+    const netErrors = (result.networkErrors || []).map(e => `[${e.error || 'unknown'}] ${e.url}`).join('\n');
+    if (netErrors) {
+      xml += `      <system-err><![CDATA[${netErrors}]]></system-err>\n`;
+    }
+
     xml += '    </testcase>\n';
   }
 
@@ -106,6 +111,31 @@ export function printReport(report, screenshotsDir) {
       if (f.errorScreenshot) {
         console.log(`    ${C.dim}Screenshot: ${f.errorScreenshot}${C.reset}`);
       }
+    });
+  }
+
+  const consoleIssues = report.results.filter(r =>
+    r.consoleLogs?.some(l => l.type === 'error' || l.type === 'warning')
+  );
+  if (consoleIssues.length > 0) {
+    console.log(`\n${C.yellow}${C.bold}BROWSER CONSOLE ISSUES:${C.reset}`);
+    consoleIssues.forEach(r => {
+      const logs = r.consoleLogs.filter(l => l.type === 'error' || l.type === 'warning');
+      console.log(`  ${C.yellow}⚠${C.reset} ${r.name}:`);
+      logs.forEach(l => {
+        console.log(`    ${C.dim}[${l.type}]${C.reset} ${l.text}`);
+      });
+    });
+  }
+
+  const networkIssues = report.results.filter(r => r.networkErrors?.length > 0);
+  if (networkIssues.length > 0) {
+    console.log(`\n${C.yellow}${C.bold}NETWORK ERRORS:${C.reset}`);
+    networkIssues.forEach(r => {
+      console.log(`  ${C.yellow}⚠${C.reset} ${r.name}:`);
+      r.networkErrors.forEach(e => {
+        console.log(`    ${C.dim}[${e.error || 'unknown'}]${C.reset} ${e.url}`);
+      });
     });
   }
 

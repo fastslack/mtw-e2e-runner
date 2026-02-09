@@ -208,6 +208,14 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
         const attempts = result.maxAttempts > 1 ? ` (${result.maxAttempts} attempts)` : '';
         log('❌', `${C.red}${test.name}${C.reset}: ${result.error}${attempts}`);
       }
+
+      const consoleIssues = result.consoleLogs?.filter(l => l.type === 'error' || l.type === 'warning').length || 0;
+      if (consoleIssues > 0) {
+        log('⚠️', `${C.yellow}${test.name}: ${consoleIssues} console ${consoleIssues === 1 ? 'issue' : 'issues'}${C.reset}`);
+      }
+      if (result.networkErrors?.length > 0) {
+        log('⚠️', `${C.yellow}${test.name}: ${result.networkErrors.length} network ${result.networkErrors.length === 1 ? 'error' : 'errors'}${C.reset}`);
+      }
     }
   };
 
