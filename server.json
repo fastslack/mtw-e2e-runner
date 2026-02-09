@@ -6,7 +6,7 @@
     "url": "https://github.com/fastslack/mtw-e2e-runner",
     "source": "github"
   },
-  "version": "1.0.1",
+  "version": "1.0.2",
   "packages": [
     {
       "registryType": "npm",
@@ -16,6 +16,13 @@
         "type": "stdio"
       },
       "runtimeHint": "npx"
+    },
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/fastslack/e2e-runner-mcp:1.0.1",
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }
