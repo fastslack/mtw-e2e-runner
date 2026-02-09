@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.fastslack/e2e-runner",
+  "description": "JSON-driven E2E test runner. Define browser tests as JSON action arrays, run them in parallel against a Chrome pool. Includes tools to run tests, list suites, create test files, and manage the Chrome pool.",
+  "repository": {
+    "url": "https://github.com/fastslack/mtw-e2e-runner",
+    "source": "github"
+  },
+  "version": "1.0.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@matware/e2e-runner",
+      "version": "1.0.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeHint": "npx"
+    }
+  ]
+}

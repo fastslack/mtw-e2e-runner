@@ -1,6 +1,7 @@
 {
   "name": "@matware/e2e-runner",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "mcpName": "io.github.fastslack/e2e-runner",
   "description": "E2E test runner using Chrome Pool (browserless/chrome) with parallel execution",
   "type": "module",
   "main": "src/index.js",
