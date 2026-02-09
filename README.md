@@ -318,11 +318,20 @@ import {
 
 ## Claude Code Integration (MCP)
 
-The package includes a built-in [MCP server](https://modelcontextprotocol.io/) that gives Claude Code native access to the test runner. Install once and it's available in every project:
+The package includes a built-in [MCP server](https://modelcontextprotocol.io/) that gives Claude Code native access to the test runner. Install once and it's available in every project.
+
+**Via npm** (requires Node.js):
 
 ```bash
 claude mcp add --transport stdio --scope user e2e-runner \
   -- npx -y -p @matware/e2e-runner e2e-runner-mcp
+```
+
+**Via Docker** (no Node.js required):
+
+```bash
+claude mcp add --transport stdio --scope user e2e-runner \
+  -- docker run -i --rm fastslack/e2e-runner-mcp
 ```
 
 ### MCP Tools
