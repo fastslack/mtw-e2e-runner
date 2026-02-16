@@ -87,37 +87,5 @@
         "desc": "Absolute path to the project root directory"
       }
     ]
-  },
-  {
-    "name": "e2e_pool_start",
-    "description": "Start the Chrome pool (browserless/chrome Docker container). Requires Docker to be running.",
-    "arguments": [
-      {
-        "name": "port",
-        "type": "number",
-        "desc": "Port for the pool (default 3333)"
-      },
-      {
-        "name": "maxSessions",
-        "type": "number",
-        "desc": "Max concurrent Chrome sessions (default 10)"
-      },
-      {
-        "name": "cwd",
-        "type": "string",
-        "desc": "Absolute path to the project root directory"
-      }
-    ]
-  },
-  {
-    "name": "e2e_pool_stop",
-    "description": "Stop the Chrome pool Docker container.",
-    "arguments": [
-      {
-        "name": "cwd",
-        "type": "string",
-        "desc": "Absolute path to the project root directory"
-      }
-    ]
   }
 ]

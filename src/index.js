@@ -11,7 +11,8 @@ export { loadConfig } from './config.js';
 export { waitForPool, connectToPool, startPool, stopPool, restartPool, getPoolStatus } from './pool.js';
 export { executeAction } from './actions.js';
 export { runTest, runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from './runner.js';
-export { generateReport, generateJUnitXML, saveReport, printReport } from './reporter.js';
+export { generateReport, generateJUnitXML, saveReport, printReport, saveHistory, loadHistory, loadHistoryRun } from './reporter.js';
+export { startDashboard, stopDashboard } from './dashboard.js';
 
 import { loadConfig } from './config.js';
 import { waitForPool } from './pool.js';

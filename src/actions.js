@@ -7,6 +7,7 @@
  * The JS comes from team-authored JSON test files.
  */
 
+import path from 'path';
 import { log } from './logger.js';
 
 function sleep(ms) {
@@ -70,7 +71,9 @@ export async function executeAction(page, action, config) {
       if (!/\.(png|jpg|jpeg|webp)$/i.test(filename)) {
         filename += '.png';
       }
-      const filepath = `${screenshotsDir}/${filename}`;
+      // Sanitize: use only the basename to prevent path traversal
+      filename = path.basename(filename);
+      const filepath = path.join(screenshotsDir, filename);
       await page.screenshot({ path: filepath, fullPage: action.fullPage || false });
       return { screenshot: filepath };
     }
@@ -145,6 +148,19 @@ export async function executeAction(page, action, config) {
       await page.waitForSelector(selector, { timeout });
       await page.hover(selector);
       break;
+
+    case 'navigate': {
+      const navUrl = value.startsWith('http') ? value : `${baseUrl}${value}`;
+      // Navigate with a race: try page.goto but don't block more than 5s
+      // This handles SPAs where domcontentloaded may not fire on client-side routing
+      try {
+        await Promise.race([
+          page.goto(navUrl, { waitUntil: 'load', timeout: 30000 }),
+          sleep(5000),
+        ]);
+      } catch { /* navigation may still be loading */ }
+      break;
+    }
 
     case 'evaluate':
       // Intentional: runs JS in browser page context (from test JSON files)

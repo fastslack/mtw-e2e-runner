@@ -38,6 +38,9 @@ export default {
   // Report output format: 'json', 'junit', or 'both'
   outputFormat: 'json',
 
+  // Project display name for the dashboard (defaults to directory name)
+  // projectName: 'my-app',
+
   // Global hooks — run actions before/after all tests or each test
   // hooks: {
   //   beforeAll: [{ type: 'goto', value: '/login' }, { type: 'type', selector: '#email', value: 'admin@example.com' }],

@@ -7,7 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { connectToPool, waitForPool } from './pool.js';
+import { connectToPool, waitForPool, getPoolStatus } from './pool.js';
 import { executeAction } from './actions.js';
 import { log, colors as C } from './logger.js';
 
@@ -47,6 +47,26 @@ function normalizeTestData(data) {
   return { tests: data.tests || [], hooks: data.hooks || {} };
 }
 
+/** Waits until the pool has capacity before connecting */
+async function waitForSlot(poolUrl, pollIntervalMs = 2000, maxWaitMs = 60000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const status = await getPoolStatus(poolUrl);
+      if (status.available && status.running < status.maxConcurrent) {
+        return;
+      }
+      log('⏳', `${C.dim}Pool at capacity (${status.running}/${status.maxConcurrent}, ${status.queued} queued), waiting for slot...${C.reset}`);
+    } catch {
+      // Pool unreachable, let connectToPool handle the error
+      return;
+    }
+    await sleep(pollIntervalMs);
+  }
+  // Timeout — proceed anyway and let connectToPool deal with it
+  log('⚠️', `${C.yellow}Waited ${maxWaitMs / 1000}s for pool slot, proceeding anyway${C.reset}`);
+}
+
 /** Runs a single test end-to-end */
 export async function runTest(test, config, hooks = {}) {
   let browser = null;
@@ -63,6 +83,7 @@ export async function runTest(test, config, hooks = {}) {
   };
 
   try {
+    await waitForSlot(config.poolUrl);
     browser = await connectToPool(config.poolUrl, config.connectRetries, config.connectRetryDelay);
     page = await browser.newPage();
     await page.setViewport(config.viewport);
@@ -79,23 +100,28 @@ export async function runTest(test, config, hooks = {}) {
       await executeHookActions(page, hooks.beforeEach, config);
     }
 
-    for (const action of test.actions) {
+    for (let i = 0; i < test.actions.length; i++) {
+      const action = test.actions[i];
       const actionStart = Date.now();
       try {
         const actionResult = await executeAction(page, action, config);
+        const actionDuration = Date.now() - actionStart;
         result.actions.push({
           ...action,
           success: true,
-          duration: Date.now() - actionStart,
+          duration: actionDuration,
           result: actionResult,
         });
+        if (config.onProgress) config.onProgress({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: true, duration: actionDuration });
       } catch (error) {
+        const actionDuration = Date.now() - actionStart;
         result.actions.push({
           ...action,
           success: false,
-          duration: Date.now() - actionStart,
+          duration: actionDuration,
           error: error.message,
         });
+        if (config.onProgress) config.onProgress({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: false, duration: actionDuration, error: error.message });
         throw error;
       }
     }
@@ -115,7 +141,8 @@ export async function runTest(test, config, hooks = {}) {
 
     if (page) {
       try {
-        const errorScreenshot = path.join(config.screenshotsDir, `error-${test.name}-${Date.now()}.png`);
+        const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+        const errorScreenshot = path.join(config.screenshotsDir, `error-${safeName}-${Date.now()}.png`);
         await page.screenshot({ path: errorScreenshot, fullPage: true });
         result.errorScreenshot = errorScreenshot;
       } catch { /* page may be dead */ }
@@ -155,6 +182,9 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     }
   }
 
+  const concurrency = config.concurrency || 3;
+  if (config.onProgress) config.onProgress({ event: 'run:start', total: tests.length, concurrency, timestamp: new Date().toISOString(), project: config.projectName || null, cwd: config._cwd || null });
+
   const results = [];
   const queue = [...tests];
   let activeCount = 0;
@@ -164,6 +194,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       const test = queue.shift();
       activeCount++;
       log('▶▶▶', `${C.cyan}${test.name}${C.reset} ${C.dim}(${activeCount} active)${C.reset}`);
+      if (config.onProgress) config.onProgress({ event: 'test:start', name: test.name, activeCount, queueRemaining: queue.length });
 
       const maxAttempts = (test.retries ?? config.retries ?? 0) + 1;
       const testTimeout = test.timeout ?? config.testTimeout ?? 60000;
@@ -195,11 +226,14 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
 
         if (result.success || attempt === maxAttempts) break;
         log('🔄', `${C.yellow}${test.name}${C.reset} failed, retrying (${attempt}/${maxAttempts})...`);
+        if (config.onProgress) config.onProgress({ event: 'test:retry', name: test.name, attempt, maxAttempts });
         await sleep(config.retryDelay || 1000);
       }
 
       results.push(result);
       activeCount--;
+
+      if (config.onProgress) config.onProgress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, errorScreenshot: result.errorScreenshot });
 
       if (result.success) {
         const flaky = result.attempt > 1 ? ` ${C.yellow}(flaky, passed on attempt ${result.attempt}/${result.maxAttempts})${C.reset}` : '';
@@ -219,7 +253,6 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     }
   };
 
-  const concurrency = config.concurrency || 3;
   const workers = [];
   for (let i = 0; i < Math.min(concurrency, tests.length); i++) {
     workers.push(worker());
@@ -241,6 +274,12 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     } finally {
       if (browser) try { browser.disconnect(); } catch { /* */ }
     }
+  }
+
+  if (config.onProgress) {
+    const passed = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+    config.onProgress({ event: 'run:complete', summary: { total: results.length, passed, failed } });
   }
 
   return results;

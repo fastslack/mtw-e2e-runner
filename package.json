@@ -1,6 +1,6 @@
 {
   "name": "@matware/e2e-runner",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "mcpName": "io.github.fastslack/e2e-runner",
   "description": "E2E test runner using Chrome Pool (browserless/chrome) with parallel execution",
   "type": "module",
@@ -36,6 +36,7 @@
   "homepage": "https://github.com/fastslack/mtw-e2e-runner#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "better-sqlite3": "^11.0.0",
     "puppeteer-core": "^24.0.0"
   },
   "engines": {

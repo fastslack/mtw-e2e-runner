@@ -30,6 +30,9 @@ const DEFAULTS = {
   outputFormat: 'json',
   env: 'default',
   hooks: { beforeAll: [], afterAll: [], beforeEach: [], afterEach: [] },
+  dashboardPort: 8484,
+  maxHistoryRuns: 100,
+  projectName: null,
 };
 
 function loadEnvVars() {
@@ -47,6 +50,7 @@ function loadEnvVars() {
   if (process.env.TEST_TIMEOUT) env.testTimeout = parseInt(process.env.TEST_TIMEOUT);
   if (process.env.OUTPUT_FORMAT) env.outputFormat = process.env.OUTPUT_FORMAT;
   if (process.env.E2E_ENV) env.env = process.env.E2E_ENV;
+  if (process.env.PROJECT_NAME) env.projectName = process.env.PROJECT_NAME;
   return env;
 }
 
@@ -98,6 +102,12 @@ export async function loadConfig(cliArgs = {}, cwd = null) {
   // Ensure screenshots directory exists
   if (!fs.existsSync(config.screenshotsDir)) {
     fs.mkdirSync(config.screenshotsDir, { recursive: true });
+  }
+
+  // Stash cwd for project identity (used by db.js)
+  config._cwd = cwd;
+  if (!config.projectName) {
+    config.projectName = path.basename(cwd);
   }
 
   return config;

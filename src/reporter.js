@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { colors as C } from './logger.js';
+import { ensureProject, saveRun as saveRunToDb } from './db.js';
 
 function escapeXml(str) {
   return String(str)
@@ -12,6 +13,10 @@ function escapeXml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function escapeCdata(str) {
+  return String(str).replace(/\]\]>/g, ']]]]><![CDATA[>');
 }
 
 /** Generates a report object from test results */
@@ -52,12 +57,12 @@ export function generateJUnitXML(report) {
 
     const logs = (result.consoleLogs || []).map(l => `[${l.type}] ${l.text}`).join('\n');
     if (logs) {
-      xml += `      <system-out><![CDATA[${logs}]]></system-out>\n`;
+      xml += `      <system-out><![CDATA[${escapeCdata(logs)}]]></system-out>\n`;
     }
 
     const netErrors = (result.networkErrors || []).map(e => `[${e.error || 'unknown'}] ${e.url}`).join('\n');
     if (netErrors) {
-      xml += `      <system-err><![CDATA[${netErrors}]]></system-err>\n`;
+      xml += `      <system-err><![CDATA[${escapeCdata(netErrors)}]]></system-err>\n`;
     }
 
     xml += '    </testcase>\n';
@@ -87,6 +92,72 @@ export function saveReport(report, screenshotsDir, config = {}) {
   }
 
   return saved.length === 1 ? saved[0] : saved;
+}
+
+/** Saves a run to history */
+export function saveHistory(report, screenshotsDir, maxRuns = 100) {
+  const historyDir = path.join(screenshotsDir, 'history');
+  if (!fs.existsSync(historyDir)) {
+    fs.mkdirSync(historyDir, { recursive: true });
+  }
+
+  const runId = new Date().toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, '');
+  const filename = `run-${runId}.json`;
+  const entry = { ...report, runId };
+  fs.writeFileSync(path.join(historyDir, filename), JSON.stringify(entry, null, 2));
+
+  // Auto-prune old runs
+  const files = fs.readdirSync(historyDir).filter(f => f.startsWith('run-') && f.endsWith('.json')).sort();
+  while (files.length > maxRuns) {
+    fs.unlinkSync(path.join(historyDir, files.shift()));
+  }
+
+  return runId;
+}
+
+/** Loads history summaries (newest first) */
+export function loadHistory(screenshotsDir) {
+  const historyDir = path.join(screenshotsDir, 'history');
+  if (!fs.existsSync(historyDir)) return [];
+
+  return fs.readdirSync(historyDir)
+    .filter(f => f.startsWith('run-') && f.endsWith('.json'))
+    .sort()
+    .reverse()
+    .map(f => {
+      const data = JSON.parse(fs.readFileSync(path.join(historyDir, f), 'utf-8'));
+      return { runId: data.runId, summary: data.summary, generatedAt: data.generatedAt };
+    });
+}
+
+/** Loads a full history run by runId */
+export function loadHistoryRun(screenshotsDir, runId) {
+  const historyDir = path.join(screenshotsDir, 'history');
+  const files = fs.existsSync(historyDir)
+    ? fs.readdirSync(historyDir).filter(f => f.startsWith('run-') && f.endsWith('.json'))
+    : [];
+
+  const match = files.find(f => {
+    const data = JSON.parse(fs.readFileSync(path.join(historyDir, f), 'utf-8'));
+    return data.runId === runId;
+  });
+
+  if (!match) return null;
+  return JSON.parse(fs.readFileSync(path.join(historyDir, match), 'utf-8'));
+}
+
+/** Persists a run to both filesystem history and SQLite (never throws). */
+export function persistRun(report, config, suiteName) {
+  const runId = saveHistory(report, config.screenshotsDir, config.maxHistoryRuns);
+
+  try {
+    const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
+    saveRunToDb(projectId, report, runId, suiteName || null);
+  } catch (err) {
+    process.stderr.write(`[e2e-runner] SQLite write failed: ${err.message}\n`);
+  }
+
+  return runId;
 }
 
 /** Prints a formatted report summary to the console */

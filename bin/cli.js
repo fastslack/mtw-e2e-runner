@@ -13,6 +13,7 @@
  *   e2e-runner pool stop                  Stop the Chrome Pool
  *   e2e-runner pool status                Show pool status
  *   e2e-runner pool restart               Restart the pool
+ *   e2e-runner dashboard                   Start the web dashboard
  *   e2e-runner init                       Scaffold e2e/ in the current project
  *   e2e-runner --help                     Show help
  *   e2e-runner --version                  Show version
@@ -20,11 +21,13 @@
 
 import fs from 'fs';
 import path from 'path';
+import http from 'http';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../src/config.js';
 import { startPool, stopPool, restartPool, getPoolStatus, waitForPool } from '../src/pool.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
-import { generateReport, saveReport, printReport } from '../src/reporter.js';
+import { generateReport, saveReport, printReport, persistRun } from '../src/reporter.js';
+import { startDashboard } from '../src/dashboard.js';
 import { log, colors as C } from '../src/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -59,6 +62,9 @@ function parseCLIConfig() {
   if (getFlag('--test-timeout')) cliArgs.testTimeout = parseInt(getFlag('--test-timeout'));
   if (getFlag('--output')) cliArgs.outputFormat = getFlag('--output');
   if (getFlag('--env')) cliArgs.env = getFlag('--env');
+  if (getFlag('--port')) cliArgs.dashboardPort = parseInt(getFlag('--port'));
+  if (getFlag('--dashboard-port')) cliArgs.dashboardPort = parseInt(getFlag('--dashboard-port'));
+  if (getFlag('--project-name')) cliArgs.projectName = getFlag('--project-name');
   return cliArgs;
 }
 
@@ -74,6 +80,9 @@ ${C.bold}Usage:${C.reset}
   e2e-runner run --inline '<json>'      Run inline JSON tests
 
   e2e-runner list                       List available suites
+
+  e2e-runner dashboard                  Start the web dashboard
+  e2e-runner dashboard --port <port>    Custom port (default: 8484)
 
   e2e-runner pool start                 Start the Chrome Pool
   e2e-runner pool stop                  Stop the Chrome Pool
@@ -96,6 +105,7 @@ ${C.bold}Options:${C.reset}
   --test-timeout <ms>      Per-test timeout (default: 60000)
   --output <format>        Report format: json, junit, both (default: json)
   --env <name>             Environment profile from config (default: default)
+  --project-name <name>    Project display name for dashboard (default: directory name)
 
 ${C.bold}Config:${C.reset}
   Looks for e2e.config.js or e2e.config.json in the current directory.
@@ -151,11 +161,27 @@ async function cmdRun() {
   const pressure = await waitForPool(config.poolUrl);
   log('✅', `Pool ready (${pressure.running}/${pressure.maxConcurrent} sessions, queued: ${pressure.queued})`);
 
+  // Wire up live progress to dashboard if running
+  try {
+    const res = await fetch('http://127.0.0.1:' + (config.dashboardPort || 8484) + '/api/status');
+    if (res.ok) {
+      const dp = config.dashboardPort || 8484;
+      config.onProgress = (data) => {
+        const body = JSON.stringify(data);
+        const req = http.request({ hostname: '127.0.0.1', port: dp, path: '/api/broadcast', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 1000 });
+        req.on('error', () => {});
+        req.end(body);
+      };
+    }
+  } catch { /* dashboard not running */ }
+
   // Execute tests
   console.log('');
+  const suiteName = getFlag('--suite') || (hasFlag('--all') ? null : null);
   const results = await runTestsParallel(tests, config, hooks);
   const report = generateReport(results);
   saveReport(report, config.screenshotsDir, config);
+  persistRun(report, config, suiteName);
   printReport(report, config.screenshotsDir);
 
   process.exit(report.summary.failed > 0 ? 1 : 0);
@@ -288,6 +314,25 @@ ${C.bold}Next steps:${C.reset}
 `);
 }
 
+async function cmdDashboard() {
+  const cliArgs = parseCLIConfig();
+  const config = await loadConfig(cliArgs);
+
+  console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
+  console.log(`${C.dim}Starting dashboard on port ${config.dashboardPort}...${C.reset}\n`);
+
+  const handle = await startDashboard(config);
+
+  // Keep process alive until SIGINT/SIGTERM
+  const shutdown = () => {
+    console.log(`\n${C.dim}Shutting down dashboard...${C.reset}`);
+    handle.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
 // ==================== Main ====================
 
 async function main() {
@@ -314,6 +359,10 @@ async function main() {
 
     case 'pool':
       await cmdPool();
+      break;
+
+    case 'dashboard':
+      await cmdDashboard();
       break;
 
     case 'init':
