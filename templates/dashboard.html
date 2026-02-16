@@ -128,14 +128,14 @@ tbody tr.selected td{background:var(--accent-dim)}
 .live-stats span strong{color:var(--text)}
 .live-progress{height:3px;background:var(--surface3)}
 .live-progress-fill{height:100%;background:var(--purple);transition:width .4s;border-radius:0 2px 2px 0}
-.live-tests{padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px;max-height:calc(100vh - 200px);overflow-y:auto}
+.live-tests{padding:12px 16px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 200px);overflow-y:auto}
 .live-test{padding:10px 12px;border-radius:var(--r);border-left:3px solid var(--text3);background:var(--surface2);font-size:11px;transition:border-color .2s,padding .25s,max-height .35s cubic-bezier(.4,0,.2,1)}
 .live-test.running{border-left-color:var(--purple)}
 .live-test.passed{border-left-color:var(--green)}
 .live-test.failed{border-left-color:var(--red)}
 .live-test.collapsed{cursor:pointer;padding:6px 12px}
 .live-test.collapsed:hover{background:var(--surface3)}
-.live-test.collapsed .lt-meta,.live-test.collapsed .lt-actions{display:none}
+.live-test.collapsed .lt-meta,.live-test.collapsed .lt-actions,.live-test.collapsed .lt-screenshots{display:none}
 .live-test.collapsed .lt-name{margin-bottom:0}
 .live-test.collapsed .lt-summary{display:flex}
 .live-test .lt-name{font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:6px}
@@ -153,6 +153,24 @@ tbody tr.selected td{background:var(--accent-dim)}
 .lt-step .step-type{color:var(--purple);font-weight:600;flex-shrink:0}
 .lt-step .step-detail{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .lt-step .step-dur{color:var(--text3);flex-shrink:0;margin-left:auto}
+.lt-screenshots{border-top:1px solid var(--border);margin-top:6px;padding-top:6px}
+.lt-screenshots-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:10px;color:var(--text3);font-family:var(--mono);padding:2px 0;user-select:none}
+.lt-screenshots-toggle:hover{color:var(--text)}
+.lt-screenshots-toggle .ss-arrow{transition:transform .2s;font-size:8px}
+.lt-screenshots-toggle.open .ss-arrow{transform:rotate(90deg)}
+.lt-screenshots-grid{display:none;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;padding-top:6px}
+.lt-screenshots-toggle.open+.lt-screenshots-grid{display:grid}
+.lt-ss-thumb{position:relative;border-radius:4px;overflow:hidden;border:1px solid var(--border);cursor:pointer;aspect-ratio:16/10;background:var(--surface2)}
+.lt-ss-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.lt-ss-thumb:hover{border-color:var(--purple);box-shadow:0 0 0 1px var(--purple)}
+.lt-ss-label{font-size:8px;color:var(--text3);font-family:var(--mono);text-align:center;padding:2px 2px 0;display:flex;align-items:center;justify-content:center;gap:3px;flex-wrap:wrap}
+.lr-section-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;margin:6px 0 2px;border-radius:6px;font-family:var(--mono);font-size:12px;font-weight:700;border-left:3px solid var(--purple)}
+.lr-section-header.running{border-color:var(--purple);background:rgba(139,92,246,.08);color:var(--purple)}
+.lr-section-header.pass{border-color:var(--green);background:rgba(52,211,153,.08);color:var(--green)}
+.lr-section-header.fail{border-color:var(--red);background:rgba(248,113,113,.08);color:var(--red)}
+.lr-section-stats{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);font-weight:400}
+.lr-project-name{letter-spacing:.5px}
+.lr-test-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;padding:4px 0 8px}
 .live-done{background:var(--green-dim);color:var(--green);text-align:center;padding:10px;font-weight:600;font-size:12px}
 .live-done.has-failures{background:var(--red-dim);color:var(--red)}
 .live-close{padding:4px 10px;font-size:10px;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text2);cursor:pointer}
@@ -168,7 +186,9 @@ tbody tr.selected td{background:var(--accent-dim)}
 .gallery-item{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:border-color .15s}
 .gallery-item:hover{border-color:var(--accent)}
 .gallery-item img{width:100%;height:150px;object-fit:cover;display:block}
-.gallery-item .cap{padding:6px 10px;font-size:10px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gallery-item .cap{padding:6px 10px;font-size:10px;color:var(--text2);display:flex;align-items:center;gap:4px}
+.gallery-item .cap .cap-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.gallery-item .cap .ss-hash{flex-shrink:0}
 
 /* ── Inline Run Detail ── */
 .run-detail-row td{padding:0!important;border-bottom:2px solid var(--border-hi)}
@@ -187,7 +207,9 @@ tbody tr.selected td{background:var(--accent-dim)}
 .rd-shot{width:120px;border-radius:4px;overflow:hidden;border:1px solid var(--border);cursor:pointer;transition:border-color .15s,transform .15s}
 .rd-shot:hover{border-color:var(--accent);transform:scale(1.03)}
 .rd-shot img{width:100%;height:72px;object-fit:cover;display:block}
-.rd-shot .rd-shot-cap{font-size:9px;color:var(--text3);padding:4px 6px;background:var(--surface2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-shot .rd-shot-cap{font-size:9px;color:var(--text3);padding:4px 6px;background:var(--surface2)}
+.rd-shot .rd-shot-cap .cap-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd-shot .rd-shot-cap .ss-hash{margin-top:3px}
 .rd-shot.err-shot{border-color:rgba(239,68,68,.4)}
 .rd-shot.err-shot .rd-shot-cap{color:var(--red)}
 .rd-logs{margin-top:10px}
@@ -212,12 +234,19 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
 .modal.open{display:flex}
 .modal img{max-width:100%;max-height:90vh;border-radius:var(--r);cursor:default}
 
+/* ── Screenshot Hash Badge ── */
+.ss-hash{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:10px;font-family:var(--mono);font-size:9px;font-weight:500;background:var(--surface3);border:1px solid var(--border);color:var(--text2);cursor:pointer;transition:all .15s;user-select:none;white-space:nowrap;vertical-align:middle}
+.ss-hash:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.ss-hash.copied{border-color:var(--green);color:var(--green);background:var(--green-dim)}
+.ss-hash .ss-icon{font-size:10px;line-height:1}
+
 /* ── Responsive ── */
 @media(max-width:768px){
   .sidebar{width:60px}.sidebar-logo h1,.sidebar-section-label,.nav-item span:not(.icon),.pool-info,.sidebar select,.sidebar-logo .ver{display:none}
   .nav-item{justify-content:center;padding:12px}.nav-item .icon{width:auto}
   .main{margin-left:60px}
-  .suite-grid,.live-tests,.gallery{grid-template-columns:1fr}
+  .suite-grid,.gallery{grid-template-columns:1fr}
+  .lr-test-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -364,11 +393,36 @@ function css(n){return n.replace(/[^a-zA-Z0-9\-_]/g,'_')}
 function dur(ms){return ms>=1000?(ms/1000).toFixed(1)+'s':ms+'ms'}
 function fdate(iso){return iso?new Date(iso).toLocaleString():'--'}
 
+/* ── Screenshot hash helpers ── */
+var ssHashCache={};
+async function ssHash(filePath){
+  if(ssHashCache[filePath])return ssHashCache[filePath];
+  var data=new TextEncoder().encode(filePath);
+  var buf=await crypto.subtle.digest('SHA-256',data);
+  var hex=Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0')}).join('');
+  var h=hex.slice(0,8);
+  ssHashCache[filePath]=h;
+  return h;
+}
+function ssHashSync(filePath){return ssHashCache[filePath]||null}
+function copyHash(hash,badge){
+  navigator.clipboard.writeText('ss:'+hash).then(function(){
+    badge.classList.add('copied');
+    setTimeout(function(){badge.classList.remove('copied')},1200);
+  });
+}
+function createHashBadge(hash){
+  var badge=el('span',{className:'ss-hash',onclick:function(e){e.stopPropagation();copyHash(hash,badge)}},[
+    el('span',{className:'ss-icon'},'\u2318'),
+    document.createTextNode('ss:'+hash)
+  ]);
+  return badge;
+}
+
 /* ── State ── */
 var S={
   ws:null,project:null,view:'suites',selectedRun:null,
-  live:{on:false,done:false,total:0,completed:0,passed:0,failed:0,active:0,tests:{}},
-  liveExpanded:new Set()
+  liveRuns:{},liveExpanded:new Set(),liveSSOpen:new Set()
 };
 
 /* ── Navigation ── */
@@ -398,39 +452,54 @@ function connectWS(){
   S.ws.onmessage=function(e){try{handleWS(JSON.parse(e.data))}catch(x){}};
 }
 
+function getLiveRun(m){
+  var rid=m.runId;if(!rid)return null;
+  if(!S.liveRuns[rid])S.liveRuns[rid]={on:true,done:false,total:0,completed:0,passed:0,failed:0,active:0,tests:{},project:m.project||null,cwd:m.cwd||null,runId:rid};
+  return S.liveRuns[rid];
+}
+function anyLiveRunning(){for(var k in S.liveRuns)if(S.liveRuns[k].on)return true;return false}
+
 function handleWS(m){
   switch(m.event){
     case 'pool:status':renderPool(m.data);break;
     case 'run:start':
-      S.live={on:true,done:false,total:m.total,completed:0,passed:0,failed:0,active:0,tests:{},project:m.project||null,cwd:m.cwd||null};
-      S.liveExpanded=new Set();
+      var r=getLiveRun(m);
+      r.total=m.total;r.on=true;r.done=false;
+      S.liveExpanded=new Set();S.liveSSOpen=new Set();
       showView('live');renderLive();break;
     case 'test:start':
-      S.live.active=m.activeCount;
-      S.live.tests[m.name]={status:'running',actions:0,totalActions:0,error:null,actionLog:[]};
+      var r=getLiveRun(m);if(!r)break;
+      r.active=m.activeCount;
+      r.tests[m.name]={status:'running',actions:0,totalActions:0,error:null,actionLog:[],screenshots:[]};
       renderLive();break;
     case 'test:action':
-      if(S.live.tests[m.name]){
-        var t=S.live.tests[m.name];
-        t.actions=m.actionIndex+1;t.totalActions=m.totalActions;t.actionType=m.action.type;
-        t.actionLog.push({type:m.action.type,selector:m.action.selector||null,value:m.action.value||null,text:m.action.text||null,success:m.success,duration:m.duration,error:m.error||null});
-      }
+      var r=getLiveRun(m);if(!r||!r.tests[m.name])break;
+      var t=r.tests[m.name];
+      t.actions=m.actionIndex+1;t.totalActions=m.totalActions;t.actionType=m.action.type;
+      t.actionLog.push({type:m.action.type,selector:m.action.selector||null,value:m.action.value||null,text:m.action.text||null,success:m.success,duration:m.duration,error:m.error||null});
+      if(m.screenshotPath)t.screenshots.push(m.screenshotPath);
       renderLive();break;
     case 'test:retry':
-      if(S.live.tests[m.name])S.live.tests[m.name].retry=m.attempt+'/'+m.maxAttempts;
+      var r=getLiveRun(m);if(!r||!r.tests[m.name])break;
+      r.tests[m.name].retry=m.attempt+'/'+m.maxAttempts;
       renderLive();break;
     case 'test:complete':
-      S.live.completed++;
-      if(m.success){S.live.passed++;if(S.live.tests[m.name])S.live.tests[m.name].status='passed'}
-      else{S.live.failed++;if(S.live.tests[m.name]){S.live.tests[m.name].status='failed';S.live.tests[m.name].error=m.error}}
-      if(S.live.tests[m.name])S.live.tests[m.name].duration=m.duration;
-      S.live.active=Math.max(0,S.live.active-1);
+      var r=getLiveRun(m);if(!r)break;
+      r.completed++;
+      if(m.success){r.passed++;if(r.tests[m.name])r.tests[m.name].status='passed'}
+      else{r.failed++;if(r.tests[m.name]){r.tests[m.name].status='failed';r.tests[m.name].error=m.error}}
+      if(r.tests[m.name]){
+        r.tests[m.name].duration=m.duration;
+        if(m.screenshots&&m.screenshots.length)r.tests[m.name].screenshots=m.screenshots;
+        if(m.errorScreenshot)r.tests[m.name].errorScreenshot=m.errorScreenshot;
+      }
+      r.active=Math.max(0,r.active-1);
       renderLive();break;
     case 'run:complete':
-      S.live.on=false;S.live.done=true;S.live.active=0;
+      var r=getLiveRun(m);if(r){r.on=false;r.done=true;r.active=0}
       renderLive();refreshRuns();refreshProjects();break;
     case 'run:error':
-      S.live.on=false;S.live.done=true;S.live.tests.__error={status:'failed',error:m.error};
+      var r=getLiveRun(m);if(r){r.on=false;r.done=true;r.tests.__error={status:'failed',error:m.error}}
       renderLive();break;
     case 'db:updated':
       refreshRuns();refreshProjects();refreshScreenshots();break;
@@ -440,7 +509,7 @@ function handleWS(m){
 /* ── API ── */
 function api(p){return fetch(p).then(function(r){return r.json()})}
 function triggerRun(suite,projectId){
-  if(S.live.on)return;
+  if(anyLiveRunning())return;
   var body={};
   if(suite)body.suite=suite;
   if(projectId)body.projectId=projectId;
@@ -683,22 +752,25 @@ function loadDetailInline(id,detailTr){
 
       // Screenshots per test
       var shots=[];
+      var hashes=r.screenshotHashes||{};
       (r.screenshots||[]).forEach(function(p){
         var fname=p.split('/').pop();
-        shots.push({path:p,label:fname,type:'screenshot'});
+        shots.push({path:p,label:fname,type:'screenshot',hash:hashes[p]||null});
       });
       if(r.errorScreenshot){
         var ename=r.errorScreenshot.split('/').pop();
-        shots.push({path:r.errorScreenshot,label:ename,type:'error'});
+        shots.push({path:r.errorScreenshot,label:ename,type:'error',hash:hashes[r.errorScreenshot]||null});
       }
       if(shots.length){
         var shotsWrap=el('div',{className:'rd-shots'});
         shots.forEach(function(s){
           var src='/api/image?path='+encodeURIComponent(s.path);
           var img=document.createElement('img');img.src=src;img.alt=s.label;img.loading='lazy';
+          var capEl=el('div',{className:'rd-shot-cap'},[el('span',{className:'cap-name'},s.label)]);
+          if(s.hash){capEl.appendChild(createHashBadge(s.hash))}
+          else{(function(c,fp){ssHash(fp).then(function(h){c.appendChild(createHashBadge(h))})})(capEl,s.path)}
           var shotEl=el('div',{className:'rd-shot'+(s.type==='error'?' err-shot':''),onclick:function(e){e.stopPropagation();openModal(src)}},[
-            img,
-            el('div',{className:'rd-shot-cap'},s.label)
+            img,capEl
           ]);
           shotsWrap.appendChild(shotEl);
         });
@@ -752,8 +824,12 @@ function refreshScreenshots(){
     files.forEach(function(f){
       var src='/api/image?path='+encodeURIComponent(f.path);
       var img=document.createElement('img');img.src=src;img.alt=f.name;img.loading='lazy';
+      var capEl=el('div',{className:'cap'},[el('span',{className:'cap-name'},f.name)]);
+      (function(c,fp){
+        ssHash(fp).then(function(h){c.appendChild(createHashBadge(h))});
+      })(capEl,f.path);
       var item=el('div',{className:'gallery-item',onclick:function(){openModal(src)}},[
-        img,el('div',{className:'cap'},f.name)
+        img,capEl
       ]);gal.appendChild(item);
     });
   }).catch(function(){});
@@ -762,50 +838,50 @@ function refreshScreenshots(){
 /* ── Live Execution ── */
 function renderLive(){
   var panel=$('#livePanel'),grid=$('#liveTests'),navLive=$('#navLive'),liveEmpty=$('#liveEmpty');
-  var L=S.live;
+  var runs=S.liveRuns;
+  var runIds=Object.keys(runs);
 
-  if(!L.on&&!L.done){
+  if(runIds.length===0){
     panel.classList.remove('active');
     navLive.style.display='none';
     liveEmpty.style.display='block';
     return;
   }
 
-  // Show Live nav + auto-switch on run start
   navLive.style.display='';
   liveEmpty.style.display='none';
   panel.classList.add('active');
 
-  // Update badge count
-  var activeCount=Object.keys(L.tests).filter(function(n){return n!=='__error'&&L.tests[n].status==='running'}).length;
-  $('#liveBadge').textContent=L.on?activeCount:L.completed;
-  $('#liveBadge').style.background=L.on?'var(--purple-dim)':L.failed>0?'var(--red-dim)':'var(--green-dim)';
-  $('#liveBadge').style.color=L.on?'var(--purple)':L.failed>0?'var(--red)':'var(--green)';
+  // Aggregate stats across all runs
+  var gTotal=0,gCompleted=0,gPassed=0,gFailed=0,gActive=0,gRunning=false,gDone=true;
+  runIds.forEach(function(rid){
+    var r=runs[rid];gTotal+=r.total;gCompleted+=r.completed;gPassed+=r.passed;gFailed+=r.failed;gActive+=r.active;
+    if(r.on)gRunning=true;if(!r.done)gDone=false;
+  });
 
-  $('#liveTotal').textContent=L.total;
-  $('#livePass').textContent=L.passed;
-  $('#liveFail').textContent=L.failed;
-  $('#liveActive').textContent=L.active;
-  var pct=L.total>0?L.completed/L.total*100:0;
+  var badgeActive=0;
+  runIds.forEach(function(rid){var r=runs[rid];Object.keys(r.tests).forEach(function(n){if(n!=='__error'&&r.tests[n].status==='running')badgeActive++})});
+  $('#liveBadge').textContent=gRunning?badgeActive:gCompleted;
+  $('#liveBadge').style.background=gRunning?'var(--purple-dim)':gFailed>0?'var(--red-dim)':'var(--green-dim)';
+  $('#liveBadge').style.color=gRunning?'var(--purple)':gFailed>0?'var(--red)':'var(--green)';
+
+  $('#liveTotal').textContent=gTotal;
+  $('#livePass').textContent=gPassed;
+  $('#liveFail').textContent=gFailed;
+  $('#liveActive').textContent=gActive;
+  var pct=gTotal>0?gCompleted/gTotal*100:0;
   $('#liveProgressFill').style.width=pct+'%';
 
-  // Project info
-  var projEl=$('#liveProject'),projName=$('#liveProjectName'),projCwd=$('#liveProjectCwd');
-  if(L.project||L.cwd){
-    projEl.style.display='flex';
-    projName.textContent=L.project||(L.cwd?L.cwd.split('/').pop():'');
-    projCwd.textContent=L.cwd||'';
-  } else {
-    projEl.style.display='none';
-  }
+  // Hide single-project info (now shown per-section)
+  $('#liveProject').style.display='none';
 
   // Header state
   var lbl=panel.querySelector('.live-header .label');
-  if(L.done){
-    lbl.textContent=L.failed>0?'COMPLETED WITH FAILURES':'ALL TESTS PASSED';
-    lbl.style.color=L.failed>0?'var(--red)':'var(--green)';
+  if(!gRunning&&gDone){
+    lbl.textContent=gFailed>0?'COMPLETED WITH FAILURES':'ALL TESTS PASSED';
+    lbl.style.color=gFailed>0?'var(--red)':'var(--green)';
     var dot=lbl.querySelector('.dot');if(dot)dot.remove();
-    $('#liveProgressFill').style.background=L.failed>0?'var(--red)':'var(--green)';
+    $('#liveProgressFill').style.background=gFailed>0?'var(--red)':'var(--green)';
   } else {
     if(!lbl.querySelector('.dot')){
       lbl.textContent='';
@@ -815,76 +891,120 @@ function renderLive(){
     $('#liveProgressFill').style.background='var(--purple)';
   }
 
-  // Test cards
+  // Render per-run sections
   grid.textContent='';
-  var names=Object.keys(L.tests);
-  names.forEach(function(name){
-    if(name==='__error')return;
-    var t=L.tests[name];
-    var iconText=t.status==='passed'?'\u2714':t.status==='failed'?'\u2718':'\u25CF';
-    var iconColor=t.status==='passed'?'color:var(--green)':t.status==='failed'?'color:var(--red)':'color:var(--purple)';
-    var meta='';
-    if(t.status==='running'){
-      meta=t.actionType?('Step '+(t.actions||0)+'/'+(t.totalActions||'?')):'starting...';
-      if(t.retry)meta='Retry '+t.retry;
-    } else if(t.status==='passed'){
-      meta=t.duration||'done';
-    } else if(t.status==='failed'){
-      meta=t.error||'failed';
-    }
-    // Action log steps
-    var stepsEl=el('div',{className:'lt-actions'});
-    if(t.actionLog&&t.actionLog.length>0){
-      t.actionLog.forEach(function(a,idx){
-        var detail=a.selector||a.value||a.text||'';
-        var durText=a.duration!=null?(a.duration<1000?a.duration+'ms':(a.duration/1000).toFixed(1)+'s'):'';
-        var stepIcon=a.success?'\u2714':'\u2718';
-        var stepCls=a.success?'ok':'fail';
-        var step=el('div',{className:'lt-step'},[
-          el('span',{className:'step-icon '+stepCls},stepIcon),
-          el('span',{className:'step-type'},a.type),
-          el('span',{className:'step-detail'},detail),
-          el('span',{className:'step-dur'},durText)
-        ]);
-        stepsEl.appendChild(step);
-      });
-      // If still running, add a spinner step for the next action
-      if(t.status==='running'&&t.actions<t.totalActions){
-        var pendingStep=el('div',{className:'lt-step'},[
-          el('span',{className:'step-icon run spinner-small'}),
-          el('span',{className:'step-type',style:'opacity:.6'},'waiting...')
-        ]);
-        stepsEl.appendChild(pendingStep);
+  runIds.forEach(function(rid){
+    var L=runs[rid];
+    // Project section header
+    var projLabel=L.project||(L.cwd?L.cwd.split('/').pop():'Run');
+    var runStatus=L.done?(L.failed>0?'fail':'pass'):'running';
+    var sectionHeader=el('div',{className:'lr-section-header '+runStatus},[
+      el('span',{className:'lr-project-name'},projLabel),
+      el('span',{className:'lr-section-stats'},[
+        el('span',{},L.completed+'/'+L.total),
+        L.failed>0?el('span',{style:'color:var(--red);margin-left:6px'},L.failed+' failed'):null,
+        L.on?el('span',{className:'spinner-small',style:'margin-left:6px'}):null
+      ])
+    ]);
+    grid.appendChild(sectionHeader);
+
+    var testGrid=el('div',{className:'lr-test-grid'});
+    var names=Object.keys(L.tests);
+    names.forEach(function(name){
+      if(name==='__error')return;
+      var t=L.tests[name];
+      var testKey=rid+'::'+name;
+      var iconText=t.status==='passed'?'\u2714':t.status==='failed'?'\u2718':'\u25CF';
+      var iconColor=t.status==='passed'?'color:var(--green)':t.status==='failed'?'color:var(--red)':'color:var(--purple)';
+      var meta='';
+      if(t.status==='running'){
+        meta=t.actionType?('Step '+(t.actions||0)+'/'+(t.totalActions||'?')):'starting...';
+        if(t.retry)meta='Retry '+t.retry;
+      } else if(t.status==='passed'){meta=t.duration||'done'}
+      else if(t.status==='failed'){meta=t.error||'failed'}
+      // Action log
+      var stepsEl=el('div',{className:'lt-actions'});
+      if(t.actionLog&&t.actionLog.length>0){
+        t.actionLog.forEach(function(a){
+          var detail=a.selector||a.value||a.text||'';
+          var durText=a.duration!=null?(a.duration<1000?a.duration+'ms':(a.duration/1000).toFixed(1)+'s'):'';
+          stepsEl.appendChild(el('div',{className:'lt-step'},[
+            el('span',{className:'step-icon '+(a.success?'ok':'fail')},a.success?'\u2714':'\u2718'),
+            el('span',{className:'step-type'},a.type),
+            el('span',{className:'step-detail'},detail),
+            el('span',{className:'step-dur'},durText)
+          ]));
+        });
+        if(t.status==='running'&&t.actions<t.totalActions){
+          stepsEl.appendChild(el('div',{className:'lt-step'},[el('span',{className:'step-icon run spinner-small'}),el('span',{className:'step-type',style:'opacity:.6'},'waiting...')]));
+        }
+      } else if(t.status==='running'){
+        stepsEl.appendChild(el('div',{className:'lt-step'},[el('span',{className:'step-icon run spinner-small'}),el('span',{className:'step-type',style:'opacity:.6'},'connecting...')]));
       }
-    } else if(t.status==='running'){
-      stepsEl.appendChild(el('div',{className:'lt-step'},[el('span',{className:'step-icon run spinner-small'}),el('span',{className:'step-type',style:'opacity:.6'},'connecting...')]));
-    }
-    var isFinished=t.status==='passed'||t.status==='failed';
-    var isCollapsed=isFinished&&!S.liveExpanded.has(name);
-    var durText=t.duration||'';
-    var summaryEl=el('div',{className:'lt-summary'},[
-      el('span',{className:'lt-dur'},durText),
-      el('span',{className:'lt-expand'},isCollapsed?'\u25BC':'\u25B2')
-    ]);
-    var card=el('div',{className:'live-test '+t.status+(isCollapsed?' collapsed':'')},[
-      el('div',{className:'lt-name'},[
-        t.status==='running'?el('span',{className:'spinner'}):el('span',{className:'lt-icon',style:iconColor},iconText),
-        document.createTextNode(' '+name),
-        summaryEl
-      ]),
-      el('div',{className:'lt-meta'},meta),
-      stepsEl
-    ]);
-    if(isFinished){
-      card.addEventListener('click',function(){
-        if(S.liveExpanded.has(name))S.liveExpanded.delete(name);
-        else S.liveExpanded.add(name);
-        renderLive();
-      });
-    }
-    grid.appendChild(card);
-    // Auto-scroll action log to bottom
-    if(!isCollapsed)stepsEl.scrollTop=stepsEl.scrollHeight;
+      var isFinished=t.status==='passed'||t.status==='failed';
+      var isCollapsed=isFinished&&!S.liveExpanded.has(testKey);
+      var summaryEl=el('div',{className:'lt-summary'},[
+        el('span',{className:'lt-dur'},t.duration||''),
+        el('span',{className:'lt-expand'},isCollapsed?'\u25BC':'\u25B2')
+      ]);
+      // Screenshots section
+      var ssEl=null;
+      var allSS=(t.screenshots||[]).slice();
+      if(t.errorScreenshot)allSS.push(t.errorScreenshot);
+      if(allSS.length>0){
+        var ssOpen=S.liveSSOpen&&S.liveSSOpen.has(testKey);
+        var toggle=el('div',{className:'lt-screenshots-toggle'+(ssOpen?' open':'')},[
+          el('span',{className:'ss-arrow'},'\u25B6'),
+          el('span',{},'Screenshots ('+allSS.length+')')
+        ]);
+        var ssGridEl=el('div',{className:'lt-screenshots-grid'});
+        allSS.forEach(function(ssPath){
+          var fname=ssPath.split('/').pop();
+          var isErr=t.errorScreenshot&&ssPath===t.errorScreenshot;
+          var thumb=el('div',{className:'lt-ss-thumb'});
+          var img=document.createElement('img');
+          img.src='/api/image?path='+encodeURIComponent(ssPath);
+          img.alt=fname;img.loading='lazy';
+          if(isErr)thumb.style.borderColor='var(--red)';
+          thumb.appendChild(img);
+          thumb.addEventListener('click',function(e){e.stopPropagation();openModal('/api/image?path='+encodeURIComponent(ssPath),fname)});
+          var labelEl=el('div',{className:'lt-ss-label'},[el('span',{style:'overflow:hidden;text-overflow:ellipsis;white-space:nowrap'},fname)]);
+          // Compute hash async and append badge
+          (function(lbl,sp){
+            ssHash(sp).then(function(h){lbl.appendChild(createHashBadge(h))});
+          })(labelEl,ssPath);
+          ssGridEl.appendChild(el('div',{},[thumb,labelEl]));
+        });
+        toggle.addEventListener('click',function(e){
+          e.stopPropagation();
+          if(S.liveSSOpen.has(testKey))S.liveSSOpen.delete(testKey);else S.liveSSOpen.add(testKey);
+          toggle.classList.toggle('open');
+          ssGridEl.style.display=ssGridEl.style.display==='grid'?'none':'grid';
+        });
+        if(ssOpen)ssGridEl.style.display='grid';
+        ssEl=el('div',{className:'lt-screenshots'},[toggle,ssGridEl]);
+      }
+      var card=el('div',{className:'live-test '+t.status+(isCollapsed?' collapsed':'')},[
+        el('div',{className:'lt-name'},[
+          t.status==='running'?el('span',{className:'spinner'}):el('span',{className:'lt-icon',style:iconColor},iconText),
+          document.createTextNode(' '+name),
+          summaryEl
+        ]),
+        el('div',{className:'lt-meta'},meta),
+        stepsEl
+      ]);
+      if(ssEl)card.appendChild(ssEl);
+      if(isFinished){
+        card.addEventListener('click',function(){
+          if(S.liveExpanded.has(testKey))S.liveExpanded.delete(testKey);
+          else S.liveExpanded.add(testKey);
+          renderLive();
+        });
+      }
+      testGrid.appendChild(card);
+      if(!isCollapsed)stepsEl.scrollTop=stepsEl.scrollHeight;
+    });
+    grid.appendChild(testGrid);
   });
 }
 

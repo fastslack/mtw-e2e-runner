@@ -17,6 +17,7 @@ import { waitForPool, getPoolStatus } from './pool.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from './runner.js';
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { startDashboard, stopDashboard } from './dashboard.js';
+import { lookupScreenshotHash } from './db.js';
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -142,6 +143,21 @@ export const TOOLS = [
           description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
         },
       },
+    },
+  },
+  {
+    name: 'e2e_screenshot',
+    description:
+      'Retrieve a screenshot by its hash (e.g. ss:a3f2b1c9). Returns the image. Hashes are shown in the dashboard next to screenshots.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        hash: {
+          type: 'string',
+          description: 'Screenshot hash with or without ss: prefix (e.g. "ss:a3f2b1c9" or "a3f2b1c9")',
+        },
+      },
+      required: ['hash'],
     },
   },
   {
@@ -337,6 +353,32 @@ async function handlePoolStatus(args) {
   return textResult(lines.join('\n'));
 }
 
+async function handleScreenshot(args) {
+  if (!args.hash) return errorResult('Missing required parameter: hash');
+
+  const row = lookupScreenshotHash(args.hash);
+  if (!row) return errorResult(`Screenshot not found for hash: ${args.hash}`);
+
+  if (!fs.existsSync(row.file_path)) {
+    return errorResult(`Screenshot file no longer exists: ${row.file_path}`);
+  }
+
+  const data = fs.readFileSync(row.file_path);
+  const base64 = data.toString('base64');
+  const ext = path.extname(row.file_path).toLowerCase();
+  const mimeTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+  const mimeType = mimeTypes[ext] || 'image/png';
+  const filename = path.basename(row.file_path);
+  const hash = row.hash;
+
+  return {
+    content: [
+      { type: 'text', text: `Screenshot ss:${hash} (${filename})` },
+      { type: 'image', data: base64, mimeType },
+    ],
+  };
+}
+
 // Module-level state for stdio path only
 let dashboardHandle = null;
 
@@ -383,6 +425,8 @@ export async function dispatchTool(name, args = {}) {
       return await handleCreateTest(args);
     case 'e2e_pool_status':
       return await handlePoolStatus(args);
+    case 'e2e_screenshot':
+      return await handleScreenshot(args);
     case 'e2e_dashboard_start':
       return await handleDashboardStart(args);
     case 'e2e_dashboard_stop':

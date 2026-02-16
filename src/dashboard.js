@@ -17,7 +17,7 @@ import { createWebSocketServer } from './websocket.js';
 import { getPoolStatus, waitForPool } from './pool.js';
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
-import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, closeDb } from './db.js';
+import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
 
@@ -239,6 +239,37 @@ export async function startDashboard(config) {
         return;
       }
 
+      // API: serve screenshot by hash (e.g. /api/screenshot-hash/a3f2b1c9)
+      const ssHashMatch = pathname.match(/^\/api\/screenshot-hash\/([a-f0-9]{8})$/);
+      if (ssHashMatch) {
+        try {
+          const row = dbLookupScreenshotHash(ssHashMatch[1]);
+          if (!row) { jsonResponse(res, { error: 'Hash not found' }, 404); return; }
+          let realPath;
+          try { realPath = fs.realpathSync(row.file_path); } catch {
+            jsonResponse(res, { error: 'File not found' }, 404); return;
+          }
+          const allowedDirs = [path.resolve(config.screenshotsDir)];
+          try {
+            const projects = dbListProjects();
+            for (const p of projects) {
+              const dir = p.screenshots_dir || path.join(p.cwd, 'e2e', 'screenshots');
+              allowedDirs.push(path.resolve(dir));
+            }
+          } catch { /* */ }
+          const isAllowed = allowedDirs.some(dir => realPath.startsWith(dir + path.sep) || realPath === dir);
+          if (!isAllowed) { jsonResponse(res, { error: 'Access denied' }, 403); return; }
+          const ext = path.extname(realPath).toLowerCase();
+          const mimeTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+          if (!mimeTypes[ext]) { jsonResponse(res, { error: 'Not an image' }, 400); return; }
+          res.writeHead(200, { 'Content-Type': mimeTypes[ext] });
+          fs.createReadStream(realPath).pipe(res);
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
       // API: serve image by absolute path (for cross-project screenshots)
       if (pathname === '/api/image') {
         const imgPath = url.searchParams.get('path');
@@ -256,7 +287,8 @@ export async function startDashboard(config) {
         try {
           const projects = dbListProjects();
           for (const p of projects) {
-            if (p.screenshots_dir) allowedDirs.push(path.resolve(p.screenshots_dir));
+            const dir = p.screenshots_dir || path.join(p.cwd, 'e2e', 'screenshots');
+            allowedDirs.push(path.resolve(dir));
           }
         } catch { /* db may not be available */ }
         const isAllowed = allowedDirs.some(dir => realPath.startsWith(dir + path.sep) || realPath === dir);
@@ -384,14 +416,17 @@ export async function startDashboard(config) {
   });
 
   // Live event buffer — replayed to new WS clients so F5 restores the Live view
-  let liveEventBuffer = [];
+  // Keyed by runId to support concurrent runs from different projects
+  const liveEventBuffers = {};
 
   function bufferLiveEvent(data) {
-    if (data.event === 'run:start') liveEventBuffer = [];
-    liveEventBuffer.push(data);
+    const rid = data.runId;
+    if (!rid) return;
+    if (data.event === 'run:start') liveEventBuffers[rid] = [];
+    if (!liveEventBuffers[rid]) liveEventBuffers[rid] = [];
+    liveEventBuffers[rid].push(data);
     if (data.event === 'run:complete' || data.event === 'run:error') {
-      // Keep completed state for 30s so late joiners still see results
-      setTimeout(() => { if (liveEventBuffer.length && liveEventBuffer[liveEventBuffer.length - 1] === data) liveEventBuffer = []; }, 30000);
+      setTimeout(() => { delete liveEventBuffers[rid]; }, 30000);
     }
   }
 
@@ -399,8 +434,8 @@ export async function startDashboard(config) {
     allowedOrigins: [`http://localhost:${port}`, `http://127.0.0.1:${port}`],
     onConnect(socket) {
       // Replay live state for new/reconnected clients
-      if (liveEventBuffer.length > 0) {
-        for (const evt of liveEventBuffer) {
+      for (const rid of Object.keys(liveEventBuffers)) {
+        for (const evt of liveEventBuffers[rid]) {
           wss.sendTo(socket, JSON.stringify(evt));
         }
       }

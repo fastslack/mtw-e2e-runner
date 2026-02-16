@@ -170,12 +170,25 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 | `e2e_list` | List available test suites with test names and counts |
 | `e2e_create_test` | Create a new test JSON file with name, tests array, and optional hooks |
 | `e2e_pool_status` | Get Chrome pool availability, running sessions, capacity |
+| `e2e_screenshot` | Retrieve a screenshot by its hash (e.g. `ss:a3f2b1c9`). Returns the image. |
 
 > **Note:** Pool start/stop are only available via CLI (`e2e-runner pool start|stop`), not via MCP — restarting the pool kills all active sessions from other clients.
 
 **Multi-project support (`cwd`):** All MCP tools accept an optional `cwd` parameter — the absolute path to the project root. Because the MCP server is a long-lived process whose `process.cwd()` is fixed at startup, Claude Code passes its current working directory on each tool call. The `cwd` is threaded through `loadConfig(cliArgs, cwd)`, `startPool(config, cwd)`, and `stopPool(config, cwd)` so that config files, test directories, and `.e2e-pool/` are resolved per-project. When `cwd` is omitted (e.g. CLI usage), `process.cwd()` is used as fallback — fully backwards compatible.
 
 **Implementation:** `src/mcp-server.js` uses the low-level `@modelcontextprotocol/sdk` Server class with `StdioServerTransport`. Console output is redirected to stderr to keep the MCP stdio protocol clean. Tools use the same functions as the CLI (`loadConfig`, `runTestsParallel`, `listSuites`, etc.) but skip `printReport()` and return structured JSON results instead.
+
+### Screenshot Hashes
+
+Every screenshot captured during a run is assigned a short hash (`ss:a3f2b1c9`) — the first 8 hex chars of the SHA-256 of its file path. Hashes are deterministic and computed identically on the server (Node `crypto`) and in the browser (Web Crypto API).
+
+**Flow**: screenshot saved on disk → `saveRun()` registers hash in SQLite `screenshot_hashes` table → dashboard shows `[⌘ ss:XXXXXXXX]` badge (click to copy) → user pastes hash in Claude Code → `e2e_screenshot` MCP tool looks up hash, reads file, returns the image.
+
+- Hashes are registered inside the `saveRun()` transaction (covers both action screenshots and error screenshots)
+- The `ss:` prefix is optional when calling `e2e_screenshot` — stripped during lookup
+- Dashboard computes hashes client-side (Web Crypto) for the Live view (before `persistRun()` writes to DB)
+- Run detail API (`/api/db/runs/:id`) includes `screenshotHashes` map per test result
+- Dashboard endpoint `/api/screenshot-hash/:hash` serves the image by hash
 
 ### Pool-Aware Queue
 

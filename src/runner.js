@@ -68,7 +68,7 @@ async function waitForSlot(poolUrl, pollIntervalMs = 2000, maxWaitMs = 60000) {
 }
 
 /** Runs a single test end-to-end */
-export async function runTest(test, config, hooks = {}) {
+export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
   let browser = null;
   let page = null;
 
@@ -112,7 +112,7 @@ export async function runTest(test, config, hooks = {}) {
           duration: actionDuration,
           result: actionResult,
         });
-        if (config.onProgress) config.onProgress({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: true, duration: actionDuration });
+        progressFn({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: true, duration: actionDuration, screenshotPath: actionResult?.screenshot || null });
       } catch (error) {
         const actionDuration = Date.now() - actionStart;
         result.actions.push({
@@ -121,7 +121,7 @@ export async function runTest(test, config, hooks = {}) {
           duration: actionDuration,
           error: error.message,
         });
-        if (config.onProgress) config.onProgress({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: false, duration: actionDuration, error: error.message });
+        progressFn({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: false, duration: actionDuration, error: error.message });
         throw error;
       }
     }
@@ -183,7 +183,11 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
   }
 
   const concurrency = config.concurrency || 3;
-  if (config.onProgress) config.onProgress({ event: 'run:start', total: tests.length, concurrency, timestamp: new Date().toISOString(), project: config.projectName || null, cwd: config._cwd || null });
+  const _runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const _proj = config.projectName || null;
+  const _cwd = config._cwd || null;
+  const _progress = (data) => config.onProgress && config.onProgress({ ...data, runId: _runId, project: _proj, cwd: _cwd });
+  _progress({ event: 'run:start', total: tests.length, concurrency, timestamp: new Date().toISOString() });
 
   const results = [];
   const queue = [...tests];
@@ -194,7 +198,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       const test = queue.shift();
       activeCount++;
       log('▶▶▶', `${C.cyan}${test.name}${C.reset} ${C.dim}(${activeCount} active)${C.reset}`);
-      if (config.onProgress) config.onProgress({ event: 'test:start', name: test.name, activeCount, queueRemaining: queue.length });
+      _progress({ event: 'test:start', name: test.name, activeCount, queueRemaining: queue.length });
 
       const maxAttempts = (test.retries ?? config.retries ?? 0) + 1;
       const testTimeout = test.timeout ?? config.testTimeout ?? 60000;
@@ -207,7 +211,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
         });
 
         try {
-          result = await Promise.race([runTest(test, config, hooks), timeoutPromise]);
+          result = await Promise.race([runTest(test, config, hooks, _progress), timeoutPromise]);
         } catch (error) {
           result = {
             name: test.name,
@@ -226,14 +230,15 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
 
         if (result.success || attempt === maxAttempts) break;
         log('🔄', `${C.yellow}${test.name}${C.reset} failed, retrying (${attempt}/${maxAttempts})...`);
-        if (config.onProgress) config.onProgress({ event: 'test:retry', name: test.name, attempt, maxAttempts });
+        _progress({ event: 'test:retry', name: test.name, attempt, maxAttempts });
         await sleep(config.retryDelay || 1000);
       }
 
       results.push(result);
       activeCount--;
 
-      if (config.onProgress) config.onProgress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, errorScreenshot: result.errorScreenshot });
+      const screenshots = result.actions.filter(a => a.result?.screenshot).map(a => a.result.screenshot);
+      _progress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, errorScreenshot: result.errorScreenshot, screenshots });
 
       if (result.success) {
         const flaky = result.attempt > 1 ? ` ${C.yellow}(flaky, passed on attempt ${result.attempt}/${result.maxAttempts})${C.reset}` : '';
@@ -276,10 +281,10 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     }
   }
 
-  if (config.onProgress) {
+  {
     const passed = results.filter(r => r.success).length;
     const failed = results.filter(r => !r.success).length;
-    config.onProgress({ event: 'run:complete', summary: { total: results.length, passed, failed } });
+    _progress({ event: 'run:complete', summary: { total: results.length, passed, failed } });
   }
 
   return results;

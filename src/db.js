@@ -9,6 +9,7 @@
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import crypto from 'crypto';
 import Database from 'better-sqlite3';
 
 const DB_DIR = path.join(os.homedir(), '.e2e-runner');
@@ -98,6 +99,18 @@ function migrate(db) {
   } catch {
     db.exec('ALTER TABLE test_results ADD COLUMN screenshots TEXT');
   }
+
+  // Screenshot hashes table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS screenshot_hashes (
+      hash       TEXT PRIMARY KEY,
+      file_path  TEXT NOT NULL,
+      project_id INTEGER REFERENCES projects(id),
+      run_id     INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ss_path ON screenshot_hashes(file_path);
+  `);
 }
 
 /** Upsert a project row. Returns the project id. */
@@ -137,6 +150,37 @@ export function getProjectTestsDir(projectId) {
   return row.tests_dir || path.join(row.cwd, 'e2e', 'tests');
 }
 
+/** Compute an 8-char hex hash from a file path (deterministic, matches client-side Web Crypto). */
+export function computeScreenshotHash(filePath) {
+  return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 8);
+}
+
+/** Register a screenshot hash. INSERT OR IGNORE avoids duplicates. */
+export function registerScreenshotHash(hash, filePath, projectId, runDbId) {
+  const d = getDb();
+  d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id) VALUES (?, ?, ?, ?)').run(hash, filePath, projectId || null, runDbId || null);
+}
+
+/** Look up a screenshot by hash. Strips optional "ss:" prefix. Returns { hash, file_path, project_id } or null. */
+export function lookupScreenshotHash(rawHash) {
+  const d = getDb();
+  const hash = rawHash.replace(/^ss:/, '');
+  return d.prepare('SELECT hash, file_path, project_id FROM screenshot_hashes WHERE hash = ?').get(hash) || null;
+}
+
+/** Batch lookup: given an array of file paths, returns { [path]: hash } map. */
+export function getScreenshotHashes(filePaths) {
+  if (!filePaths || filePaths.length === 0) return {};
+  const d = getDb();
+  const stmt = d.prepare('SELECT hash, file_path FROM screenshot_hashes WHERE file_path = ?');
+  const result = {};
+  for (const fp of filePaths) {
+    const row = stmt.get(fp);
+    if (row) result[fp] = row.hash;
+  }
+  return result;
+}
+
 /** Save a run + its test results in a single transaction. Returns the run's DB id. */
 export function saveRun(projectId, report, runId, suiteName) {
   const d = getDb();
@@ -151,6 +195,8 @@ export function saveRun(projectId, report, runId, suiteName) {
     INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+
+  const insertHash = d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id) VALUES (?, ?, ?, ?)');
 
   const tx = d.transaction(() => {
     const runInfo = insertRun.run(
@@ -191,6 +237,14 @@ export function saveRun(projectId, report, runId, suiteName) {
         r.networkErrors ? JSON.stringify(r.networkErrors) : null,
         screenshots.length ? JSON.stringify(screenshots) : null,
       );
+
+      // Register screenshot hashes
+      for (const ssPath of screenshots) {
+        insertHash.run(computeScreenshotHash(ssPath), ssPath, projectId, runDbId);
+      }
+      if (r.errorScreenshot) {
+        insertHash.run(computeScreenshotHash(r.errorScreenshot), r.errorScreenshot, projectId, runDbId);
+      }
     }
 
     return runDbId;
@@ -204,7 +258,7 @@ export function listProjects() {
   const d = getDb();
   return d.prepare(`
     SELECT
-      p.id, p.cwd, p.name, p.created_at, p.updated_at,
+      p.id, p.cwd, p.name, p.screenshots_dir, p.tests_dir, p.created_at, p.updated_at,
       COUNT(r.id)                       AS run_count,
       MAX(r.generated_at)               AS last_run_at,
       (SELECT r2.pass_rate FROM runs r2 WHERE r2.project_id = p.id ORDER BY r2.generated_at DESC LIMIT 1) AS last_pass_rate
@@ -236,6 +290,15 @@ export function getRunDetail(runDbId) {
 
   const tests = d.prepare('SELECT * FROM test_results WHERE run_id = ? ORDER BY id').all(runDbId);
 
+  // Collect all screenshot paths for batch hash lookup
+  const allPaths = [];
+  for (const t of tests) {
+    const ss = t.screenshots ? JSON.parse(t.screenshots) : [];
+    allPaths.push(...ss);
+    if (t.error_screenshot) allPaths.push(t.error_screenshot);
+  }
+  const hashMap = getScreenshotHashes(allPaths);
+
   return {
     runId: run.run_id,
     summary: {
@@ -247,20 +310,30 @@ export function getRunDetail(runDbId) {
     },
     generatedAt: run.generated_at,
     suiteName: run.suite_name,
-    results: tests.map(t => ({
-      name: t.name,
-      success: !!t.success,
-      error: t.error,
-      startTime: t.start_time,
-      endTime: t.end_time,
-      durationMs: t.duration_ms,
-      attempt: t.attempt,
-      maxAttempts: t.max_attempts,
-      errorScreenshot: t.error_screenshot,
-      screenshots: t.screenshots ? JSON.parse(t.screenshots) : [],
-      consoleLogs: t.console_logs ? JSON.parse(t.console_logs) : [],
-      networkErrors: t.network_errors ? JSON.parse(t.network_errors) : [],
-    })),
+    results: tests.map(t => {
+      const screenshots = t.screenshots ? JSON.parse(t.screenshots) : [];
+      const testPaths = [...screenshots];
+      if (t.error_screenshot) testPaths.push(t.error_screenshot);
+      const screenshotHashes = {};
+      for (const p of testPaths) {
+        if (hashMap[p]) screenshotHashes[p] = hashMap[p];
+      }
+      return {
+        name: t.name,
+        success: !!t.success,
+        error: t.error,
+        startTime: t.start_time,
+        endTime: t.end_time,
+        durationMs: t.duration_ms,
+        attempt: t.attempt,
+        maxAttempts: t.max_attempts,
+        errorScreenshot: t.error_screenshot,
+        screenshots,
+        consoleLogs: t.console_logs ? JSON.parse(t.console_logs) : [],
+        networkErrors: t.network_errors ? JSON.parse(t.network_errors) : [],
+        screenshotHashes,
+      };
+    }),
   };
 }
 
