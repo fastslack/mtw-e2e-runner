@@ -152,7 +152,7 @@ export function persistRun(report, config, suiteName) {
 
   try {
     const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
-    saveRunToDb(projectId, report, runId, suiteName || null);
+    saveRunToDb(projectId, report, runId, suiteName || null, config.triggeredBy || null);
   } catch (err) {
     process.stderr.write(`[e2e-runner] SQLite write failed: ${err.message}\n`);
   }
@@ -206,6 +206,18 @@ export function printReport(report, screenshotsDir) {
       console.log(`  ${C.yellow}⚠${C.reset} ${r.name}:`);
       r.networkErrors.forEach(e => {
         console.log(`    ${C.dim}[${e.error || 'unknown'}]${C.reset} ${e.url}`);
+      });
+    });
+  }
+
+  const networkRequests = report.results.filter(r => r.networkLogs?.length > 0);
+  if (networkRequests.length > 0) {
+    console.log(`\n${C.cyan}${C.bold}NETWORK REQUESTS:${C.reset}`);
+    networkRequests.forEach(r => {
+      console.log(`  ${C.cyan}▸${C.reset} ${r.name}:`);
+      r.networkLogs.forEach(n => {
+        const statusColor = n.status < 300 ? C.green : n.status < 400 ? C.yellow : C.red;
+        console.log(`    ${C.dim}${n.method}${C.reset} ${statusColor}${n.status}${C.reset} ${n.url} ${C.dim}(${n.duration}ms)${C.reset}`);
       });
     });
   }

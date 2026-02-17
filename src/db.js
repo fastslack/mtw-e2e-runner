@@ -100,6 +100,20 @@ function migrate(db) {
     db.exec('ALTER TABLE test_results ADD COLUMN screenshots TEXT');
   }
 
+  // Add network_logs column if upgrading from older schema
+  try {
+    db.prepare('SELECT network_logs FROM test_results LIMIT 0').run();
+  } catch {
+    db.exec('ALTER TABLE test_results ADD COLUMN network_logs TEXT');
+  }
+
+  // Add triggered_by column if upgrading from older schema
+  try {
+    db.prepare('SELECT triggered_by FROM runs LIMIT 0').run();
+  } catch {
+    db.exec('ALTER TABLE runs ADD COLUMN triggered_by TEXT');
+  }
+
   // Screenshot hashes table
   db.exec(`
     CREATE TABLE IF NOT EXISTS screenshot_hashes (
@@ -182,18 +196,18 @@ export function getScreenshotHashes(filePaths) {
 }
 
 /** Save a run + its test results in a single transaction. Returns the run's DB id. */
-export function saveRun(projectId, report, runId, suiteName) {
+export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
   const d = getDb();
   const { summary, results, generatedAt } = report;
 
   const insertRun = d.prepare(`
-    INSERT INTO runs (project_id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (project_id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name, triggered_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertTest = d.prepare(`
-    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots, network_logs)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertHash = d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id) VALUES (?, ?, ?, ?)');
@@ -209,6 +223,7 @@ export function saveRun(projectId, report, runId, suiteName) {
       summary.duration,
       generatedAt,
       suiteName || null,
+      triggeredBy || null,
     );
     const runDbId = runInfo.lastInsertRowid;
 
@@ -236,6 +251,7 @@ export function saveRun(projectId, report, runId, suiteName) {
         r.consoleLogs ? JSON.stringify(r.consoleLogs) : null,
         r.networkErrors ? JSON.stringify(r.networkErrors) : null,
         screenshots.length ? JSON.stringify(screenshots) : null,
+        r.networkLogs?.length ? JSON.stringify(r.networkLogs) : null,
       );
 
       // Register screenshot hashes
@@ -244,6 +260,9 @@ export function saveRun(projectId, report, runId, suiteName) {
       }
       if (r.errorScreenshot) {
         insertHash.run(computeScreenshotHash(r.errorScreenshot), r.errorScreenshot, projectId, runDbId);
+      }
+      if (r.verificationScreenshot) {
+        insertHash.run(computeScreenshotHash(r.verificationScreenshot), r.verificationScreenshot, projectId, runDbId);
       }
     }
 
@@ -273,7 +292,7 @@ export function listProjects() {
 export function getProjectRuns(projectId, limit = 50, offset = 0) {
   const d = getDb();
   return d.prepare(`
-    SELECT id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name
+    SELECT id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name, triggered_by
     FROM runs
     WHERE project_id = ?
     ORDER BY generated_at DESC
@@ -310,6 +329,7 @@ export function getRunDetail(runDbId) {
     },
     generatedAt: run.generated_at,
     suiteName: run.suite_name,
+    triggeredBy: run.triggered_by || null,
     results: tests.map(t => {
       const screenshots = t.screenshots ? JSON.parse(t.screenshots) : [];
       const testPaths = [...screenshots];
@@ -331,6 +351,7 @@ export function getRunDetail(runDbId) {
         screenshots,
         consoleLogs: t.console_logs ? JSON.parse(t.console_logs) : [],
         networkErrors: t.network_errors ? JSON.parse(t.network_errors) : [],
+        networkLogs: t.network_logs ? JSON.parse(t.network_logs) : [],
         screenshotHashes,
       };
     }),
@@ -342,7 +363,7 @@ export function getAllRuns(limit = 50, offset = 0) {
   const d = getDb();
   return d.prepare(`
     SELECT r.id, r.run_id, r.total, r.passed, r.failed, r.pass_rate, r.duration,
-           r.generated_at, r.suite_name, p.name AS project_name, p.id AS project_id
+           r.generated_at, r.suite_name, r.triggered_by, p.name AS project_name, p.id AS project_id
     FROM runs r
     JOIN projects p ON p.id = r.project_id
     ORDER BY r.generated_at DESC

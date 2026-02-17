@@ -37,18 +37,38 @@ JSON-driven E2E test runner. Define browser tests as simple JSON action arrays, 
 
 ## Quick Start
 
-```bash
-# Install
-npm install @matware/e2e-runner
+**One-liner** (requires Node.js >= 20 and Docker):
 
-# Scaffold project structure
+```bash
+curl -fsSL https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/scripts/quickstart.sh | bash
+```
+
+This checks prerequisites, installs the package, scaffolds the project, starts the Chrome pool, and runs the sample tests.
+
+**Step by step:**
+
+```bash
+# 1. Install
+npm install --save-dev @matware/e2e-runner
+
+# 2. Scaffold project structure
 npx e2e-runner init
 
-# Start Chrome pool (requires Docker)
+# 3. Start Chrome pool (requires Docker)
 npx e2e-runner pool start
 
-# Run all tests
+# 4. Run all tests
 npx e2e-runner run --all
+
+# 5. Open the dashboard
+npx e2e-runner dashboard
+```
+
+**Add to Claude Code** (once, available in all projects):
+
+```bash
+claude mcp add --transport stdio --scope user e2e-runner \
+  -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
 
 The `init` command creates:
@@ -436,7 +456,45 @@ e2e-runner dashboard                  # Start on default port 8484
 e2e-runner dashboard --port 9090      # Custom port
 ```
 
-Features: live test execution, screenshot viewer with copy-to-clipboard hashes (`ss:a3f2b1c9`), multi-project support via SQLite, run history with auto-pruning.
+### Live Execution
+
+Monitor tests in real-time as they run. Each test shows its steps with individual durations, pass/fail status, and active connection count.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-live-running.png" alt="Dashboard - Live test execution" width="900" />
+</p>
+
+### Test Suites
+
+Browse all test suites across multiple projects. Run a single suite or all tests with one click.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-suites.png" alt="Dashboard - Test suites grid" width="900" />
+</p>
+
+### Run History
+
+Track pass rate trends over time with the bar chart. Click any row to expand the full run detail with per-test results, screenshots, and console errors.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-runs.png" alt="Dashboard - Run history with trend chart" width="900" />
+</p>
+
+### Run Detail
+
+Expanded view shows each test with PASS/FAIL badge, screenshot thumbnails with copyable hashes (`ss:77c28b5a`), and formatted console errors.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-run-detail.png" alt="Dashboard - Run detail with screenshot hashes" width="900" />
+</p>
+
+### Screenshot Gallery
+
+Browse all captured screenshots per project. Includes both manual captures and error screenshots.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-screenshots-gallery.png" alt="Dashboard - Screenshot gallery" width="900" />
+</p>
 
 ## Architecture
 

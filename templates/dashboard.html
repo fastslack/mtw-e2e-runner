@@ -53,12 +53,13 @@ a{color:var(--accent);text-decoration:none}
 .ws-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
 
 /* ── Main ── */
-.main{margin-left:232px;flex:1;min-height:100vh}
+.main{margin-left:232px;flex:1;min-height:100vh;display:flex;flex-direction:column}
 .main-header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--surface);position:sticky;top:0;z-index:40}
 .main-header .title{font-family:var(--sans);font-size:16px;font-weight:600}
 .main-header .actions{margin-left:auto;display:flex;gap:8px}
 .view{display:none;padding:24px}
 .view.active{display:block}
+#view-live.active{display:flex;flex-direction:column;flex:1;min-height:calc(100vh - 0px);padding:16px}
 
 /* ── Buttons ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);font-family:var(--mono);font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:all .15s;white-space:nowrap}
@@ -116,8 +117,8 @@ tbody tr.selected td{background:var(--accent-dim)}
 .suite-card-tests li::before{content:">";position:absolute;left:0;color:var(--text3)}
 
 /* ── Live Execution ── */
-.live-panel{display:none;background:var(--surface);border:1px solid var(--purple);border-radius:var(--r);overflow:hidden;animation:fadeSlide .3s ease}
-.live-panel.active{display:block}
+.live-panel{display:none;background:var(--surface);border:1px solid var(--purple);border-radius:var(--r);overflow:hidden;animation:fadeSlide .3s ease;flex-direction:column}
+.live-panel.active{display:flex;flex:1;min-height:0}
 @keyframes fadeSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
 .live-header{padding:14px 16px;display:flex;align-items:center;gap:16px;border-bottom:1px solid var(--border);background:var(--purple-dim)}
 .live-header .label{font-weight:600;color:var(--purple);font-size:12px;display:flex;align-items:center;gap:8px}
@@ -128,7 +129,7 @@ tbody tr.selected td{background:var(--accent-dim)}
 .live-stats span strong{color:var(--text)}
 .live-progress{height:3px;background:var(--surface3)}
 .live-progress-fill{height:100%;background:var(--purple);transition:width .4s;border-radius:0 2px 2px 0}
-.live-tests{padding:12px 16px;display:flex;flex-direction:column;gap:2px;max-height:calc(100vh - 200px);overflow-y:auto}
+.live-tests{padding:12px 16px;display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto;min-height:0}
 .live-test{padding:10px 12px;border-radius:var(--r);border-left:3px solid var(--text3);background:var(--surface2);font-size:11px;transition:border-color .2s,padding .25s,max-height .35s cubic-bezier(.4,0,.2,1)}
 .live-test.running{border-left-color:var(--purple)}
 .live-test.passed{border-left-color:var(--green)}
@@ -175,6 +176,10 @@ tbody tr.selected td{background:var(--accent-dim)}
 .live-done.has-failures{background:var(--red-dim);color:var(--red)}
 .live-close{padding:4px 10px;font-size:10px;background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text2);cursor:pointer}
 .live-close:hover{color:var(--text);border-color:var(--border-hi)}
+.live-clear-btn{padding:5px 12px;font-size:10px;font-family:var(--mono);font-weight:500;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text2);cursor:pointer;display:none;transition:all .15s}
+.live-clear-btn:hover{color:var(--text);border-color:var(--border-hi);background:var(--surface3)}
+.lr-dismiss{padding:2px 6px;font-size:9px;font-family:var(--mono);background:transparent;border:1px solid transparent;border-radius:4px;color:var(--text3);cursor:pointer;transition:all .15s;margin-left:auto}
+.lr-dismiss:hover{color:var(--red);border-color:rgba(239,68,68,.3);background:var(--red-dim)}
 
 .live-nav-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--purple);animation:pulse 1.5s infinite}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--purple);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
@@ -189,6 +194,16 @@ tbody tr.selected td{background:var(--accent-dim)}
 .gallery-item .cap{padding:6px 10px;font-size:10px;color:var(--text2);display:flex;align-items:center;gap:4px}
 .gallery-item .cap .cap-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .gallery-item .cap .ss-hash{flex-shrink:0}
+.ss-search{display:flex;gap:8px;margin-bottom:16px;align-items:center}
+.ss-search input{flex:1;max-width:320px;padding:8px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:12px}
+.ss-search input:focus{outline:none;border-color:var(--accent)}
+.ss-search input::placeholder{color:var(--text3)}
+.ss-search button{padding:8px 16px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:12px;cursor:pointer;transition:background .15s,border-color .15s}
+.ss-search button:hover{background:var(--surface3);border-color:var(--accent)}
+.ss-search-result{margin-bottom:20px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
+.ss-search-result img{max-width:100%;max-height:500px;border-radius:var(--r);cursor:pointer;display:block;margin-top:8px}
+.ss-search-result .ss-result-label{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px}
+.ss-search-error{font-size:11px;color:var(--red);margin-bottom:12px}
 
 /* ── Inline Run Detail ── */
 .run-detail-row td{padding:0!important;border-bottom:2px solid var(--border-hi)}
@@ -217,6 +232,34 @@ tbody tr.selected td{background:var(--accent-dim)}
 .rd-log-item{font-size:10px;padding:3px 8px;border-left:2px solid var(--border);margin-bottom:2px;color:var(--text2);word-break:break-all}
 .rd-log-item.error{border-left-color:var(--red);color:var(--red)}
 .rd-log-item.warning,.rd-log-item.warn{border-left-color:var(--amber);color:var(--amber)}
+.rd-net-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:10px;color:var(--text3);font-family:var(--mono);padding:2px 0;user-select:none;margin-top:10px}
+.rd-net-toggle:hover{color:var(--text)}
+.rd-net-toggle .net-arrow{transition:transform .2s;font-size:8px}
+.rd-net-toggle.open .net-arrow{transform:rotate(90deg)}
+.rd-net-list{display:none;margin-top:6px}
+.rd-net-toggle.open+.rd-net-list{display:block}
+.rd-net-row{display:flex;align-items:center;gap:8px;padding:3px 8px;font-size:10px;font-family:var(--mono);border-left:2px solid var(--border);margin-bottom:0;cursor:pointer;transition:background .15s}
+.rd-net-row:hover{background:var(--surface2)}
+.rd-net-row.has-error{border-left-color:var(--red)}
+.rd-net-method{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;min-width:36px;text-align:center}
+.rd-net-method.get{background:var(--accent-dim);color:var(--accent)}
+.rd-net-method.post{background:var(--green-dim);color:var(--green)}
+.rd-net-method.put,.rd-net-method.patch{background:var(--amber-dim);color:var(--amber)}
+.rd-net-method.delete{background:var(--red-dim);color:var(--red)}
+.rd-net-status{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:600;min-width:28px;text-align:center}
+.rd-net-status.s2xx{background:var(--green-dim);color:var(--green)}
+.rd-net-status.s3xx{background:var(--amber-dim);color:var(--amber)}
+.rd-net-status.s4xx,.rd-net-status.s5xx{background:var(--red-dim);color:var(--red)}
+.rd-net-url{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.rd-net-dur{color:var(--text3);flex-shrink:0}
+.rd-net-expand{font-size:8px;color:var(--text3);transition:transform .2s;flex-shrink:0}
+.rd-net-row.open .rd-net-expand{transform:rotate(90deg)}
+.rd-net-detail{display:none;margin:0 0 4px 0;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);font-size:10px;font-family:var(--mono);overflow:hidden}
+.rd-net-row.open+.rd-net-detail{display:block}
+.rd-net-detail-section{margin-bottom:8px}
+.rd-net-detail-section:last-child{margin-bottom:0}
+.rd-net-detail-title{font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.rd-net-detail-body{white-space:pre-wrap;word-break:break-all;color:var(--text2);max-height:300px;overflow-y:auto;line-height:1.5}
 .rd-retries{font-size:10px;color:var(--amber);margin-bottom:6px}
 .rd-summary{display:flex;gap:16px;margin-bottom:14px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);font-size:11px;align-items:center}
 .rd-summary .rd-s-label{color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:.08em}
@@ -239,6 +282,14 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
 .ss-hash:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
 .ss-hash.copied{border-color:var(--green);color:var(--green);background:var(--green-dim)}
 .ss-hash .ss-icon{font-size:10px;line-height:1}
+
+/* ── Trigger Source Badges ── */
+.trigger-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;font-family:var(--mono);white-space:nowrap}
+.trigger-badge.src-dashboard{background:rgba(127,140,162,.10);color:var(--text2)}
+.trigger-badge.src-mcp{background:var(--purple-dim);color:var(--purple)}
+.trigger-badge.src-cli{background:var(--accent-dim);color:var(--accent)}
+.trigger-badge.src-unknown{background:rgba(70,75,98,.15);color:var(--text3)}
+.trigger-badge .trig-icon{font-size:11px;line-height:1}
 
 /* ── Responsive ── */
 @media(max-width:768px){
@@ -312,6 +363,7 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
           <span style="color:var(--red)">Fail: <strong id="liveFail">0</strong></span>
           <span style="color:var(--purple)">Active: <strong id="liveActive">0</strong></span>
         </div>
+        <button class="live-clear-btn" id="liveClearBtn">Clear All</button>
       </div>
       <div class="live-progress"><div class="live-progress-fill" id="liveProgressFill" style="width:0"></div></div>
       <div class="live-tests" id="liveTests"></div>
@@ -360,6 +412,11 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
   <!-- Screenshots View -->
   <div class="view" id="view-screenshots">
     <div style="font-family:var(--sans);font-size:16px;font-weight:600;margin-bottom:20px">Screenshots</div>
+    <div class="ss-search">
+      <input type="text" id="ssHashInput" placeholder="Search by hash (e.g. ss:a3f2b1c9)" spellcheck="false">
+      <button id="ssHashBtn">Search</button>
+    </div>
+    <div id="ssSearchResult"></div>
     <div class="gallery" id="screenshotGallery"></div>
     <div class="empty" id="screenshotsEmpty" style="display:none">
       <div class="empty-icon">&#9635;</div>
@@ -393,6 +450,60 @@ function css(n){return n.replace(/[^a-zA-Z0-9\-_]/g,'_')}
 function dur(ms){return ms>=1000?(ms/1000).toFixed(1)+'s':ms+'ms'}
 function fdate(iso){return iso?new Date(iso).toLocaleString():'--'}
 
+/** Pretty-print a string if it's JSON, otherwise return as-is */
+function prettyJson(str){
+  if(!str)return '';
+  try{return JSON.stringify(JSON.parse(str),null,2)}catch(e){return str}
+}
+
+/** Format headers object as readable string */
+function fmtHeaders(h){
+  if(!h||typeof h!=='object')return '';
+  return Object.keys(h).map(function(k){return k+': '+h[k]}).join('\n');
+}
+
+/** Build a clickable network row + expandable detail panel */
+function buildNetRow(n){
+  var mCls='rd-net-method '+n.method.toLowerCase();
+  var sCls='rd-net-status '+(n.status<300?'s2xx':n.status<400?'s3xx':n.status<500?'s4xx':'s5xx');
+  var hasDetail=n.requestBody||n.responseBody||n.requestHeaders||n.responseHeaders;
+  var rowCls='rd-net-row'+(n.status>=400?' has-error':'');
+  var row=el('div',{className:rowCls},[
+    hasDetail?el('span',{className:'rd-net-expand'},'\u25B6'):null,
+    el('span',{className:mCls},n.method),
+    el('span',{className:sCls},String(n.status)+(n.statusText?' '+n.statusText:'')),
+    el('span',{className:'rd-net-url'},n.url),
+    el('span',{className:'rd-net-dur'},dur(n.duration))
+  ]);
+  var detail=null;
+  if(hasDetail){
+    var sections=[];
+    if(n.requestHeaders){
+      var s=el('div',{className:'rd-net-detail-section'},[el('div',{className:'rd-net-detail-title'},'Request Headers')]);
+      s.appendChild(el('div',{className:'rd-net-detail-body'},fmtHeaders(n.requestHeaders)));
+      sections.push(s);
+    }
+    if(n.requestBody){
+      var s2=el('div',{className:'rd-net-detail-section'},[el('div',{className:'rd-net-detail-title'},'Request Body')]);
+      s2.appendChild(el('div',{className:'rd-net-detail-body'},prettyJson(n.requestBody)));
+      sections.push(s2);
+    }
+    if(n.responseHeaders){
+      var s3=el('div',{className:'rd-net-detail-section'},[el('div',{className:'rd-net-detail-title'},'Response Headers')]);
+      s3.appendChild(el('div',{className:'rd-net-detail-body'},fmtHeaders(n.responseHeaders)));
+      sections.push(s3);
+    }
+    if(n.responseBody){
+      var s4=el('div',{className:'rd-net-detail-section'},[el('div',{className:'rd-net-detail-title'},'Response Body')]);
+      s4.appendChild(el('div',{className:'rd-net-detail-body'},prettyJson(n.responseBody)));
+      sections.push(s4);
+    }
+    detail=el('div',{className:'rd-net-detail'},sections);
+    row.addEventListener('click',function(e){e.stopPropagation();row.classList.toggle('open')});
+  }
+  return {row:row,detail:detail};
+}
+
 /* ── Screenshot hash helpers ── */
 var ssHashCache={};
 async function ssHash(filePath){
@@ -415,6 +526,18 @@ function createHashBadge(hash){
   var badge=el('span',{className:'ss-hash',onclick:function(e){e.stopPropagation();copyHash(hash,badge)}},[
     el('span',{className:'ss-icon'},'\u2318'),
     document.createTextNode('ss:'+hash)
+  ]);
+  return badge;
+}
+
+/* ── Trigger source badge helper ── */
+function createTriggerBadge(source){
+  var s=source||'unknown';
+  var labels={dashboard:'Dashboard',mcp:'MCP',cli:'CLI',unknown:'--'};
+  var icons={dashboard:'\u{1F464}',mcp:'\u{1F916}',cli:'>_',unknown:'\u2022'};
+  var badge=el('span',{className:'trigger-badge src-'+s},[
+    el('span',{className:'trig-icon'},icons[s]||icons.unknown),
+    document.createTextNode(labels[s]||s)
   ]);
   return badge;
 }
@@ -454,21 +577,30 @@ function connectWS(){
 
 function getLiveRun(m){
   var rid=m.runId;if(!rid)return null;
-  if(!S.liveRuns[rid])S.liveRuns[rid]={on:true,done:false,total:0,completed:0,passed:0,failed:0,active:0,tests:{},project:m.project||null,cwd:m.cwd||null,runId:rid,_lastEvent:Date.now()};
+  if(!S.liveRuns[rid])S.liveRuns[rid]={on:true,done:false,total:0,completed:0,passed:0,failed:0,active:0,tests:{},project:m.project||null,cwd:m.cwd||null,triggeredBy:m.triggeredBy||null,runId:rid,_lastEvent:Date.now()};
   S.liveRuns[rid]._lastEvent=Date.now();
   return S.liveRuns[rid];
 }
 function anyLiveRunning(){for(var k in S.liveRuns)if(S.liveRuns[k].on)return true;return false}
 
-/* Staleness guard: if a live run gets no events for 15s and all tests are complete, auto-finish it */
+/* Staleness guard: auto-finish stuck runs, garbage-collect old finished runs */
 setInterval(function(){
   var changed=false;
   for(var k in S.liveRuns){
     var r=S.liveRuns[k];
-    if(r.on&&!r.done&&Date.now()-r._lastEvent>15000){
-      if(r.completed>=r.total&&r.total>0){r.on=false;r.done=true;r.active=0;changed=true}
-      else if(Date.now()-r._lastEvent>30000){r.on=false;r.done=true;r.stale=true;r.active=0;changed=true}
+    var age=Date.now()-r._lastEvent;
+    /* Mark stuck runs as done */
+    if(r.on&&!r.done){
+      /* 0/0 runs (never received any tests) — mark stale after 10s */
+      if(r.total===0&&age>10000){r.on=false;r.done=true;r.stale=true;r.active=0;changed=true}
+      /* All tests completed but run:complete never arrived */
+      else if(r.completed>=r.total&&r.total>0&&age>15000){r.on=false;r.done=true;r.active=0;changed=true}
+      /* General staleness — no events for 30s */
+      else if(age>30000){r.on=false;r.done=true;r.stale=true;r.active=0;changed=true}
     }
+    /* Auto-remove stale 0/0 runs after 15s, finished runs after 120s */
+    if(r.done&&r.stale&&r.total===0&&age>15000){delete S.liveRuns[k];changed=true}
+    else if(r.done&&age>120000){delete S.liveRuns[k];changed=true}
   }
   if(changed)renderLive();
 },5000);
@@ -477,6 +609,8 @@ function handleWS(m){
   switch(m.event){
     case 'pool:status':renderPool(m.data);break;
     case 'run:start':
+      /* Clear all finished/stale runs when a new one starts */
+      for(var dk in S.liveRuns){if(S.liveRuns[dk].done)delete S.liveRuns[dk]}
       var r=getLiveRun(m);
       r.total=m.total;r.on=true;r.done=false;
       S.liveExpanded=new Set();S.liveSSOpen=new Set();
@@ -506,6 +640,7 @@ function handleWS(m){
         r.tests[m.name].duration=m.duration;
         if(m.screenshots&&m.screenshots.length)r.tests[m.name].screenshots=m.screenshots;
         if(m.errorScreenshot)r.tests[m.name].errorScreenshot=m.errorScreenshot;
+        if(m.networkLogs&&m.networkLogs.length)r.tests[m.name].networkLogs=m.networkLogs;
       }
       r.active=Math.max(0,r.active-1);
       renderLive();break;
@@ -619,7 +754,7 @@ function refreshRuns(){
     var htr=document.createElement('tr');
     var cols=[];
     if(!S.project)cols.push('Project');
-    cols=cols.concat(['Suite','Date','Total','Pass','Fail','Rate','Time']);
+    cols=cols.concat(['Suite','Source','Date','Total','Pass','Fail','Rate','Time']);
     cols.forEach(function(c){htr.appendChild(el('th',null,c))});
     head.textContent='';head.appendChild(htr);
     var colSpan=cols.length;
@@ -640,6 +775,7 @@ function refreshRuns(){
       if(r.id===S.selectedRun)tr.classList.add('expanded');
       if(!S.project)tr.appendChild(el('td',{style:'font-weight:600'},r.project_name||'-'));
       tr.appendChild(el('td',{style:'color:var(--accent)'},r.suite_name||'all'));
+      var srcTd=document.createElement('td');srcTd.appendChild(createTriggerBadge(r.triggered_by));tr.appendChild(srcTd);
       tr.appendChild(el('td',null,fdate(r.generated_at)));
       tr.appendChild(el('td',null,String(r.total||0)));
       tr.appendChild(el('td',{style:'color:var(--green)'},String(r.passed||0)));
@@ -726,8 +862,10 @@ function loadDetailInline(id,detailTr){
     var results=d.results||[];
 
     // Summary bar
+    var srcBlock=el('div',null,[el('div',{className:'rd-s-label'},'Source'),el('div',{style:'margin-top:4px'},[createTriggerBadge(d.triggeredBy)])]);
     var summ=el('div',{className:'rd-summary'},[
       el('div',null,[el('div',{className:'rd-s-label'},'Suite'),el('div',{className:'rd-s-val',style:'font-size:13px;color:var(--accent)'},d.suiteName||'all')]),
+      srcBlock,
       el('div',null,[el('div',{className:'rd-s-label'},'Total'),el('div',{className:'rd-s-val'},String(d.summary.total))]),
       el('div',null,[el('div',{className:'rd-s-label'},'Passed'),el('div',{className:'rd-s-val',style:'color:var(--green)'},String(d.summary.passed))]),
       el('div',null,[el('div',{className:'rd-s-label'},'Failed'),el('div',{className:'rd-s-val',style:'color:var(--red)'},String(d.summary.failed))]),
@@ -812,6 +950,27 @@ function loadDetailInline(id,detailTr){
         body.appendChild(netSec);
       }
 
+      // Network API logs (collapsible, clickable rows)
+      if(r.networkLogs&&r.networkLogs.length){
+        var errCount=r.networkLogs.filter(function(n){return n.status>=400}).length;
+        var netLabel='Network ('+r.networkLogs.length+' request'+(r.networkLogs.length!==1?'s':'')+(errCount?', '+errCount+' error'+(errCount!==1?'s':''):'')+')';
+        var netToggle=el('div',{className:'rd-net-toggle'},[
+          el('span',{className:'net-arrow'},'\u25B6'),
+          el('span',{},netLabel)
+        ]);
+        var netList=el('div',{className:'rd-net-list'});
+        r.networkLogs.forEach(function(n){
+          var built=buildNetRow(n);
+          netList.appendChild(built.row);
+          if(built.detail)netList.appendChild(built.detail);
+        });
+        netToggle.addEventListener('click',function(){
+          netToggle.classList.toggle('open');
+        });
+        body.appendChild(netToggle);
+        body.appendChild(netList);
+      }
+
       var testCard=el('div',{className:'rd-test'},[head,body]);
       inner.appendChild(testCard);
     });
@@ -849,7 +1008,56 @@ function refreshScreenshots(){
   }).catch(function(){});
 }
 
+/* ── Screenshot Hash Search ── */
+function searchByHash(){
+  var container=$('#ssSearchResult');
+  container.textContent='';
+  var raw=$('#ssHashInput').value.trim();
+  if(!raw)return;
+  var hash=raw.replace(/^ss:/,'');
+  if(!/^[a-f0-9]{1,8}$/i.test(hash)){
+    container.appendChild(el('div',{className:'ss-search-error'},'Invalid hash format. Expected 8 hex characters (e.g. ss:a3f2b1c9).'));
+    return;
+  }
+  fetch('/api/screenshot-hash/'+hash).then(function(res){
+    if(!res.ok){
+      container.appendChild(el('div',{className:'ss-search-error'},'Screenshot not found for hash: ss:'+hash));
+      return;
+    }
+    return res.blob();
+  }).then(function(blob){
+    if(!blob)return;
+    var url=URL.createObjectURL(blob);
+    var wrap=el('div',{className:'ss-search-result'},[
+      el('div',{className:'ss-result-label'},[
+        createHashBadge(hash),
+        el('span',{},'Found')
+      ])
+    ]);
+    var img=document.createElement('img');
+    img.src=url;
+    img.alt='ss:'+hash;
+    img.addEventListener('click',function(){openModal(url)});
+    wrap.appendChild(img);
+    container.appendChild(wrap);
+  }).catch(function(){
+    container.appendChild(el('div',{className:'ss-search-error'},'Error searching for screenshot.'));
+  });
+}
+$('#ssHashBtn').addEventListener('click',searchByHash);
+$('#ssHashInput').addEventListener('keydown',function(e){if(e.key==='Enter')searchByHash()});
+
 /* ── Live Execution ── */
+function clearFinishedLiveRuns(){
+  for(var k in S.liveRuns){if(S.liveRuns[k].done||!S.liveRuns[k].on)delete S.liveRuns[k]}
+  renderLive();
+}
+function dismissLiveRun(rid){
+  delete S.liveRuns[rid];
+  renderLive();
+}
+$('#liveClearBtn').addEventListener('click',clearFinishedLiveRuns);
+
 function renderLive(){
   var panel=$('#livePanel'),grid=$('#liveTests'),navLive=$('#navLive'),liveEmpty=$('#liveEmpty');
   var runs=S.liveRuns;
@@ -859,6 +1067,7 @@ function renderLive(){
     panel.classList.remove('active');
     navLive.style.display='none';
     liveEmpty.style.display='block';
+    $('#liveClearBtn').style.display='none';
     return;
   }
 
@@ -889,6 +1098,10 @@ function renderLive(){
   // Hide single-project info (now shown per-section)
   $('#liveProject').style.display='none';
 
+  // Show "Clear All" when there are finished/stale runs
+  var hasFinished=runIds.some(function(rid){return runs[rid].done||!runs[rid].on});
+  $('#liveClearBtn').style.display=hasFinished?'inline-block':'none';
+
   // Header state
   var lbl=panel.querySelector('.live-header .label');
   var anyStale=runIds.some(function(rid){return runs[rid].stale});
@@ -913,13 +1126,19 @@ function renderLive(){
     // Project section header
     var projLabel=L.project||(L.cwd?L.cwd.split('/').pop():'Run');
     var runStatus=L.done?(L.failed>0?'fail':'pass'):'running';
+    var dismissBtn=null;
+    if(L.done||!L.on){
+      dismissBtn=el('button',{className:'lr-dismiss',onclick:function(e){e.stopPropagation();dismissLiveRun(rid)}},'\u2715');
+    }
     var sectionHeader=el('div',{className:'lr-section-header '+runStatus},[
       el('span',{className:'lr-project-name'},projLabel),
+      createTriggerBadge(L.triggeredBy),
       el('span',{className:'lr-section-stats'},[
         el('span',{},L.completed+'/'+L.total),
         L.failed>0?el('span',{style:'color:var(--red);margin-left:6px'},L.failed+' failed'):null,
         L.on?el('span',{className:'spinner-small',style:'margin-left:6px'}):null
-      ])
+      ]),
+      dismissBtn
     ]);
     grid.appendChild(sectionHeader);
 
@@ -1009,6 +1228,24 @@ function renderLive(){
         stepsEl
       ]);
       if(ssEl)card.appendChild(ssEl);
+      // Network API logs in live view (clickable rows)
+      if(t.networkLogs&&t.networkLogs.length&&!isCollapsed){
+        var liveErrCount=t.networkLogs.filter(function(n){return n.status>=400}).length;
+        var liveNetLabel='Network ('+t.networkLogs.length+(liveErrCount?', '+liveErrCount+' error'+(liveErrCount!==1?'s':'')+')':')');
+        var liveNetToggle=el('div',{className:'rd-net-toggle',style:'margin:6px 0 0;padding-left:0'},[
+          el('span',{className:'net-arrow'},'\u25B6'),
+          el('span',{},liveNetLabel)
+        ]);
+        var liveNetList=el('div',{className:'rd-net-list'});
+        t.networkLogs.forEach(function(n){
+          var built=buildNetRow(n);
+          liveNetList.appendChild(built.row);
+          if(built.detail)liveNetList.appendChild(built.detail);
+        });
+        liveNetToggle.addEventListener('click',function(e){e.stopPropagation();liveNetToggle.classList.toggle('open')});
+        card.appendChild(liveNetToggle);
+        card.appendChild(liveNetList);
+      }
       if(isFinished){
         card.addEventListener('click',function(){
           if(S.liveExpanded.has(testKey))S.liveExpanded.delete(testKey);

@@ -162,10 +162,18 @@ export async function executeAction(page, action, config) {
       break;
     }
 
-    case 'evaluate':
+    case 'evaluate': {
       // Intentional: runs JS in browser page context (from test JSON files)
-      await page.evaluate(value);
-      break;
+      const evalResult = await page.evaluate(value);
+      // Check return value for failure signals
+      if (typeof evalResult === 'string' && /^(FAIL|ERROR|FAILED)[\s:]/i.test(evalResult)) {
+        throw new Error(`evaluate failed: ${evalResult}`);
+      }
+      if (evalResult === false) {
+        throw new Error('evaluate returned false');
+      }
+      return evalResult !== undefined && evalResult !== null ? { value: evalResult } : null;
+    }
 
     default:
       log('⚠️', `Unknown action: ${type}`);

@@ -13,11 +13,11 @@ import path from 'path';
 import http from 'http';
 
 import { loadConfig } from './config.js';
-import { waitForPool, getPoolStatus } from './pool.js';
+import { waitForPool, getPoolStatus, connectToPool } from './pool.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from './runner.js';
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { startDashboard, stopDashboard } from './dashboard.js';
-import { lookupScreenshotHash } from './db.js';
+import { lookupScreenshotHash, ensureProject, computeScreenshotHash, registerScreenshotHash } from './db.js';
 import { fetchIssue, checkCliAuth, detectProvider } from './issues.js';
 import { buildPrompt, hasApiKey } from './ai-generate.js';
 import { verifyIssue } from './verify.js';
@@ -55,6 +55,10 @@ export const TOOLS = [
         retries: {
           type: 'number',
           description: 'Number of retries for failed tests',
+        },
+        failOnNetworkError: {
+          type: 'boolean',
+          description: 'Fail tests when network requests fail (e.g. ERR_CONNECTION_REFUSED). Default: false.',
         },
         cwd: {
           type: 'string',
@@ -214,6 +218,41 @@ export const TOOLS = [
       required: ['url'],
     },
   },
+  {
+    name: 'e2e_capture',
+    description:
+      'Capture a screenshot of any URL on demand. Connects to the Chrome pool, navigates to the URL, takes a screenshot, and returns the image with its ss:HASH.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'Full URL to capture (e.g. "https://example.com" or "http://host.docker.internal:3000/dashboard")',
+        },
+        filename: {
+          type: 'string',
+          description: 'Output filename (default: capture-<timestamp>.png)',
+        },
+        fullPage: {
+          type: 'boolean',
+          description: 'Capture full scrollable page (default: false)',
+        },
+        selector: {
+          type: 'string',
+          description: 'Wait for this CSS selector before capturing',
+        },
+        delay: {
+          type: 'number',
+          description: 'Wait N milliseconds after page load before capturing (default: 0)',
+        },
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
+      },
+      required: ['url'],
+    },
+  },
 ];
 
 /** Tools exposed on the dashboard — excludes dashboard start/stop (already running). */
@@ -262,8 +301,10 @@ async function handleRun(args) {
   if (args.concurrency) configOverrides.concurrency = args.concurrency;
   if (args.baseUrl) configOverrides.baseUrl = args.baseUrl;
   if (args.retries !== undefined) configOverrides.retries = args.retries;
+  if (args.failOnNetworkError !== undefined) configOverrides.failOnNetworkError = args.failOnNetworkError;
 
   const config = await loadConfig(configOverrides, args.cwd);
+  config.triggeredBy = 'mcp';
 
   await waitForPool(config.poolUrl);
 
@@ -324,10 +365,28 @@ async function handleRun(args) {
     .filter(r => r.networkErrors?.length > 0)
     .map(r => ({ name: r.name, errors: r.networkErrors }));
 
+  const networkLogs = report.results
+    .filter(r => r.networkLogs?.length > 0)
+    .map(r => ({ name: r.name, requests: r.networkLogs }));
+
+  const verifications = report.results
+    .filter(r => r.expect && r.verificationScreenshot)
+    .map(r => ({
+      name: r.name,
+      expect: r.expect,
+      success: r.success,
+      screenshotHash: 'ss:' + computeScreenshotHash(r.verificationScreenshot),
+    }));
+
   if (flaky.length > 0) summary.flaky = flaky;
   if (failures.length > 0) summary.failures = failures;
   if (consoleErrors.length > 0) summary.consoleErrors = consoleErrors;
   if (networkErrors.length > 0) summary.networkErrors = networkErrors;
+  if (networkLogs.length > 0) summary.networkLogs = networkLogs;
+  if (verifications.length > 0) {
+    summary.verifications = verifications;
+    summary.verificationInstructions = 'For each verification, call e2e_screenshot with the screenshotHash to view the screenshot. Then compare what you see against the "expect" description. Report any mismatches as FAIL.';
+  }
 
   return textResult(JSON.stringify(summary, null, 2));
 }
@@ -467,6 +526,62 @@ async function handleIssue(args) {
   return textResult(promptData.prompt);
 }
 
+async function handleCapture(args) {
+  if (!args.url) return errorResult('Missing required parameter: url');
+
+  const config = await loadConfig({}, args.cwd);
+
+  await waitForPool(config.poolUrl);
+
+  let browser;
+  try {
+    browser = await connectToPool(config.poolUrl);
+    const page = await browser.newPage();
+    await page.setViewport(config.viewport);
+    await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    if (args.selector) {
+      await page.waitForSelector(args.selector, { timeout: 10000 });
+    }
+
+    if (args.delay && args.delay > 0) {
+      await new Promise(r => setTimeout(r, args.delay));
+    }
+
+    // Build filename: sanitize and ensure .png
+    let filename = args.filename || `capture-${Date.now()}.png`;
+    filename = path.basename(filename);
+    if (!filename.endsWith('.png')) filename += '.png';
+
+    if (!fs.existsSync(config.screenshotsDir)) {
+      fs.mkdirSync(config.screenshotsDir, { recursive: true });
+    }
+
+    const screenshotPath = path.join(config.screenshotsDir, filename);
+    await page.screenshot({ path: screenshotPath, fullPage: !!args.fullPage });
+
+    // Register hash in SQLite
+    const cwd = args.cwd || process.cwd();
+    const projectName = config.projectName || path.basename(cwd);
+    const projectId = ensureProject(cwd, projectName, config.screenshotsDir, config.testsDir);
+    const hash = computeScreenshotHash(screenshotPath);
+    registerScreenshotHash(hash, screenshotPath, projectId, null);
+
+    // Read image for response
+    const data = fs.readFileSync(screenshotPath);
+    const base64 = data.toString('base64');
+
+    return {
+      content: [
+        { type: 'text', text: `Screenshot saved: ${screenshotPath}\nHash: ss:${hash}` },
+        { type: 'image', data: base64, mimeType: 'image/png' },
+      ],
+    };
+  } finally {
+    if (browser) browser.disconnect();
+  }
+}
+
 // Module-level state for stdio path only
 let dashboardHandle = null;
 
@@ -521,6 +636,8 @@ export async function dispatchTool(name, args = {}) {
       return await handleDashboardStop();
     case 'e2e_issue':
       return await handleIssue(args);
+    case 'e2e_capture':
+      return await handleCapture(args);
     default:
       return errorResult(`Unknown tool: ${name}`);
   }

@@ -422,20 +422,31 @@ export async function startDashboard(config) {
   function bufferLiveEvent(data) {
     const rid = data.runId;
     if (!rid) return;
-    if (data.event === 'run:start') liveEventBuffers[rid] = [];
-    if (!liveEventBuffers[rid]) liveEventBuffers[rid] = [];
-    liveEventBuffers[rid].push(data);
+    if (data.event === 'run:start') liveEventBuffers[rid] = { events: [], ts: Date.now() };
+    if (!liveEventBuffers[rid]) liveEventBuffers[rid] = { events: [], ts: Date.now() };
+    liveEventBuffers[rid].events.push(data);
+    liveEventBuffers[rid].ts = Date.now();
     if (data.event === 'run:complete' || data.event === 'run:error') {
       setTimeout(() => { delete liveEventBuffers[rid]; }, 30000);
     }
   }
+
+  // Purge stale live event buffers (runs that never completed, max 5 min)
+  const bufferPurgeInterval = setInterval(() => {
+    const maxAge = 5 * 60 * 1000;
+    for (const rid of Object.keys(liveEventBuffers)) {
+      if (Date.now() - liveEventBuffers[rid].ts > maxAge) {
+        delete liveEventBuffers[rid];
+      }
+    }
+  }, 30000);
 
   const wss = createWebSocketServer(server, {
     allowedOrigins: [`http://localhost:${port}`, `http://127.0.0.1:${port}`],
     onConnect(socket) {
       // Replay live state for new/reconnected clients
       for (const rid of Object.keys(liveEventBuffers)) {
-        for (const evt of liveEventBuffers[rid]) {
+        for (const evt of liveEventBuffers[rid].events) {
           wss.sendTo(socket, JSON.stringify(evt));
         }
       }
@@ -479,6 +490,7 @@ export async function startDashboard(config) {
         runConfig = { ...config };
       }
 
+      runConfig.triggeredBy = 'dashboard';
       if (params.concurrency) runConfig.concurrency = params.concurrency;
       if (params.baseUrl) runConfig.baseUrl = params.baseUrl;
 
@@ -521,6 +533,7 @@ export async function startDashboard(config) {
         close() {
           clearInterval(pollInterval);
           clearInterval(dbPollInterval);
+          clearInterval(bufferPurgeInterval);
           wss.close();
           server.close();
           closeDb();

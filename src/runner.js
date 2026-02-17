@@ -80,7 +80,9 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     error: null,
     consoleLogs: [],
     networkErrors: [],
+    networkLogs: [],
   };
+  const pendingBodies = [];
 
   try {
     await waitForSlot(config.poolUrl);
@@ -95,6 +97,37 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       result.networkErrors.push({ url: req.url(), error: req.failure()?.errorText });
     });
 
+    const requestTimings = new Map();
+    page.on('request', (req) => {
+      const rt = req.resourceType();
+      if (rt === 'xhr' || rt === 'fetch') requestTimings.set(req, Date.now());
+    });
+    page.on('response', (resp) => {
+      const req = resp.request();
+      const startMs = requestTimings.get(req);
+      if (startMs !== undefined) {
+        requestTimings.delete(req);
+        const entry = {
+          url: req.url(),
+          method: req.method(),
+          status: resp.status(),
+          statusText: resp.statusText(),
+          duration: Date.now() - startMs,
+          requestHeaders: req.headers(),
+          requestBody: null,
+          responseHeaders: resp.headers(),
+          responseBody: null,
+        };
+        try { entry.requestBody = req.postData() || null; } catch { /* */ }
+        result.networkLogs.push(entry);
+        // Read response body async — collect promise for later flush
+        const bodyPromise = resp.text().then(body => {
+          entry.responseBody = body && body.length > 51200 ? body.slice(0, 51200) + '\n...[truncated]' : body;
+        }).catch(() => { /* response may be unavailable */ });
+        pendingBodies.push(bodyPromise);
+      }
+    });
+
     // Run beforeEach hook
     if (hooks.beforeEach?.length) {
       await executeHookActions(page, hooks.beforeEach, config);
@@ -104,7 +137,17 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       const action = test.actions[i];
       const actionStart = Date.now();
       try {
-        const actionResult = await executeAction(page, action, config);
+        let actionResult;
+        if (action.type === 'assert_no_network_errors') {
+          // Handled inline — needs access to result.networkErrors
+          if (result.networkErrors.length > 0) {
+            const summary = result.networkErrors.map(e => `${e.url} (${e.error})`).join(', ');
+            throw new Error(`assert_no_network_errors failed: ${result.networkErrors.length} error(s): ${summary}`);
+          }
+          actionResult = null;
+        } else {
+          actionResult = await executeAction(page, action, config);
+        }
         const actionDuration = Date.now() - actionStart;
         result.actions.push({
           ...action,
@@ -124,6 +167,23 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
         progressFn({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: false, duration: actionDuration, error: error.message });
         throw error;
       }
+    }
+
+    // Fail the test if failOnNetworkError is enabled and network errors occurred
+    if (config.failOnNetworkError && result.networkErrors.length > 0) {
+      const summary = result.networkErrors.map(e => `${e.url} (${e.error})`).join(', ');
+      throw new Error(`Network errors detected (failOnNetworkError=true): ${result.networkErrors.length} error(s): ${summary}`);
+    }
+
+    // Auto-capture verification screenshot if test has "expect"
+    if (test.expect && page) {
+      result.expect = test.expect;
+      try {
+        const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+        const verifyPath = path.join(config.screenshotsDir, `verify-${safeName}-${Date.now()}.png`);
+        await page.screenshot({ path: verifyPath, fullPage: true });
+        result.verificationScreenshot = verifyPath;
+      } catch { /* page may be dead */ }
     }
 
     // Run afterEach hook (success path)
@@ -148,6 +208,10 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       } catch { /* page may be dead */ }
     }
   } finally {
+    // Flush pending response body reads before disconnecting
+    if (pendingBodies.length > 0) {
+      try { await Promise.allSettled(pendingBodies); } catch { /* */ }
+    }
     result.endTime = new Date().toISOString();
     if (page) {
       try { result.finalUrl = page.url(); } catch { /* */ }
@@ -186,7 +250,8 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
   const _runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const _proj = config.projectName || null;
   const _cwd = config._cwd || null;
-  const _progress = (data) => config.onProgress && config.onProgress({ ...data, runId: _runId, project: _proj, cwd: _cwd });
+  const _triggeredBy = config.triggeredBy || 'unknown';
+  const _progress = (data) => config.onProgress && config.onProgress({ ...data, runId: _runId, project: _proj, cwd: _cwd, triggeredBy: _triggeredBy });
   _progress({ event: 'run:start', total: tests.length, concurrency, timestamp: new Date().toISOString() });
 
   const results = [];
@@ -222,6 +287,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
             error: error.message,
             consoleLogs: [],
             networkErrors: [],
+            networkLogs: [],
           };
         }
 
@@ -238,7 +304,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       activeCount--;
 
       const screenshots = result.actions.filter(a => a.result?.screenshot).map(a => a.result.screenshot);
-      _progress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, errorScreenshot: result.errorScreenshot, screenshots });
+      _progress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, networkLogs: result.networkLogs, errorScreenshot: result.errorScreenshot, screenshots });
 
       if (result.success) {
         const flaky = result.attempt > 1 ? ` ${C.yellow}(flaky, passed on attempt ${result.attempt}/${result.maxAttempts})${C.reset}` : '';

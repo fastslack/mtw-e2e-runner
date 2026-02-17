@@ -33,7 +33,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fastslack/mtw-e2e-runner.git"
+    "url": "git+https://github.com/fastslack/mtw-e2e-runner.git"
   },
   "homepage": "https://github.com/fastslack/mtw-e2e-runner#readme",
   "dependencies": {

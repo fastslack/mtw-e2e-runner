@@ -14,6 +14,7 @@
  *   e2e-runner pool status                Show pool status
  *   e2e-runner pool restart               Restart the pool
  *   e2e-runner dashboard                   Start the web dashboard
+ *   e2e-runner capture <url>              Capture a screenshot of any URL
  *   e2e-runner issue <url>                Fetch issue and show details
  *   e2e-runner issue <url> --generate     Generate test file via Claude API
  *   e2e-runner issue <url> --verify       Generate + run + report bug status
@@ -28,13 +29,14 @@ import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../src/config.js';
-import { startPool, stopPool, restartPool, getPoolStatus, waitForPool } from '../src/pool.js';
+import { startPool, stopPool, restartPool, getPoolStatus, waitForPool, connectToPool } from '../src/pool.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
 import { generateReport, saveReport, printReport, persistRun } from '../src/reporter.js';
 import { startDashboard } from '../src/dashboard.js';
 import { fetchIssue } from '../src/issues.js';
 import { buildPrompt, generateTests, hasApiKey } from '../src/ai-generate.js';
 import { verifyIssue } from '../src/verify.js';
+import { ensureProject, computeScreenshotHash, registerScreenshotHash } from '../src/db.js';
 import { log, colors as C } from '../src/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +74,7 @@ function parseCLIConfig() {
   if (getFlag('--port')) cliArgs.dashboardPort = parseInt(getFlag('--port'));
   if (getFlag('--dashboard-port')) cliArgs.dashboardPort = parseInt(getFlag('--dashboard-port'));
   if (getFlag('--project-name')) cliArgs.projectName = getFlag('--project-name');
+  if (hasFlag('--fail-on-network-error')) cliArgs.failOnNetworkError = true;
   return cliArgs;
 }
 
@@ -90,6 +93,12 @@ ${C.bold}Usage:${C.reset}
 
   e2e-runner dashboard                  Start the web dashboard
   e2e-runner dashboard --port <port>    Custom port (default: 8484)
+
+  e2e-runner capture <url>               Capture a screenshot of any URL
+  e2e-runner capture <url> --full-page  Capture full scrollable page
+  e2e-runner capture <url> --selector <sel>  Wait for selector before capture
+  e2e-runner capture <url> --delay <ms> Wait before capturing
+  e2e-runner capture <url> --filename <name> Custom filename
 
   e2e-runner issue <url>                Fetch issue and show details
   e2e-runner issue <url> --generate     Generate test file via Claude API
@@ -118,6 +127,7 @@ ${C.bold}Options:${C.reset}
   --output <format>        Report format: json, junit, both (default: json)
   --env <name>             Environment profile from config (default: default)
   --project-name <name>    Project display name for dashboard (default: directory name)
+  --fail-on-network-error  Fail tests when network requests fail (e.g. ERR_CONNECTION_REFUSED)
 
 ${C.bold}Config:${C.reset}
   Looks for e2e.config.js or e2e.config.json in the current directory.
@@ -128,6 +138,7 @@ ${C.bold}Config:${C.reset}
 async function cmdRun() {
   const cliArgs = parseCLIConfig();
   const config = await loadConfig(cliArgs);
+  config.triggeredBy = 'cli';
   let tests = [];
   let hooks = {};
 
@@ -351,6 +362,69 @@ async function cmdDashboard() {
   process.on('SIGTERM', shutdown);
 }
 
+async function cmdCapture() {
+  const url = args[1];
+  if (!url || url.startsWith('--')) {
+    console.error(`${C.red}Usage: e2e-runner capture <url> [--filename <name>] [--full-page] [--selector <sel>] [--delay <ms>]${C.reset}`);
+    process.exit(1);
+  }
+
+  const cliArgs = parseCLIConfig();
+  const config = await loadConfig(cliArgs);
+
+  console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
+
+  log('🔌', 'Checking Chrome Pool...');
+  await waitForPool(config.poolUrl);
+
+  let browser;
+  try {
+    browser = await connectToPool(config.poolUrl);
+    const page = await browser.newPage();
+    await page.setViewport(config.viewport);
+
+    log('📸', `Navigating to ${C.cyan}${url}${C.reset}`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+    const selector = getFlag('--selector');
+    if (selector) {
+      log('⏳', `Waiting for selector: ${C.dim}${selector}${C.reset}`);
+      await page.waitForSelector(selector, { timeout: 10000 });
+    }
+
+    const delay = getFlag('--delay');
+    if (delay) {
+      await new Promise(r => setTimeout(r, parseInt(delay)));
+    }
+
+    // Build filename
+    let filename = getFlag('--filename') || `capture-${Date.now()}.png`;
+    filename = path.basename(filename);
+    if (!filename.endsWith('.png')) filename += '.png';
+
+    if (!fs.existsSync(config.screenshotsDir)) {
+      fs.mkdirSync(config.screenshotsDir, { recursive: true });
+    }
+
+    const screenshotPath = path.join(config.screenshotsDir, filename);
+    const fullPage = hasFlag('--full-page');
+    await page.screenshot({ path: screenshotPath, fullPage });
+
+    // Register hash in SQLite
+    const cwd = process.cwd();
+    const projectName = config.projectName || path.basename(cwd);
+    const projectId = ensureProject(cwd, projectName, config.screenshotsDir, config.testsDir);
+    const hash = computeScreenshotHash(screenshotPath);
+    registerScreenshotHash(hash, screenshotPath, projectId, null);
+
+    log('✅', `Saved: ${C.cyan}${screenshotPath}${C.reset}`);
+    log('🏷️', `Hash:  ${C.bold}ss:${hash}${C.reset}`);
+    console.log('');
+  } finally {
+    if (browser) browser.disconnect();
+  }
+}
+
 async function cmdIssue() {
   const url = args[1];
   if (!url || url.startsWith('--')) {
@@ -470,6 +544,10 @@ async function main() {
 
     case 'dashboard':
       await cmdDashboard();
+      break;
+
+    case 'capture':
+      await cmdCapture();
       break;
 
     case 'issue':

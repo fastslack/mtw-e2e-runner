@@ -33,6 +33,7 @@ const DEFAULTS = {
   dashboardPort: 8484,
   maxHistoryRuns: 100,
   projectName: null,
+  failOnNetworkError: false,
   anthropicApiKey: null,
   anthropicModel: 'claude-sonnet-4-5-20250929',
 };
@@ -53,6 +54,7 @@ function loadEnvVars() {
   if (process.env.OUTPUT_FORMAT) env.outputFormat = process.env.OUTPUT_FORMAT;
   if (process.env.E2E_ENV) env.env = process.env.E2E_ENV;
   if (process.env.PROJECT_NAME) env.projectName = process.env.PROJECT_NAME;
+  if (process.env.FAIL_ON_NETWORK_ERROR) env.failOnNetworkError = process.env.FAIL_ON_NETWORK_ERROR === 'true' || process.env.FAIL_ON_NETWORK_ERROR === '1';
   if (process.env.ANTHROPIC_API_KEY) env.anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (process.env.ANTHROPIC_MODEL) env.anthropicModel = process.env.ANTHROPIC_MODEL;
   return env;
