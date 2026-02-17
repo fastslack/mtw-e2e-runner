@@ -10,4 +10,4 @@ e2e/screenshots/
 
 e2e/tests/
 
-docs/screenshots/
+docs/screenshots/*.tmp
