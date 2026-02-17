@@ -35,19 +35,31 @@ export async function verifyIssue(url, config) {
   fs.writeFileSync(testFile, JSON.stringify(tests, null, 2));
 
   try {
-    // 4. Wait for pool and run
+    // 4. Build hooks (inject auth if provided)
+    const hooks = {};
+    if (config.authToken) {
+      const storageKey = config.authStorageKey || 'accessToken';
+      hooks.beforeEach = [
+        { type: 'goto', value: '/' },
+        { type: 'evaluate', value: `localStorage.setItem('${storageKey}', '${config.authToken}')` },
+        { type: 'goto', value: '/' },
+        { type: 'wait', value: '1000' },
+      ];
+    }
+
+    // 5. Wait for pool and run
     await waitForPool(config.poolUrl);
-    const results = await runTestsParallel(tests, config, {});
+    const results = await runTestsParallel(tests, config, hooks);
     const report = generateReport(results);
     saveReport(report, config.screenshotsDir, config);
     persistRun(report, config, suiteName);
 
-    // 5. Interpret results
+    // 6. Interpret results
     const bugConfirmed = report.summary.failed > 0;
 
     return { issue, report, bugConfirmed, tests, suiteName };
   } finally {
-    // 6. Clean up temp file
+    // 7. Clean up temp file
     try { fs.unlinkSync(testFile); } catch { /* already gone */ }
   }
 }

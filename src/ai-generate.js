@@ -7,6 +7,7 @@
  */
 
 import fs from 'fs';
+import path from 'path';
 import { listSuites } from './runner.js';
 
 const SYSTEM_PROMPT = `You are an E2E test generator for a JSON-driven browser test runner.
@@ -49,7 +50,23 @@ Rules:
 - For bug reports: write tests that assert the CORRECT behavior. If the test fails, the bug is confirmed
 - Keep test names descriptive and kebab-case
 - Prefer CSS selectors that are stable (data-testid, name, role) over fragile ones (nth-child, classes)
-- If the issue description is vague, create a reasonable test that covers the described scenario`;
+- If the issue description is vague, create a reasonable test that covers the described scenario
+- If project context is provided (from CLAUDE.md), use the REAL routes, selectors, and UI patterns described there — never invent routes or selectors`;
+
+/**
+ * Reads the project's CLAUDE.md for app context (routes, selectors, UI structure).
+ * Returns the content or empty string if not found.
+ */
+function loadProjectContext(cwd) {
+  if (!cwd) return '';
+  const claudeMdPath = path.join(cwd, 'CLAUDE.md');
+  if (!fs.existsSync(claudeMdPath)) return '';
+  try {
+    return fs.readFileSync(claudeMdPath, 'utf-8');
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Returns a structured prompt + issue data for Claude Code to consume.
@@ -66,6 +83,11 @@ export function buildPrompt(issue, config) {
     existingSuites = listSuites(config.testsDir).map(s => s.name);
   } catch { /* no suites yet */ }
 
+  const projectContext = loadProjectContext(config._cwd);
+  const contextBlock = projectContext
+    ? `\n## Project Context (from CLAUDE.md)\nUse these REAL routes, selectors, and UI patterns — do NOT invent your own.\n\n${projectContext}\n`
+    : '';
+
   const prompt = `Based on the following issue, generate E2E test actions using the e2e_create_test tool.
 
 ## Issue: ${issue.title}
@@ -76,7 +98,7 @@ export function buildPrompt(issue, config) {
 
 ### Description
 ${issue.body || 'No description provided.'}
-
+${contextBlock}
 ## Instructions
 1. Analyze the issue and determine what user flows to test
 2. Create one or more tests that verify the expected behavior
@@ -128,6 +150,11 @@ export async function generateTests(issue, config) {
   const model = config.anthropicModel || 'claude-sonnet-4-5-20250929';
   const suiteName = `issue-${issue.number}`;
 
+  const projectContext = loadProjectContext(config._cwd);
+  const contextBlock = projectContext
+    ? `\n## Project Context (from CLAUDE.md)\nIMPORTANT: Use these REAL routes, selectors, and UI patterns — do NOT invent your own.\n\n${projectContext}\n`
+    : '';
+
   const userMessage = `Generate E2E tests for this issue:
 
 Title: ${issue.title}
@@ -137,7 +164,7 @@ State: ${issue.state}
 
 Description:
 ${issue.body || 'No description provided.'}
-
+${contextBlock}
 Base URL: ${config.baseUrl}
 
 Output a JSON array of test objects. Nothing else.`;
@@ -151,7 +178,7 @@ Output a JSON array of test objects. Nothing else.`;
     },
     body: JSON.stringify({
       model,
-      max_tokens: 4096,
+      max_tokens: 16384,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userMessage }],
     }),
@@ -166,6 +193,10 @@ Output a JSON array of test objects. Nothing else.`;
   const text = result.content?.[0]?.text;
   if (!text) {
     throw new Error('Claude API returned empty response');
+  }
+
+  if (result.stop_reason === 'max_tokens') {
+    throw new Error(`Claude API response was truncated (hit max_tokens). The issue may be too complex. Try simplifying the issue description or increasing anthropicMaxTokens.`);
   }
 
   // Parse JSON — strip markdown fences if present

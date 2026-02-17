@@ -99,6 +99,7 @@ export const TOOLS = [
             type: 'object',
             properties: {
               name: { type: 'string', description: 'Test name' },
+              expect: { type: 'string', description: 'Human-readable description of the expected visual outcome. After the test runs, a verification screenshot is captured and Claude Code judges pass/fail against this description.' },
               actions: {
                 type: 'array',
                 description: 'Sequential browser actions',
@@ -209,6 +210,14 @@ export const TOOLS = [
           enum: ['prompt', 'verify'],
           description:
             'prompt = return issue + prompt for Claude Code to create tests (default). verify = auto-generate tests via Claude API and run them.',
+        },
+        authToken: {
+          type: 'string',
+          description: 'JWT or auth token to inject into localStorage before running tests (for authenticated apps)',
+        },
+        authStorageKey: {
+          type: 'string',
+          description: 'localStorage key name for the auth token (default: "accessToken")',
         },
         cwd: {
           type: 'string',
@@ -499,6 +508,9 @@ async function handleIssue(args) {
     if (!hasApiKey(config)) {
       return errorResult('ANTHROPIC_API_KEY is required for verify mode. Set it as an environment variable.');
     }
+
+    if (args.authToken) config.authToken = args.authToken;
+    if (args.authStorageKey) config.authStorageKey = args.authStorageKey;
 
     const result = await verifyIssue(args.url, config);
     const status = result.bugConfirmed ? 'BUG CONFIRMED' : 'NOT REPRODUCIBLE';

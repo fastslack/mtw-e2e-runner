@@ -36,6 +36,8 @@ const DEFAULTS = {
   failOnNetworkError: false,
   anthropicApiKey: null,
   anthropicModel: 'claude-sonnet-4-5-20250929',
+  authToken: null,
+  authStorageKey: 'accessToken',
 };
 
 function loadEnvVars() {
@@ -57,6 +59,8 @@ function loadEnvVars() {
   if (process.env.FAIL_ON_NETWORK_ERROR) env.failOnNetworkError = process.env.FAIL_ON_NETWORK_ERROR === 'true' || process.env.FAIL_ON_NETWORK_ERROR === '1';
   if (process.env.ANTHROPIC_API_KEY) env.anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (process.env.ANTHROPIC_MODEL) env.anthropicModel = process.env.ANTHROPIC_MODEL;
+  if (process.env.AUTH_TOKEN) env.authToken = process.env.AUTH_TOKEN;
+  if (process.env.AUTH_STORAGE_KEY) env.authStorageKey = process.env.AUTH_STORAGE_KEY;
   return env;
 }
 
@@ -78,8 +82,32 @@ async function loadConfigFile(cwd) {
   return {};
 }
 
+/** Load .env file from cwd into process.env (no deps, KEY=VALUE format). */
+function loadDotEnv(cwd) {
+  const envPath = path.join(cwd, '.env');
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    // Strip surrounding quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    // Don't override existing env vars
+    if (!(key in process.env)) {
+      process.env[key] = val;
+    }
+  }
+}
+
 export async function loadConfig(cliArgs = {}, cwd = null) {
   cwd = cwd || process.cwd();
+  loadDotEnv(cwd);
   const fileConfig = await loadConfigFile(cwd);
   const envConfig = loadEnvVars();
 

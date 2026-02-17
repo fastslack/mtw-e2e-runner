@@ -75,6 +75,8 @@ function parseCLIConfig() {
   if (getFlag('--dashboard-port')) cliArgs.dashboardPort = parseInt(getFlag('--dashboard-port'));
   if (getFlag('--project-name')) cliArgs.projectName = getFlag('--project-name');
   if (hasFlag('--fail-on-network-error')) cliArgs.failOnNetworkError = true;
+  if (getFlag('--auth-token')) cliArgs.authToken = getFlag('--auth-token');
+  if (getFlag('--auth-storage-key')) cliArgs.authStorageKey = getFlag('--auth-storage-key');
   return cliArgs;
 }
 
