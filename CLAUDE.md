@@ -171,6 +171,7 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 | `e2e_create_test` | Create a new test JSON file with name, tests array, and optional hooks |
 | `e2e_pool_status` | Get Chrome pool availability, running sessions, capacity |
 | `e2e_screenshot` | Retrieve a screenshot by its hash (e.g. `ss:a3f2b1c9`). Returns the image. |
+| `e2e_issue` | Fetch a GitHub/GitLab issue and generate E2E tests. `mode: "prompt"` (default) returns issue + prompt for Claude Code. `mode: "verify"` auto-generates tests via Claude API and runs them. |
 
 > **Note:** Pool start/stop are only available via CLI (`e2e-runner pool start|stop`), not via MCP — restarting the pool kills all active sessions from other clients.
 
@@ -189,6 +190,35 @@ Every screenshot captured during a run is assigned a short hash (`ss:a3f2b1c9`) 
 - Dashboard computes hashes client-side (Web Crypto) for the Live view (before `persistRun()` writes to DB)
 - Run detail API (`/api/db/runs/:id`) includes `screenshotHashes` map per test result
 - Dashboard endpoint `/api/screenshot-hash/:hash` serves the image by hash
+
+### Issue-to-Test (GitHub/GitLab)
+
+Turns bug reports and feature requests into executable E2E tests.
+
+**Supported providers:** GitHub (`github.com`) and GitLab (including self-hosted). Auto-detected from URL.
+
+**Auth requirements:** `gh` CLI for GitHub (`gh auth login`), `glab` CLI for GitLab (`glab auth login`). All external commands use `execFileSync` (no shell injection).
+
+**Two AI modes:**
+
+1. **Prompt mode** (default, no API key): `e2e_issue` MCP tool returns issue details + a structured prompt. Claude Code then uses `e2e_create_test` to create tests and `e2e_run` to execute them.
+2. **Verify mode** (requires `ANTHROPIC_API_KEY`): Calls Claude API directly to generate tests, runs them, and reports whether the bug is confirmed or not reproducible.
+
+**Config fields:**
+- `anthropicApiKey` / `ANTHROPIC_API_KEY` env var — required for verify/generate mode
+- `anthropicModel` / `ANTHROPIC_MODEL` env var — Claude model for generation (default: `claude-sonnet-4-5-20250929`)
+
+**CLI usage:**
+```bash
+e2e-runner issue <url>                    # Fetch and display issue details
+e2e-runner issue <url> --generate         # Generate test file via Claude API
+e2e-runner issue <url> --verify           # Generate + run + report bug status
+e2e-runner issue <url> --prompt           # Output AI prompt as JSON (for piping)
+```
+
+**Key files:** `src/issues.js` (provider drivers), `src/ai-generate.js` (prompt builder + Claude API), `src/verify.js` (orchestrator)
+
+**Bug verification logic:** Generated tests assert CORRECT behavior. Test failure = bug confirmed. All tests pass = not reproducible.
 
 ### Pool-Aware Queue
 

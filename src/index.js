@@ -13,6 +13,9 @@ export { executeAction } from './actions.js';
 export { runTest, runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from './runner.js';
 export { generateReport, generateJUnitXML, saveReport, printReport, saveHistory, loadHistory, loadHistoryRun } from './reporter.js';
 export { startDashboard, stopDashboard } from './dashboard.js';
+export { fetchIssue, parseIssueUrl, detectProvider, checkCliAuth } from './issues.js';
+export { buildPrompt, generateTests, hasApiKey } from './ai-generate.js';
+export { verifyIssue } from './verify.js';
 
 import { loadConfig } from './config.js';
 import { waitForPool } from './pool.js';

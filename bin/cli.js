@@ -14,6 +14,10 @@
  *   e2e-runner pool status                Show pool status
  *   e2e-runner pool restart               Restart the pool
  *   e2e-runner dashboard                   Start the web dashboard
+ *   e2e-runner issue <url>                Fetch issue and show details
+ *   e2e-runner issue <url> --generate     Generate test file via Claude API
+ *   e2e-runner issue <url> --verify       Generate + run + report bug status
+ *   e2e-runner issue <url> --prompt       Output the AI prompt (for piping)
  *   e2e-runner init                       Scaffold e2e/ in the current project
  *   e2e-runner --help                     Show help
  *   e2e-runner --version                  Show version
@@ -28,6 +32,9 @@ import { startPool, stopPool, restartPool, getPoolStatus, waitForPool } from '..
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
 import { generateReport, saveReport, printReport, persistRun } from '../src/reporter.js';
 import { startDashboard } from '../src/dashboard.js';
+import { fetchIssue } from '../src/issues.js';
+import { buildPrompt, generateTests, hasApiKey } from '../src/ai-generate.js';
+import { verifyIssue } from '../src/verify.js';
 import { log, colors as C } from '../src/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,6 +90,11 @@ ${C.bold}Usage:${C.reset}
 
   e2e-runner dashboard                  Start the web dashboard
   e2e-runner dashboard --port <port>    Custom port (default: 8484)
+
+  e2e-runner issue <url>                Fetch issue and show details
+  e2e-runner issue <url> --generate     Generate test file via Claude API
+  e2e-runner issue <url> --verify       Generate + run + report bug status
+  e2e-runner issue <url> --prompt       Output the AI prompt (for piping)
 
   e2e-runner pool start                 Start the Chrome Pool
   e2e-runner pool stop                  Stop the Chrome Pool
@@ -162,15 +174,19 @@ async function cmdRun() {
   log('✅', `Pool ready (${pressure.running}/${pressure.maxConcurrent} sessions, queued: ${pressure.queued})`);
 
   // Wire up live progress to dashboard if running
+  let _lastBroadcast = null;
   try {
     const res = await fetch('http://127.0.0.1:' + (config.dashboardPort || 8484) + '/api/status');
     if (res.ok) {
       const dp = config.dashboardPort || 8484;
       config.onProgress = (data) => {
         const body = JSON.stringify(data);
-        const req = http.request({ hostname: '127.0.0.1', port: dp, path: '/api/broadcast', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 1000 });
-        req.on('error', () => {});
-        req.end(body);
+        _lastBroadcast = new Promise((resolve) => {
+          const req = http.request({ hostname: '127.0.0.1', port: dp, path: '/api/broadcast', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 1000 });
+          req.on('error', () => resolve());
+          req.on('close', () => resolve());
+          req.end(body);
+        });
       };
     }
   } catch { /* dashboard not running */ }
@@ -184,6 +200,8 @@ async function cmdRun() {
   persistRun(report, config, suiteName);
   printReport(report, config.screenshotsDir);
 
+  // Wait for the last dashboard broadcast (run:complete) to flush before exiting
+  if (_lastBroadcast) await _lastBroadcast;
   process.exit(report.summary.failed > 0 ? 1 : 0);
 }
 
@@ -333,6 +351,95 @@ async function cmdDashboard() {
   process.on('SIGTERM', shutdown);
 }
 
+async function cmdIssue() {
+  const url = args[1];
+  if (!url || url.startsWith('--')) {
+    console.error(`${C.red}Usage: e2e-runner issue <url> [--generate|--verify|--prompt]${C.reset}`);
+    process.exit(1);
+  }
+
+  const cliArgs = parseCLIConfig();
+  const config = await loadConfig(cliArgs);
+
+  if (hasFlag('--prompt')) {
+    // Output AI prompt as JSON to stdout
+    const issue = fetchIssue(url);
+    const promptData = buildPrompt(issue, config);
+    console.log(JSON.stringify(promptData, null, 2));
+    return;
+  }
+
+  if (hasFlag('--verify')) {
+    // Generate + run + report
+    if (!hasApiKey(config)) {
+      console.error(`${C.red}ANTHROPIC_API_KEY is required for --verify mode.${C.reset}`);
+      process.exit(1);
+    }
+
+    console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
+    log('🔍', 'Fetching issue...');
+
+    const result = await verifyIssue(url, config);
+    const { issue, report, bugConfirmed } = result;
+
+    console.log('');
+    if (bugConfirmed) {
+      log('🐛', `${C.red}${C.bold}BUG CONFIRMED${C.reset} — ${issue.title}`);
+      log('', `${C.dim}${report.summary.failed} of ${report.summary.total} tests failed${C.reset}`);
+    } else {
+      log('✅', `${C.green}${C.bold}NOT REPRODUCIBLE${C.reset} — ${issue.title}`);
+      log('', `${C.dim}All ${report.summary.total} tests passed${C.reset}`);
+    }
+    console.log(`${C.dim}Issue: ${issue.url}${C.reset}\n`);
+
+    process.exit(bugConfirmed ? 1 : 0);
+  }
+
+  if (hasFlag('--generate')) {
+    // Generate test file via Claude API
+    if (!hasApiKey(config)) {
+      console.error(`${C.red}ANTHROPIC_API_KEY is required for --generate mode.${C.reset}`);
+      process.exit(1);
+    }
+
+    console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
+    log('🔍', 'Fetching issue...');
+
+    const issue = fetchIssue(url);
+    log('📋', `${C.cyan}${issue.title}${C.reset}`);
+    log('🤖', 'Generating tests via Claude API...');
+
+    const { tests, suiteName } = await generateTests(issue, config);
+
+    if (!fs.existsSync(config.testsDir)) {
+      fs.mkdirSync(config.testsDir, { recursive: true });
+    }
+    const filePath = path.join(config.testsDir, `${suiteName}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(tests, null, 2) + '\n');
+
+    log('✅', `Created ${C.cyan}${filePath}${C.reset} (${tests.length} tests)`);
+    console.log(`${C.dim}Run with: e2e-runner run --suite ${suiteName}${C.reset}\n`);
+    return;
+  }
+
+  // Default: fetch and display issue
+  log('🔍', 'Fetching issue...');
+  const issue = fetchIssue(url);
+
+  console.log(`\n${C.bold}${issue.title}${C.reset}`);
+  console.log(`${C.dim}${'─'.repeat(50)}${C.reset}`);
+  console.log(`  Repo:    ${C.cyan}${issue.repo}${C.reset}`);
+  console.log(`  Number:  #${issue.number}`);
+  console.log(`  State:   ${issue.state === 'open' ? C.green : C.red}${issue.state}${C.reset}`);
+  console.log(`  Labels:  ${issue.labels.length ? issue.labels.join(', ') : C.dim + 'none' + C.reset}`);
+  console.log(`  URL:     ${C.dim}${issue.url}${C.reset}`);
+  if (issue.body) {
+    console.log(`\n${C.bold}Description:${C.reset}`);
+    console.log(issue.body.length > 500 ? issue.body.substring(0, 500) + '...' : issue.body);
+  }
+  console.log('');
+}
+
 // ==================== Main ====================
 
 async function main() {
@@ -363,6 +470,10 @@ async function main() {
 
     case 'dashboard':
       await cmdDashboard();
+      break;
+
+    case 'issue':
+      await cmdIssue();
       break;
 
     case 'init':

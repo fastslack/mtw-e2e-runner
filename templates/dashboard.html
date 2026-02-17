@@ -454,10 +454,24 @@ function connectWS(){
 
 function getLiveRun(m){
   var rid=m.runId;if(!rid)return null;
-  if(!S.liveRuns[rid])S.liveRuns[rid]={on:true,done:false,total:0,completed:0,passed:0,failed:0,active:0,tests:{},project:m.project||null,cwd:m.cwd||null,runId:rid};
+  if(!S.liveRuns[rid])S.liveRuns[rid]={on:true,done:false,total:0,completed:0,passed:0,failed:0,active:0,tests:{},project:m.project||null,cwd:m.cwd||null,runId:rid,_lastEvent:Date.now()};
+  S.liveRuns[rid]._lastEvent=Date.now();
   return S.liveRuns[rid];
 }
 function anyLiveRunning(){for(var k in S.liveRuns)if(S.liveRuns[k].on)return true;return false}
+
+/* Staleness guard: if a live run gets no events for 15s and all tests are complete, auto-finish it */
+setInterval(function(){
+  var changed=false;
+  for(var k in S.liveRuns){
+    var r=S.liveRuns[k];
+    if(r.on&&!r.done&&Date.now()-r._lastEvent>15000){
+      if(r.completed>=r.total&&r.total>0){r.on=false;r.done=true;r.active=0;changed=true}
+      else if(Date.now()-r._lastEvent>30000){r.on=false;r.done=true;r.stale=true;r.active=0;changed=true}
+    }
+  }
+  if(changed)renderLive();
+},5000);
 
 function handleWS(m){
   switch(m.event){
@@ -877,11 +891,12 @@ function renderLive(){
 
   // Header state
   var lbl=panel.querySelector('.live-header .label');
+  var anyStale=runIds.some(function(rid){return runs[rid].stale});
   if(!gRunning&&gDone){
-    lbl.textContent=gFailed>0?'COMPLETED WITH FAILURES':'ALL TESTS PASSED';
-    lbl.style.color=gFailed>0?'var(--red)':'var(--green)';
+    lbl.textContent=anyStale?'COMPLETED (connection lost)':gFailed>0?'COMPLETED WITH FAILURES':'ALL TESTS PASSED';
+    lbl.style.color=anyStale?'var(--yellow)':gFailed>0?'var(--red)':'var(--green)';
     var dot=lbl.querySelector('.dot');if(dot)dot.remove();
-    $('#liveProgressFill').style.background=gFailed>0?'var(--red)':'var(--green)';
+    $('#liveProgressFill').style.background=anyStale?'var(--yellow)':gFailed>0?'var(--red)':'var(--green)';
   } else {
     if(!lbl.querySelector('.dot')){
       lbl.textContent='';

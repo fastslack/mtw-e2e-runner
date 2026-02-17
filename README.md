@@ -128,6 +128,14 @@ npx e2e-runner pool start                 # Start Chrome container
 npx e2e-runner pool stop                  # Stop Chrome container
 npx e2e-runner pool status                # Check pool health
 
+# Issue-to-test
+npx e2e-runner issue <url>                # Fetch issue details
+npx e2e-runner issue <url> --generate     # Generate test file via AI
+npx e2e-runner issue <url> --verify       # Generate + run + report
+
+# Dashboard
+npx e2e-runner dashboard                  # Start web dashboard
+
 # Other
 npx e2e-runner list                       # List available suites
 npx e2e-runner init                       # Scaffold project
@@ -150,6 +158,7 @@ npx e2e-runner init                       # Scaffold project
 | `--env <name>` | `default` | Environment profile |
 | `--pool-port <port>` | `3333` | Chrome pool port |
 | `--max-sessions <n>` | `10` | Max concurrent Chrome sessions |
+| `--project-name <name>` | dir name | Project display name for dashboard |
 
 ## Configuration
 
@@ -201,6 +210,9 @@ When `--env <name>` is set, the matching profile from `environments` overrides e
 | `TEST_TIMEOUT` | `testTimeout` |
 | `OUTPUT_FORMAT` | `outputFormat` |
 | `E2E_ENV` | `env` |
+| `PROJECT_NAME` | `projectName` |
+| `ANTHROPIC_API_KEY` | `anthropicApiKey` |
+| `ANTHROPIC_MODEL` | `anthropicModel` |
 
 ## Hooks
 
@@ -342,6 +354,8 @@ claude mcp add --transport stdio --scope user e2e-runner \
 | `e2e_list` | List available test suites with test names and counts |
 | `e2e_create_test` | Create a new test JSON file |
 | `e2e_pool_status` | Check Chrome pool availability and capacity |
+| `e2e_screenshot` | Retrieve a screenshot by its hash (e.g. `ss:a3f2b1c9`) |
+| `e2e_issue` | Fetch a GitHub/GitLab issue and generate E2E tests |
 
 > **Note:** Pool start/stop are only available via CLI (`e2e-runner pool start|stop`), not via MCP — restarting the pool kills all active sessions from other clients.
 
@@ -360,6 +374,70 @@ claude mcp list
 # e2e-runner: ... - Connected
 ```
 
+## Issue-to-Test
+
+Turn GitHub and GitLab issues into executable E2E tests. Paste an issue URL and get runnable tests -- automatically.
+
+### How It Works
+
+1. **Fetch** -- Pulls issue details (title, body, labels) via `gh` or `glab` CLI
+2. **Generate** -- AI creates JSON test actions based on the issue description
+3. **Run** -- Optionally executes the tests immediately to verify if a bug is reproducible
+
+### Two Modes
+
+**Prompt mode** (default, no API key): Returns issue data + a structured prompt. Claude Code uses its own intelligence to create tests via `e2e_create_test` and run them.
+
+**Verify mode** (requires `ANTHROPIC_API_KEY`): Calls Claude API directly, generates tests, runs them, and reports whether the bug is confirmed or not reproducible.
+
+### CLI
+
+```bash
+# Fetch and display issue details
+e2e-runner issue https://github.com/owner/repo/issues/42
+
+# Generate a test file via Claude API
+e2e-runner issue https://github.com/owner/repo/issues/42 --generate
+# -> Creates e2e/tests/issue-42.json
+
+# Generate + run + report bug status
+e2e-runner issue https://github.com/owner/repo/issues/42 --verify
+# -> "BUG CONFIRMED" or "NOT REPRODUCIBLE"
+
+# Output AI prompt as JSON (for piping)
+e2e-runner issue https://github.com/owner/repo/issues/42 --prompt
+```
+
+### MCP
+
+In Claude Code, the `e2e_issue` tool handles everything:
+
+> "Fetch issue https://github.com/owner/repo/issues/42 and create E2E tests for it"
+
+Claude Code receives the issue data, generates appropriate test actions, saves them via `e2e_create_test`, and runs them with `e2e_run`.
+
+### Auth Requirements
+
+- **GitHub**: `gh` CLI authenticated (`gh auth login`)
+- **GitLab**: `glab` CLI authenticated (`glab auth login`)
+
+Provider is auto-detected from the URL. Self-hosted GitLab is supported via `glab` config.
+
+### Bug Verification Logic
+
+Generated tests assert the **correct** behavior. If the tests fail, the correct behavior doesn't work -- bug confirmed. If all tests pass, the bug is not reproducible.
+
+## Web Dashboard
+
+Real-time UI for running tests, viewing results, screenshots, and run history.
+
+```bash
+e2e-runner dashboard                  # Start on default port 8484
+e2e-runner dashboard --port 9090      # Custom port
+```
+
+Features: live test execution, screenshot viewer with copy-to-clipboard hashes (`ss:a3f2b1c9`), multi-project support via SQLite, run history with auto-pruning.
+
 ## Architecture
 
 ```
@@ -371,6 +449,12 @@ src/runner.js         Parallel test executor with retries and timeouts
 src/actions.js        Action engine: maps JSON actions to Puppeteer calls
 src/reporter.js       JSON reports, JUnit XML, console output
 src/mcp-server.js     MCP server: exposes tools for Claude Code
+src/mcp-tools.js      Shared MCP tool definitions and handlers
+src/dashboard.js      Web dashboard: HTTP server, REST API, WebSocket
+src/db.js             SQLite multi-project database
+src/issues.js         GitHub/GitLab issue fetching (gh/glab CLI)
+src/ai-generate.js    AI test generation (prompt builder + Claude API)
+src/verify.js         Bug verification orchestrator
 src/logger.js         ANSI colored logger
 src/index.js          Programmatic API (createRunner)
 templates/            Scaffolding templates for init command

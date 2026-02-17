@@ -18,6 +18,9 @@ import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuite
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { startDashboard, stopDashboard } from './dashboard.js';
 import { lookupScreenshotHash } from './db.js';
+import { fetchIssue, checkCliAuth, detectProvider } from './issues.js';
+import { buildPrompt, hasApiKey } from './ai-generate.js';
+import { verifyIssue } from './verify.js';
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -186,6 +189,31 @@ export const TOOLS = [
       properties: {},
     },
   },
+  {
+    name: 'e2e_issue',
+    description:
+      'Fetch a GitHub/GitLab issue and prepare E2E test generation. Returns issue details and a prompt for test creation. Use mode "verify" to auto-generate and run tests (requires ANTHROPIC_API_KEY).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'Issue URL (GitHub or GitLab)',
+        },
+        mode: {
+          type: 'string',
+          enum: ['prompt', 'verify'],
+          description:
+            'prompt = return issue + prompt for Claude Code to create tests (default). verify = auto-generate tests via Claude API and run them.',
+        },
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
+      },
+      required: ['url'],
+    },
+  },
 ];
 
 /** Tools exposed on the dashboard — excludes dashboard start/stop (already running). */
@@ -196,19 +224,25 @@ export const DASHBOARD_TOOLS = TOOLS.filter(
 // ── Dashboard broadcast helper ────────────────────────────────────────────────
 
 function createDashboardBroadcaster(dashboardPort) {
-  return function broadcast(data) {
+  const broadcaster = function broadcast(data) {
     const body = JSON.stringify(data);
-    const req = http.request({
-      hostname: '127.0.0.1',
-      port: dashboardPort,
-      path: '/api/broadcast',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      timeout: 1000,
+    broadcaster._last = new Promise((resolve) => {
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: dashboardPort,
+        path: '/api/broadcast',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        timeout: 1000,
+      });
+      req.on('error', () => resolve());
+      req.on('close', () => resolve());
+      req.end(body);
     });
-    req.on('error', () => {});
-    req.end(body);
   };
+  broadcaster._last = null;
+  broadcaster.flush = () => broadcaster._last || Promise.resolve();
+  return broadcaster;
 }
 
 async function detectDashboardPort() {
@@ -258,6 +292,10 @@ async function handleRun(args) {
   }
 
   const results = await runTestsParallel(tests, config, hooks || {});
+
+  // Flush the run:complete broadcast before building the response
+  if (config.onProgress?.flush) await config.onProgress.flush();
+
   const report = generateReport(results);
   saveReport(report, config.screenshotsDir, config);
   persistRun(report, config, args.suite || null);
@@ -379,6 +417,56 @@ async function handleScreenshot(args) {
   };
 }
 
+async function handleIssue(args) {
+  if (!args.url) return errorResult('Missing required parameter: url');
+
+  const mode = args.mode || 'prompt';
+  const config = await loadConfig({}, args.cwd);
+
+  // Check provider and auth
+  let provider;
+  try {
+    provider = detectProvider(args.url);
+  } catch (err) {
+    return errorResult(err.message);
+  }
+
+  const auth = checkCliAuth(provider);
+  if (!auth.authenticated) {
+    return errorResult(auth.error);
+  }
+
+  if (mode === 'verify') {
+    if (!hasApiKey(config)) {
+      return errorResult('ANTHROPIC_API_KEY is required for verify mode. Set it as an environment variable.');
+    }
+
+    const result = await verifyIssue(args.url, config);
+    const status = result.bugConfirmed ? 'BUG CONFIRMED' : 'NOT REPRODUCIBLE';
+    const summary = {
+      status,
+      bugConfirmed: result.bugConfirmed,
+      issue: {
+        title: result.issue.title,
+        url: result.issue.url,
+        number: result.issue.number,
+        labels: result.issue.labels,
+      },
+      testResults: result.report.summary,
+      testsGenerated: result.tests.length,
+      suiteName: result.suiteName,
+    };
+
+    return textResult(JSON.stringify(summary, null, 2));
+  }
+
+  // Default: prompt mode
+  const issue = fetchIssue(args.url);
+  const promptData = buildPrompt(issue, config);
+
+  return textResult(promptData.prompt);
+}
+
 // Module-level state for stdio path only
 let dashboardHandle = null;
 
@@ -431,6 +519,8 @@ export async function dispatchTool(name, args = {}) {
       return await handleDashboardStart(args);
     case 'e2e_dashboard_stop':
       return await handleDashboardStop();
+    case 'e2e_issue':
+      return await handleIssue(args);
     default:
       return errorResult(`Unknown tool: ${name}`);
   }
