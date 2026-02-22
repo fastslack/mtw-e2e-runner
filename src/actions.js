@@ -31,13 +31,14 @@ export async function executeAction(page, action, config) {
         await page.waitForSelector(selector, { timeout });
         await page.click(selector);
       } else if (text) {
+        const clickTextSelector = 'button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1, h2, h3, h4, h5, h6, dd, dt';
         await page.waitForFunction(
-          (t) => [...document.querySelectorAll('button, a, [role="button"], [role="tab"], [role="menuitem"], div[class*="cursor"], span')]
+          (t, sel) => [...document.querySelectorAll(sel)]
             .find(el => el.textContent.includes(t)),
           { timeout },
-          text
+          text, clickTextSelector
         );
-        await page.$$eval('button, a, [role="button"], [role="tab"], [role="menuitem"], div[class*="cursor"], span', (els, t) => {
+        await page.$$eval(clickTextSelector, (els, t) => {
           const el = els.find(e => e.textContent.includes(t));
           if (el) el.click();
         }, text);
@@ -54,13 +55,21 @@ export async function executeAction(page, action, config) {
 
     case 'wait':
       if (selector) {
-        await page.waitForSelector(selector, { timeout });
+        try {
+          await page.waitForSelector(selector, { timeout });
+        } catch (e) {
+          throw new Error(`wait failed: selector "${selector}" not found after ${timeout}ms`);
+        }
       } else if (text) {
-        await page.waitForFunction(
-          (t) => document.body.innerText.includes(t),
-          { timeout },
-          text
-        );
+        try {
+          await page.waitForFunction(
+            (t) => document.body.innerText.includes(t),
+            { timeout },
+            text
+          );
+        } catch (e) {
+          throw new Error(`wait failed: text "${text}" not found after ${timeout}ms`);
+        }
       } else if (value) {
         await sleep(parseInt(value));
       }
@@ -73,6 +82,13 @@ export async function executeAction(page, action, config) {
       }
       // Sanitize: use only the basename to prevent path traversal
       filename = path.basename(filename);
+      // Inject timestamp before extension to make filenames unique per run
+      // (prevents overwriting previous runs' screenshots)
+      if (value) {
+        const ext = path.extname(filename);
+        const base = filename.slice(0, -ext.length);
+        filename = `${base}-${Date.now()}${ext}`;
+      }
       const filepath = path.join(screenshotsDir, filename);
       await page.screenshot({ path: filepath, fullPage: action.fullPage || false });
       return { screenshot: filepath };
@@ -88,8 +104,26 @@ export async function executeAction(page, action, config) {
 
     case 'assert_url': {
       const currentUrl = page.url();
-      if (!currentUrl.includes(value)) {
-        throw new Error(`assert_url failed: expected "${value}", got "${currentUrl}"`);
+      let match = false;
+      if (value.startsWith('/')) {
+        // Path-only comparison: extract pathname (+ query if value has ?)
+        try {
+          const parsed = new URL(currentUrl);
+          const compareTo = value.includes('?') ? parsed.pathname + parsed.search : parsed.pathname;
+          match = compareTo === value || compareTo.startsWith(value);
+        } catch {
+          match = currentUrl.includes(value);
+        }
+        if (!match) {
+          const pathname = (() => { try { return new URL(currentUrl).pathname; } catch { return currentUrl; } })();
+          throw new Error(`assert_url failed: expected path "${value}", got "${pathname}" (full: ${currentUrl})`);
+        }
+      } else {
+        // Full URL comparison (backwards compatible)
+        match = currentUrl.includes(value);
+        if (!match) {
+          throw new Error(`assert_url failed: expected "${value}", got "${currentUrl}"`);
+        }
       }
       break;
     }
@@ -111,11 +145,105 @@ export async function executeAction(page, action, config) {
 
     case 'assert_count': {
       const count = await page.$$eval(selector, els => els.length);
-      const expected = parseInt(value);
-      if (count !== expected) {
-        throw new Error(`assert_count failed: "${selector}" has ${count} elements, expected ${expected}`);
+      const opMatch = value.match(/^(>=|<=|>|<)\s*(\d+)$/);
+      if (opMatch) {
+        const [, op, numStr] = opMatch;
+        const expected = parseInt(numStr);
+        const passed = op === '>' ? count > expected
+          : op === '>=' ? count >= expected
+          : op === '<' ? count < expected
+          : count <= expected;
+        if (!passed) {
+          throw new Error(`assert_count failed: "${selector}" has ${count} elements, expected ${op}${expected}`);
+        }
+      } else {
+        const expected = parseInt(value);
+        if (count !== expected) {
+          throw new Error(`assert_count failed: "${selector}" has ${count} elements, expected ${expected}`);
+        }
       }
       break;
+    }
+
+    case 'assert_element_text': {
+      await page.waitForSelector(selector, { timeout });
+      const elText = await page.$eval(selector, el => el.textContent);
+      if (value === 'exact') {
+        if (elText.trim() !== text) {
+          throw new Error(`assert_element_text failed: "${selector}" text is "${elText.trim()}", expected exact "${text}"`);
+        }
+      } else {
+        if (!elText.includes(text)) {
+          throw new Error(`assert_element_text failed: "${selector}" text "${elText.trim()}" does not contain "${text}"`);
+        }
+      }
+      break;
+    }
+
+    case 'assert_attribute': {
+      await page.waitForSelector(selector, { timeout });
+      const eqIndex = value.indexOf('=');
+      if (eqIndex === -1) {
+        const hasAttr = await page.$eval(selector, (el, attr) => el.hasAttribute(attr), value);
+        if (!hasAttr) {
+          throw new Error(`assert_attribute failed: "${selector}" does not have attribute "${value}"`);
+        }
+      } else {
+        const attrName = value.slice(0, eqIndex);
+        const expectedVal = value.slice(eqIndex + 1);
+        const actual = await page.$eval(selector, (el, attr) => el.getAttribute(attr), attrName);
+        if (actual !== expectedVal) {
+          throw new Error(`assert_attribute failed: "${selector}" attribute "${attrName}" is "${actual}", expected "${expectedVal}"`);
+        }
+      }
+      break;
+    }
+
+    case 'assert_class': {
+      await page.waitForSelector(selector, { timeout });
+      const hasClass = await page.$eval(selector, (el, cls) => el.classList.contains(cls), value);
+      if (!hasClass) {
+        throw new Error(`assert_class failed: "${selector}" does not have class "${value}"`);
+      }
+      break;
+    }
+
+    case 'assert_not_visible': {
+      const notVisEl = await page.$(selector);
+      if (notVisEl) {
+        const isVisible = await page.$eval(selector, (e) => {
+          const style = window.getComputedStyle(e);
+          return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        });
+        if (isVisible) {
+          throw new Error(`assert_not_visible failed: "${selector}" is visible`);
+        }
+      }
+      break;
+    }
+
+    case 'assert_input_value': {
+      await page.waitForSelector(selector, { timeout });
+      const inputVal = await page.$eval(selector, el => el.value);
+      if (!inputVal.includes(value)) {
+        throw new Error(`assert_input_value failed: "${selector}" value is "${inputVal}", expected to contain "${value}"`);
+      }
+      break;
+    }
+
+    case 'assert_matches': {
+      await page.waitForSelector(selector, { timeout });
+      const matchText = await page.$eval(selector, el => el.textContent);
+      if (!new RegExp(value).test(matchText)) {
+        throw new Error(`assert_matches failed: "${selector}" text "${matchText.trim()}" does not match pattern /${value}/`);
+      }
+      break;
+    }
+
+    case 'get_text': {
+      await page.waitForSelector(selector, { timeout });
+      const getText = await page.$eval(selector, el => el.textContent.trim());
+      return { value: getText };
     }
 
     case 'select':
@@ -162,15 +290,34 @@ export async function executeAction(page, action, config) {
       break;
     }
 
+    case 'clear_cookies': {
+      const client = await page.createCDPSession();
+      await client.send('Network.clearBrowserCookies');
+      await client.send('Storage.clearDataForOrigin', {
+        origin: value || baseUrl || page.url(),
+        storageTypes: 'cookies,local_storage,session_storage',
+      });
+      await client.detach();
+      break;
+    }
+
     case 'evaluate': {
       // Intentional: runs JS in browser page context (from test JSON files)
-      const evalResult = await page.evaluate(value);
-      // Check return value for failure signals
+      const jsSnippet = value.length > 120 ? value.slice(0, 120) + '...' : value;
+      let evalResult;
+      try {
+        evalResult = await page.evaluate(value);
+      } catch (evalErr) {
+        const pageUrl = page.url();
+        throw new Error(`evaluate threw on ${pageUrl}: ${evalErr.message}\n  JS: ${jsSnippet}`);
+      }
       if (typeof evalResult === 'string' && /^(FAIL|ERROR|FAILED)[\s:]/i.test(evalResult)) {
-        throw new Error(`evaluate failed: ${evalResult}`);
+        const pageUrl = page.url();
+        throw new Error(`evaluate failed on ${pageUrl}: ${evalResult}\n  JS: ${jsSnippet}`);
       }
       if (evalResult === false) {
-        throw new Error('evaluate returned false');
+        const pageUrl = page.url();
+        throw new Error(`evaluate returned false on ${pageUrl}\n  JS: ${jsSnippet}`);
       }
       return evalResult !== undefined && evalResult !== null ? { value: evalResult } : null;
     }

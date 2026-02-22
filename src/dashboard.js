@@ -17,9 +17,10 @@ import { createWebSocketServer } from './websocket.js';
 import { getPoolStatus, waitForPool } from './pool.js';
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
-import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, closeDb } from './db.js';
+import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
+import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends } from './learner-sqlite.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -239,6 +240,70 @@ export async function startDashboard(config) {
         return;
       }
 
+      // API: DB — suite detail (tests + actions)
+      const suiteDetailMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/suites\/(.+)$/);
+      if (suiteDetailMatch) {
+        try {
+          const projectId = parseInt(suiteDetailMatch[1], 10);
+          const suiteName = decodeURIComponent(suiteDetailMatch[2]);
+          const dir = dbGetProjectTestsDir(projectId);
+          if (!dir || !fs.existsSync(dir)) {
+            jsonResponse(res, { error: 'Tests directory not found' }, 404);
+            return;
+          }
+          const { tests, hooks } = loadTestSuite(suiteName, dir);
+          jsonResponse(res, { name: suiteName, tests, hooks });
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — project learnings (summary or specific category)
+      const learningsMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/learnings(?:\/(\w+))?$/);
+      if (learningsMatch) {
+        try {
+          const projectId = parseInt(learningsMatch[1], 10);
+          const category = learningsMatch[2] || 'summary';
+          const days = parseInt(url.searchParams.get('days') || '30', 10);
+
+          let data;
+          switch (category) {
+            case 'summary': {
+              const summary = getLearningsSummary(projectId);
+              const trends = getTestTrends(projectId, 7);
+              data = { ...summary, recentTrend: trends };
+              break;
+            }
+            case 'flaky':
+              data = getFlakySummary(projectId, days);
+              break;
+            case 'selectors':
+              data = getSelectorStability(projectId, days);
+              break;
+            case 'pages':
+              data = getPageHealth(projectId, days);
+              break;
+            case 'apis':
+              data = getApiHealth(projectId, days);
+              break;
+            case 'errors':
+              data = getErrorPatterns(projectId);
+              break;
+            case 'trends':
+              data = getTestTrends(projectId, days);
+              break;
+            default:
+              jsonResponse(res, { error: `Unknown learnings category: ${category}` }, 400);
+              return;
+          }
+          jsonResponse(res, data);
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
       // API: serve screenshot by hash (e.g. /api/screenshot-hash/a3f2b1c9)
       const ssHashMatch = pathname.match(/^\/api\/screenshot-hash\/([a-f0-9]{8})$/);
       if (ssHashMatch) {
@@ -262,7 +327,7 @@ export async function startDashboard(config) {
           const ext = path.extname(realPath).toLowerCase();
           const mimeTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
           if (!mimeTypes[ext]) { jsonResponse(res, { error: 'Not an image' }, 400); return; }
-          res.writeHead(200, { 'Content-Type': mimeTypes[ext] });
+          res.writeHead(200, { 'Content-Type': mimeTypes[ext], 'Cache-Control': 'no-store' });
           fs.createReadStream(realPath).pipe(res);
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
@@ -302,7 +367,7 @@ export async function startDashboard(config) {
           jsonResponse(res, { error: 'Not an image' }, 400);
           return;
         }
-        res.writeHead(200, { 'Content-Type': mimeTypes[ext] });
+        res.writeHead(200, { 'Content-Type': mimeTypes[ext], 'Cache-Control': 'no-store' });
         fs.createReadStream(realPath).pipe(res);
         return;
       }
@@ -347,7 +412,7 @@ export async function startDashboard(config) {
           return;
         }
         if (fs.existsSync(resolvedPath)) {
-          res.writeHead(200, { 'Content-Type': imageMimeTypes[ext] });
+          res.writeHead(200, { 'Content-Type': imageMimeTypes[ext], 'Cache-Control': 'no-store' });
           fs.createReadStream(resolvedPath).pipe(res);
         } else {
           jsonResponse(res, { error: 'Not found' }, 404);
@@ -504,7 +569,7 @@ export async function startDashboard(config) {
       if (params.suite) {
         ({ tests, hooks } = loadTestSuite(params.suite, runConfig.testsDir));
       } else {
-        ({ tests, hooks } = loadAllSuites(runConfig.testsDir));
+        ({ tests, hooks } = loadAllSuites(runConfig.testsDir, runConfig.modulesDir, runConfig.exclude));
       }
 
       await waitForPool(runConfig.poolUrl);
@@ -521,8 +586,18 @@ export async function startDashboard(config) {
     }
   }
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const host = config.dashboardHost || '127.0.0.1';
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        log('❌', `${C.red}Port ${port} is already in use. Try a different port with --port <number>.${C.reset}`);
+        reject(new Error(`Port ${port} is already in use`));
+      } else {
+        reject(err);
+      }
+    });
+
     server.listen(port, host, () => {
       log('🖥️', `${C.bold}Dashboard${C.reset} running at ${C.cyan}http://${host}:${port}${C.reset}`);
 
