@@ -38,6 +38,9 @@ import { buildPrompt, generateTests, hasApiKey } from '../src/ai-generate.js';
 import { verifyIssue } from '../src/verify.js';
 import { ensureProject, computeScreenshotHash, registerScreenshotHash } from '../src/db.js';
 import { log, colors as C } from '../src/logger.js';
+import { listModules } from '../src/module-resolver.js';
+import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends } from '../src/learner-sqlite.js';
+import { startNeo4j, stopNeo4j, getNeo4jStatus } from '../src/neo4j-pool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,6 +64,7 @@ function parseCLIConfig() {
   if (getFlag('--base-url')) cliArgs.baseUrl = getFlag('--base-url');
   if (getFlag('--pool-url')) cliArgs.poolUrl = getFlag('--pool-url');
   if (getFlag('--tests-dir')) cliArgs.testsDir = getFlag('--tests-dir');
+  if (getFlag('--modules-dir')) cliArgs.modulesDir = getFlag('--modules-dir');
   if (getFlag('--screenshots-dir')) cliArgs.screenshotsDir = getFlag('--screenshots-dir');
   if (getFlag('--concurrency')) cliArgs.concurrency = parseInt(getFlag('--concurrency'));
   if (getFlag('--pool-port')) cliArgs.poolPort = parseInt(getFlag('--pool-port'));
@@ -75,6 +79,8 @@ function parseCLIConfig() {
   if (getFlag('--dashboard-port')) cliArgs.dashboardPort = parseInt(getFlag('--dashboard-port'));
   if (getFlag('--project-name')) cliArgs.projectName = getFlag('--project-name');
   if (hasFlag('--fail-on-network-error')) cliArgs.failOnNetworkError = true;
+  if (getFlag('--action-retries')) cliArgs.actionRetries = parseInt(getFlag('--action-retries'));
+  if (getFlag('--action-retry-delay')) cliArgs.actionRetryDelay = parseInt(getFlag('--action-retry-delay'));
   if (getFlag('--auth-token')) cliArgs.authToken = getFlag('--auth-token');
   if (getFlag('--auth-storage-key')) cliArgs.authStorageKey = getFlag('--auth-storage-key');
   return cliArgs;
@@ -112,12 +118,20 @@ ${C.bold}Usage:${C.reset}
   e2e-runner pool status                Show pool status
   e2e-runner pool restart               Restart the Chrome Pool
 
+  e2e-runner learnings                  Show test learnings summary
+  e2e-runner learnings --query <q>      Query: flaky, selectors, pages, apis, errors, trends
+
+  e2e-runner neo4j start                Start the Neo4j knowledge graph
+  e2e-runner neo4j stop                 Stop the Neo4j container
+  e2e-runner neo4j status               Show Neo4j status
+
   e2e-runner init                       Scaffold e2e/ in the current project
 
 ${C.bold}Options:${C.reset}
   --base-url <url>         App base URL (default: http://host.docker.internal:3000)
   --pool-url <ws-url>      Chrome Pool URL (default: ws://localhost:3333)
   --tests-dir <dir>        Tests directory (default: e2e/tests)
+  --modules-dir <dir>      Reusable modules directory (default: e2e/modules)
   --screenshots-dir <dir>  Screenshots directory (default: e2e/screenshots)
   --concurrency <n>        Parallel test workers (default: 3)
   --pool-port <port>       Chrome Pool port (default: 3333)
@@ -148,18 +162,18 @@ async function cmdRun() {
   console.log(`${C.dim}Pool: ${config.poolUrl} | Base: ${config.baseUrl} | Concurrency: ${config.concurrency}${C.reset}\n`);
 
   if (hasFlag('--all')) {
-    const loaded = loadAllSuites(config.testsDir);
+    const loaded = loadAllSuites(config.testsDir, config.modulesDir, config.exclude);
     tests = loaded.tests;
     hooks = loaded.hooks;
   } else if (getFlag('--suite')) {
     const name = getFlag('--suite');
-    const loaded = loadTestSuite(name, config.testsDir);
+    const loaded = loadTestSuite(name, config.testsDir, config.modulesDir);
     tests = loaded.tests;
     hooks = loaded.hooks;
     log('📋', `${C.cyan}${name}${C.reset} (${tests.length} tests)`);
   } else if (getFlag('--tests')) {
     const file = getFlag('--tests');
-    const loaded = loadTestFile(path.resolve(file));
+    const loaded = loadTestFile(path.resolve(file), config.modulesDir);
     tests = loaded.tests;
     hooks = loaded.hooks;
     log('📋', `${C.cyan}${file}${C.reset} (${tests.length} tests)`);
@@ -230,6 +244,18 @@ async function cmdList() {
       console.log(`    ${C.dim}- ${test}${C.reset}`);
     }
   }
+
+  const modules = listModules(config.modulesDir);
+  if (modules.length > 0) {
+    console.log(`${C.bold}Available modules:${C.reset}\n`);
+    for (const mod of modules) {
+      const paramNames = mod.params.map(p => p.required ? p.name : `${C.dim}${p.name}?${C.reset}`).join(', ');
+      console.log(`  ${C.cyan}${mod.name}${C.reset} (${paramNames})`);
+      if (mod.description) {
+        console.log(`    ${C.dim}${mod.description}${C.reset}`);
+      }
+    }
+  }
   console.log('');
 }
 
@@ -279,6 +305,7 @@ function cmdInit() {
   // Create directory structure
   const dirs = [
     path.join(cwd, 'e2e', 'tests'),
+    path.join(cwd, 'e2e', 'modules'),
     path.join(cwd, 'e2e', 'screenshots'),
   ];
 
@@ -516,6 +543,155 @@ async function cmdIssue() {
   console.log('');
 }
 
+async function cmdLearnings() {
+  const cliArgs = parseCLIConfig();
+  const config = await loadConfig(cliArgs);
+  const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
+  const days = config.learningsDays || 30;
+  const query = getFlag('--query') || 'summary';
+
+  console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
+  console.log(`${C.dim}Project: ${config.projectName} | Analysis window: ${days} days${C.reset}\n`);
+
+  switch (query) {
+    case 'summary': {
+      const summary = getLearningsSummary(projectId);
+      if (summary.totalRuns === 0) {
+        console.log(`${C.dim}No learnings data yet. Run some tests to start building knowledge.${C.reset}\n`);
+        return;
+      }
+      console.log(`${C.bold}Health Overview${C.reset}`);
+      console.log(`${'─'.repeat(50)}`);
+      console.log(`  Total Runs:          ${C.bold}${summary.totalRuns}${C.reset}`);
+      console.log(`  Total Tests:         ${C.bold}${summary.totalTests}${C.reset}`);
+      console.log(`  Pass Rate:           ${summary.overallPassRate >= 90 ? C.green : summary.overallPassRate >= 70 ? '' : C.red}${summary.overallPassRate}%${C.reset}`);
+      console.log(`  Avg Duration:        ${summary.avgDurationMs < 1000 ? summary.avgDurationMs + 'ms' : (summary.avgDurationMs / 1000).toFixed(1) + 's'}`);
+      console.log(`  Flaky Tests:         ${summary.flakyTests.length > 0 ? C.red : C.green}${summary.flakyTests.length}${C.reset}`);
+      console.log(`  Unstable Selectors:  ${summary.unstableSelectors.length > 0 ? C.red : C.green}${summary.unstableSelectors.length}${C.reset}`);
+
+      if (summary.flakyTests.length > 0) {
+        console.log(`\n${C.bold}Top Flaky Tests${C.reset}`);
+        summary.flakyTests.slice(0, 5).forEach(f => {
+          console.log(`  ${C.yellow}⚠${C.reset} ${f.test_name} — ${f.flaky_rate}% flaky`);
+        });
+      }
+      if (summary.topErrors.length > 0) {
+        console.log(`\n${C.bold}Top Errors${C.reset}`);
+        summary.topErrors.slice(0, 5).forEach(e => {
+          console.log(`  ${C.red}✗${C.reset} [${e.category}] ${e.pattern.slice(0, 60)}${e.pattern.length > 60 ? '...' : ''} (${e.occurrence_count}x)`);
+        });
+      }
+      console.log('');
+      break;
+    }
+    case 'flaky': {
+      const flaky = getFlakySummary(projectId, days);
+      if (flaky.length === 0) { console.log(`${C.green}No flaky tests found.${C.reset}\n`); return; }
+      console.log(`${C.bold}Flaky Tests${C.reset}\n`);
+      flaky.forEach(f => {
+        console.log(`  ${C.yellow}⚠${C.reset} ${C.bold}${f.test_name}${C.reset}`);
+        console.log(`    Rate: ${f.flaky_rate}% | Occurrences: ${f.flaky_count}/${f.total_runs} | Avg attempts: ${f.avg_attempts}`);
+      });
+      console.log('');
+      break;
+    }
+    case 'selectors': {
+      const sels = getSelectorStability(projectId, days);
+      if (sels.length === 0) { console.log(`${C.green}All selectors are stable.${C.reset}\n`); return; }
+      console.log(`${C.bold}Unstable Selectors${C.reset}\n`);
+      sels.forEach(s => {
+        console.log(`  ${C.red}✗${C.reset} ${C.dim}${s.selector}${C.reset}`);
+        console.log(`    Action: ${s.action_type} | Fail: ${s.fail_rate}% | Uses: ${s.total_uses} | Tests: ${s.used_by_tests}`);
+      });
+      console.log('');
+      break;
+    }
+    case 'pages': {
+      const pages = getPageHealth(projectId, days);
+      const failing = pages.filter(p => p.fail_rate > 0);
+      if (failing.length === 0) { console.log(`${C.green}All pages are healthy.${C.reset}\n`); return; }
+      console.log(`${C.bold}Failing Pages${C.reset}\n`);
+      failing.forEach(p => {
+        console.log(`  ${C.red}✗${C.reset} ${C.bold}${p.url_path}${C.reset}`);
+        console.log(`    Fail: ${p.fail_rate}% | Visits: ${p.total_visits} | Console errors: ${p.console_errors} | Network errors: ${p.network_errors}`);
+      });
+      console.log('');
+      break;
+    }
+    case 'apis': {
+      const apis = getApiHealth(projectId, days);
+      const issues = apis.filter(a => a.error_rate > 0);
+      if (issues.length === 0) { console.log(`${C.green}All API endpoints are healthy.${C.reset}\n`); return; }
+      console.log(`${C.bold}API Issues${C.reset}\n`);
+      issues.forEach(a => {
+        console.log(`  ${C.red}✗${C.reset} ${C.bold}${a.endpoint}${C.reset}`);
+        console.log(`    Error: ${a.error_rate}% | Calls: ${a.total_calls} | Avg: ${Math.round(a.avg_duration_ms)}ms | Status: ${a.status_codes}`);
+      });
+      console.log('');
+      break;
+    }
+    case 'errors': {
+      const errors = getErrorPatterns(projectId);
+      if (errors.length === 0) { console.log(`${C.green}No error patterns recorded.${C.reset}\n`); return; }
+      console.log(`${C.bold}Error Patterns${C.reset}\n`);
+      errors.forEach(e => {
+        console.log(`  ${C.red}✗${C.reset} [${e.category}] ${e.pattern.slice(0, 70)}${e.pattern.length > 70 ? '...' : ''}`);
+        console.log(`    Count: ${e.occurrence_count} | Last: ${(e.last_seen || '').split('T')[0]} | Test: ${e.example_test || '-'}`);
+      });
+      console.log('');
+      break;
+    }
+    case 'trends': {
+      const trends = getTestTrends(projectId, days);
+      if (trends.length === 0) { console.log(`${C.dim}No trend data available.${C.reset}\n`); return; }
+      console.log(`${C.bold}Test Trends (${days} days)${C.reset}\n`);
+      console.log(`  ${'Date'.padEnd(12)} ${'Pass Rate'.padEnd(11)} ${'Tests'.padEnd(7)} ${'Pass'.padEnd(6)} ${'Fail'.padEnd(6)} Flaky`);
+      console.log(`  ${'─'.repeat(55)}`);
+      trends.forEach(t => {
+        const rateColor = t.pass_rate >= 90 ? C.green : t.pass_rate >= 70 ? '' : C.red;
+        console.log(`  ${t.date.padEnd(12)} ${rateColor}${(t.pass_rate + '%').padEnd(11)}${C.reset} ${String(t.total_tests).padEnd(7)} ${C.green}${String(t.passed).padEnd(6)}${C.reset} ${t.failed > 0 ? C.red : ''}${String(t.failed).padEnd(6)}${C.reset} ${t.flaky_count}`);
+      });
+      console.log('');
+      break;
+    }
+    default:
+      console.error(`${C.red}Unknown query: ${query}. Available: summary, flaky, selectors, pages, apis, errors, trends${C.reset}`);
+      process.exit(1);
+  }
+}
+
+async function cmdNeo4j() {
+  const subCmd = args[1];
+  const cliArgs = parseCLIConfig();
+  const config = await loadConfig(cliArgs);
+
+  switch (subCmd) {
+    case 'start':
+      startNeo4j(config);
+      break;
+    case 'stop':
+      stopNeo4j(config);
+      break;
+    case 'status': {
+      const status = getNeo4jStatus(config);
+      console.log(`\n${C.bold}Neo4j Status:${C.reset}\n`);
+      if (status.running) {
+        console.log(`  Status:   ${C.green}Running${C.reset}`);
+        console.log(`  Bolt:     ${C.cyan}bolt://localhost:${status.boltPort}${C.reset}`);
+        console.log(`  Browser:  ${C.cyan}http://localhost:${status.httpPort}${C.reset}`);
+      } else {
+        console.log(`  Status:   ${C.red}Stopped${C.reset}`);
+        if (status.error) console.log(`  ${C.dim}${status.error}${C.reset}`);
+      }
+      console.log('');
+      break;
+    }
+    default:
+      console.error(`${C.red}Unknown subcommand: ${subCmd}. Available: start, stop, status${C.reset}`);
+      process.exit(1);
+  }
+}
+
 // ==================== Main ====================
 
 async function main() {
@@ -554,6 +730,14 @@ async function main() {
 
     case 'issue':
       await cmdIssue();
+      break;
+
+    case 'learnings':
+      await cmdLearnings();
+      break;
+
+    case 'neo4j':
+      await cmdNeo4j();
       break;
 
     case 'init':

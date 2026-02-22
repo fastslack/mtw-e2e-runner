@@ -125,6 +125,113 @@ function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_ss_path ON screenshot_hashes(file_path);
   `);
+
+  // ── Learning system tables ──────────────────────────────────────────────────
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS test_learnings (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id    INTEGER NOT NULL REFERENCES projects(id),
+      run_id        INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+      test_name     TEXT NOT NULL,
+      success       INTEGER NOT NULL,
+      duration_ms   INTEGER,
+      flaky         INTEGER DEFAULT 0,
+      attempt       INTEGER DEFAULT 1,
+      max_attempts  INTEGER DEFAULT 1,
+      error_pattern TEXT,
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_tl_project ON test_learnings(project_id);
+    CREATE INDEX IF NOT EXISTS idx_tl_test    ON test_learnings(test_name);
+    CREATE INDEX IF NOT EXISTS idx_tl_created ON test_learnings(created_at);
+
+    CREATE TABLE IF NOT EXISTS selector_learnings (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id    INTEGER NOT NULL REFERENCES projects(id),
+      run_id        INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+      selector      TEXT NOT NULL,
+      action_type   TEXT NOT NULL,
+      success       INTEGER NOT NULL,
+      page_url      TEXT,
+      test_name     TEXT,
+      error         TEXT,
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sl_project  ON selector_learnings(project_id);
+    CREATE INDEX IF NOT EXISTS idx_sl_selector ON selector_learnings(selector);
+
+    CREATE TABLE IF NOT EXISTS page_learnings (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id      INTEGER NOT NULL REFERENCES projects(id),
+      run_id          INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+      url_path        TEXT NOT NULL,
+      load_time_ms    INTEGER,
+      console_errors  INTEGER DEFAULT 0,
+      console_warns   INTEGER DEFAULT 0,
+      network_errors  INTEGER DEFAULT 0,
+      test_name       TEXT,
+      success         INTEGER NOT NULL,
+      created_at      TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_pl_project ON page_learnings(project_id);
+    CREATE INDEX IF NOT EXISTS idx_pl_url     ON page_learnings(url_path);
+
+    CREATE TABLE IF NOT EXISTS api_learnings (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id    INTEGER NOT NULL REFERENCES projects(id),
+      run_id        INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+      endpoint      TEXT NOT NULL,
+      method        TEXT NOT NULL,
+      status        INTEGER,
+      duration_ms   INTEGER,
+      is_error      INTEGER DEFAULT 0,
+      test_name     TEXT,
+      created_at    TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_al_project  ON api_learnings(project_id);
+    CREATE INDEX IF NOT EXISTS idx_al_endpoint ON api_learnings(endpoint);
+
+    CREATE TABLE IF NOT EXISTS error_patterns (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id      INTEGER NOT NULL REFERENCES projects(id),
+      pattern         TEXT NOT NULL,
+      category        TEXT NOT NULL,
+      occurrence_count INTEGER DEFAULT 1,
+      first_seen      TEXT DEFAULT (datetime('now')),
+      last_seen       TEXT DEFAULT (datetime('now')),
+      example_error   TEXT,
+      example_test    TEXT,
+      UNIQUE(project_id, pattern)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ep_project ON error_patterns(project_id);
+    CREATE INDEX IF NOT EXISTS idx_ep_cat     ON error_patterns(category);
+
+    CREATE TABLE IF NOT EXISTS learning_summary (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id      INTEGER NOT NULL UNIQUE REFERENCES projects(id),
+      total_runs      INTEGER DEFAULT 0,
+      total_tests     INTEGER DEFAULT 0,
+      overall_pass_rate REAL DEFAULT 0,
+      avg_duration_ms REAL DEFAULT 0,
+      flaky_tests     TEXT,
+      slow_tests      TEXT,
+      unstable_selectors TEXT,
+      failing_pages   TEXT,
+      api_issues      TEXT,
+      top_errors      TEXT,
+      updated_at      TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Migrations: add metadata columns to screenshot_hashes
+  const ssColumns = db.pragma('table_info(screenshot_hashes)').map(c => c.name);
+  if (!ssColumns.includes('test_name')) {
+    db.exec('ALTER TABLE screenshot_hashes ADD COLUMN test_name TEXT');
+    db.exec('ALTER TABLE screenshot_hashes ADD COLUMN step_index INTEGER');
+    db.exec('ALTER TABLE screenshot_hashes ADD COLUMN page_url TEXT');
+    db.exec('ALTER TABLE screenshot_hashes ADD COLUMN screenshot_type TEXT');
+  }
 }
 
 /** Upsert a project row. Returns the project id. */
@@ -169,17 +276,19 @@ export function computeScreenshotHash(filePath) {
   return crypto.createHash('sha256').update(filePath).digest('hex').slice(0, 8);
 }
 
-/** Register a screenshot hash. INSERT OR IGNORE avoids duplicates. */
-export function registerScreenshotHash(hash, filePath, projectId, runDbId) {
+/** Register a screenshot hash. INSERT OR IGNORE avoids duplicates. Optional metadata: testName, stepIndex, pageUrl, screenshotType. */
+export function registerScreenshotHash(hash, filePath, projectId, runDbId, meta = {}) {
   const d = getDb();
-  d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id) VALUES (?, ?, ?, ?)').run(hash, filePath, projectId || null, runDbId || null);
+  d.prepare(
+    'INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id, test_name, step_index, page_url, screenshot_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(hash, filePath, projectId || null, runDbId || null, meta.testName || null, meta.stepIndex ?? null, meta.pageUrl || null, meta.screenshotType || null);
 }
 
-/** Look up a screenshot by hash. Strips optional "ss:" prefix. Returns { hash, file_path, project_id } or null. */
+/** Look up a screenshot by hash. Strips optional "ss:" prefix. Returns { hash, file_path, project_id, test_name, step_index, page_url, screenshot_type } or null. */
 export function lookupScreenshotHash(rawHash) {
   const d = getDb();
   const hash = rawHash.replace(/^ss:/, '');
-  return d.prepare('SELECT hash, file_path, project_id FROM screenshot_hashes WHERE hash = ?').get(hash) || null;
+  return d.prepare('SELECT hash, file_path, project_id, test_name, step_index, page_url, screenshot_type FROM screenshot_hashes WHERE hash = ?').get(hash) || null;
 }
 
 /** Batch lookup: given an array of file paths, returns { [path]: hash } map. */
@@ -210,7 +319,7 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const insertHash = d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id) VALUES (?, ?, ?, ?)');
+  const insertHash = d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id, test_name, step_index, page_url, screenshot_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
 
   const tx = d.transaction(() => {
     const runInfo = insertRun.run(
@@ -254,15 +363,18 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
         r.networkLogs?.length ? JSON.stringify(r.networkLogs) : null,
       );
 
-      // Register screenshot hashes
-      for (const ssPath of screenshots) {
-        insertHash.run(computeScreenshotHash(ssPath), ssPath, projectId, runDbId);
+      // Register screenshot hashes with metadata
+      const ssActions = (r.actions || []).filter(a => a.type === 'screenshot' && a.result?.screenshot);
+      for (let si = 0; si < ssActions.length; si++) {
+        const a = ssActions[si];
+        const actionIdx = r.actions.indexOf(a);
+        insertHash.run(computeScreenshotHash(a.result.screenshot), a.result.screenshot, projectId, runDbId, r.name, actionIdx, null, 'action');
       }
       if (r.errorScreenshot) {
-        insertHash.run(computeScreenshotHash(r.errorScreenshot), r.errorScreenshot, projectId, runDbId);
+        insertHash.run(computeScreenshotHash(r.errorScreenshot), r.errorScreenshot, projectId, runDbId, r.name, null, null, 'error');
       }
       if (r.verificationScreenshot) {
-        insertHash.run(computeScreenshotHash(r.verificationScreenshot), r.verificationScreenshot, projectId, runDbId);
+        insertHash.run(computeScreenshotHash(r.verificationScreenshot), r.verificationScreenshot, projectId, runDbId, r.name, null, null, 'verification');
       }
     }
 

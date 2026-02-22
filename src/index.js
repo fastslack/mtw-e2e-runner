@@ -16,6 +16,12 @@ export { startDashboard, stopDashboard } from './dashboard.js';
 export { fetchIssue, parseIssueUrl, detectProvider, checkCliAuth } from './issues.js';
 export { buildPrompt, generateTests, hasApiKey } from './ai-generate.js';
 export { verifyIssue } from './verify.js';
+export { resolveTestData, loadModuleRegistry, listModules } from './module-resolver.js';
+export { learnFromRun, categorizeError } from './learner.js';
+export { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights } from './learner-sqlite.js';
+export { generateLearningsMarkdown } from './learner-markdown.js';
+export { writeToGraph, queryGraph, closeNeo4j } from './learner-neo4j.js';
+export { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
 
 import { loadConfig } from './config.js';
 import { waitForPool } from './pool.js';
@@ -36,7 +42,7 @@ export async function createRunner(userConfig = {}) {
     /** Runs all test suites from the tests directory */
     async runAll() {
       await waitForPool(config.poolUrl);
-      const { tests, hooks } = loadAllSuites(config.testsDir);
+      const { tests, hooks } = loadAllSuites(config.testsDir, config.modulesDir, config.exclude);
       const results = await runTestsParallel(tests, config, hooks);
       const report = generateReport(results);
       saveReport(report, config.screenshotsDir, config);
@@ -47,7 +53,7 @@ export async function createRunner(userConfig = {}) {
     /** Runs a single suite by name */
     async runSuite(name) {
       await waitForPool(config.poolUrl);
-      const { tests, hooks } = loadTestSuite(name, config.testsDir);
+      const { tests, hooks } = loadTestSuite(name, config.testsDir, config.modulesDir);
       const results = await runTestsParallel(tests, config, hooks);
       const report = generateReport(results);
       saveReport(report, config.screenshotsDir, config);
@@ -68,7 +74,7 @@ export async function createRunner(userConfig = {}) {
     /** Runs tests from a JSON file path */
     async runFile(filePath) {
       await waitForPool(config.poolUrl);
-      const { tests, hooks } = loadTestFile(filePath);
+      const { tests, hooks } = loadTestFile(filePath, config.modulesDir);
       const results = await runTestsParallel(tests, config, hooks);
       const report = generateReport(results);
       saveReport(report, config.screenshotsDir, config);
