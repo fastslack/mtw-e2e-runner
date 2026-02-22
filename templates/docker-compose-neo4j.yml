@@ -1,0 +1,19 @@
+version: '3.8'
+services:
+  neo4j:
+    image: neo4j:5
+    container_name: e2e-runner-neo4j
+    restart: unless-stopped
+    ports:
+      - "${BOLT_PORT}:7687"
+      - "${HTTP_PORT}:7474"
+    environment:
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD}"
+      NEO4J_PLUGINS: '[]'
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+
+volumes:
+  neo4j-data:
+  neo4j-logs:

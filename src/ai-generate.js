@@ -27,9 +27,20 @@ The test format is:
       { "type": "wait", "text": "Expected text" },
       { "type": "wait", "value": "2000" },
       { "type": "assert_text", "text": "Expected text on page" },
+      { "type": "assert_element_text", "selector": "#title", "text": "Dashboard" },
+      { "type": "assert_element_text", "selector": "#title", "text": "Dashboard", "value": "exact" },
+      { "type": "assert_attribute", "selector": "input#email", "value": "type=email" },
+      { "type": "assert_attribute", "selector": "button", "value": "disabled" },
+      { "type": "assert_class", "selector": ".nav-item", "value": "active" },
+      { "type": "assert_not_visible", "selector": ".error-banner" },
+      { "type": "assert_input_value", "selector": "#email", "value": "user@example.com" },
+      { "type": "assert_matches", "selector": ".phone", "value": "\\\\d{3}-\\\\d{3}-\\\\d{4}" },
       { "type": "assert_url", "value": "/expected-path" },
       { "type": "assert_visible", "selector": ".element" },
       { "type": "assert_count", "selector": ".items", "value": "5" },
+      { "type": "assert_count", "selector": ".rows", "value": ">3" },
+      { "type": "assert_count", "selector": ".errors", "value": "0" },
+      { "type": "get_text", "selector": "#patient-name" },
       { "type": "screenshot", "value": "step-name.png" },
       { "type": "select", "selector": "select#role", "value": "admin" },
       { "type": "clear", "selector": "input" },
@@ -41,9 +52,32 @@ The test format is:
   }
 ]
 
+Assertion action reference:
+- assert_text: checks if text appears anywhere in the page body
+- assert_element_text: checks textContent of a specific element (use "value": "exact" for strict match)
+- assert_attribute: checks HTML attributes — "attr=value" for value check, "attr" alone for existence
+- assert_class: checks if element has a CSS class via classList.contains
+- assert_visible / assert_not_visible: checks element visibility (display, visibility, opacity)
+- assert_input_value: checks the .value of input/select/textarea elements
+- assert_matches: checks element textContent against a regex pattern
+- assert_count: counts matching elements — exact number or operators (">3", ">=1", "<10", "<=5")
+- assert_url: checks if current URL contains the value
+- get_text: extracts element text (non-assertion, returns { value })
+
+Reusable modules:
+- Tests can reference shared action sequences: { "$use": "module-name", "params": { "key": "value" } }
+- Use modules for repeated flows like login, navigation, or setup
+
 Rules:
 - Output a JSON array of test objects
-- Use only the action types listed above
+- NEVER use evaluate with inline JS for assertions that can be done with native action types:
+  * Use assert_element_text instead of evaluate to check element textContent
+  * Use assert_attribute instead of evaluate to check HTML attributes
+  * Use assert_class instead of evaluate to check CSS classes
+  * Use assert_input_value instead of evaluate to check input/select/textarea values
+  * Use assert_matches instead of evaluate for regex text matching
+  * Use assert_not_visible instead of evaluate to verify elements are hidden
+  * Reserve evaluate ONLY for complex logic that cannot be expressed with existing action types
 - "click" with "text" (no selector) finds buttons/links by visible text
 - "goto" values starting with "/" are relative to the app's base URL
 - Include a screenshot action before key assertions for debugging

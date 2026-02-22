@@ -8,6 +8,9 @@ export default {
   // Directory containing JSON test files
   testsDir: 'e2e/tests',
 
+  // Directory for reusable modules (referenced via $use in tests)
+  // modulesDir: 'e2e/modules',
+
   // Directory for screenshots and reports
   screenshotsDir: 'e2e/screenshots',
 

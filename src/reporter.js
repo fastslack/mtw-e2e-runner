@@ -6,6 +6,9 @@ import fs from 'fs';
 import path from 'path';
 import { colors as C } from './logger.js';
 import { ensureProject, saveRun as saveRunToDb } from './db.js';
+import { narrateTest } from './narrate.js';
+import { learnFromRun } from './learner.js';
+import { generateLearningsMarkdown } from './learner-markdown.js';
 
 function escapeXml(str) {
   return String(str)
@@ -152,7 +155,25 @@ export function persistRun(report, config, suiteName) {
 
   try {
     const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
-    saveRunToDb(projectId, report, runId, suiteName || null, config.triggeredBy || null);
+    const runDbId = saveRunToDb(projectId, report, runId, suiteName || null, config.triggeredBy || null);
+
+    // Fire-and-forget: learn from this run (never blocks or crashes the runner)
+    if (config.learningsEnabled !== false) {
+      try {
+        learnFromRun(projectId, runDbId, report, config, suiteName);
+      } catch (learnErr) {
+        process.stderr.write(`[e2e-runner] Learning write failed: ${learnErr.message}\n`);
+      }
+
+      // Generate learnings markdown if enabled
+      if (config.learningsMarkdown !== false) {
+        try {
+          generateLearningsMarkdown(projectId, config);
+        } catch (mdErr) {
+          process.stderr.write(`[e2e-runner] Learnings markdown failed: ${mdErr.message}\n`);
+        }
+      }
+    }
   } catch (err) {
     process.stderr.write(`[e2e-runner] SQLite write failed: ${err.message}\n`);
   }
@@ -220,6 +241,17 @@ export function printReport(report, screenshotsDir) {
         console.log(`    ${C.dim}${n.method}${C.reset} ${statusColor}${n.status}${C.reset} ${n.url} ${C.dim}(${n.duration}ms)${C.reset}`);
       });
     });
+  }
+
+  // Print step-by-step narrative for each test
+  console.log(`\n${C.bold}NARRATIVE:${C.reset}`);
+  for (const result of report.results) {
+    const icon = result.success ? `${C.green}✓${C.reset}` : `${C.red}✗${C.reset}`;
+    console.log(`  ${icon} ${C.bold}${result.name}${C.reset}`);
+    const steps = narrateTest(result);
+    for (const step of steps) {
+      console.log(`    ${C.dim}${step}${C.reset}`);
+    }
   }
 
   if (screenshotsDir) {

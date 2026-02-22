@@ -19,10 +19,10 @@ npm install
 # Scaffold e2e/ directory in a consuming project
 npx e2e-runner init
 
-# Manage Chrome pool (requires Docker)
+# Manage Chrome pool (requires Docker) — CLI only, NOT available via MCP
 npx e2e-runner pool start      # spins up browserless/chrome container
 npx e2e-runner pool stop
-npx e2e-runner pool status
+npx e2e-runner pool status     # also available as e2e_pool_status MCP tool
 
 # Run tests
 npx e2e-runner run --all                  # all suites in e2e/tests/
@@ -96,9 +96,19 @@ Each JSON file is an array of test objects. Each test has a `name` and an `actio
       { "type": "wait", "text": "Expected text" },
       { "type": "wait", "value": "2000" },
       { "type": "assert_text", "text": "Expected" },
+      { "type": "assert_element_text", "selector": "#title", "text": "Dashboard" },
+      { "type": "assert_element_text", "selector": "#title", "text": "Dashboard", "value": "exact" },
+      { "type": "assert_attribute", "selector": "input#email", "value": "type=email" },
+      { "type": "assert_attribute", "selector": "button", "value": "disabled" },
+      { "type": "assert_class", "selector": ".nav-item", "value": "active" },
       { "type": "assert_url", "value": "/expected-path" },
       { "type": "assert_visible", "selector": ".element" },
+      { "type": "assert_not_visible", "selector": ".error-banner" },
+      { "type": "assert_input_value", "selector": "#email", "value": "user@example.com" },
+      { "type": "assert_matches", "selector": ".phone", "value": "\\d{3}-\\d{3}-\\d{4}" },
       { "type": "assert_count", "selector": ".items", "value": "5" },
+      { "type": "assert_count", "selector": ".rows", "value": ">3" },
+      { "type": "get_text", "selector": "#patient-name" },
       { "type": "assert_no_network_errors" },
       { "type": "screenshot", "value": "filename.png" },
       { "type": "select", "selector": "select", "value": "option" },
@@ -122,6 +132,19 @@ Suite files can have numeric prefixes for ordering (e.g., `01-auth.json`, `02-da
 4. CLI flags: `--base-url`, `--pool-url`, `--tests-dir`, `--screenshots-dir`, `--concurrency`, `--timeout`, `--pool-port`, `--max-sessions`, `--retries`, `--retry-delay`, `--test-timeout`, `--output`, `--env`, `--fail-on-network-error`
 5. Environment profile merge (if `--env` or `E2E_ENV` selects a non-default profile)
 
+### Excluding Tests from `--all`
+
+Use the `exclude` config array to skip test files when running `--all`. Patterns support `*` wildcards:
+
+```js
+// e2e.config.js
+export default {
+  exclude: ['explore-*', 'debug-*', 'draft-*'],
+};
+```
+
+This filters out `explore-login.json`, `debug-api.json`, etc. from `e2e_run --all`. Individual suite runs (`--suite`) are not affected.
+
 ### Strict Evaluate Action
 
 The `evaluate` action runs JavaScript in the browser context and **checks the return value**:
@@ -132,6 +155,60 @@ The `evaluate` action runs JavaScript in the browser context and **checks the re
 - If the JS throws → the test **fails** (standard Puppeteer error).
 
 This prevents false PASSes where evaluate actions return error strings that were previously silently ignored.
+
+### Granular Assertion Actions
+
+These assertion types cover common verification patterns — prefer them over `evaluate` with inline JS:
+
+| Action | Fields | Behavior |
+|--------|--------|----------|
+| `assert_element_text` | `selector`, `text`, optional `value: "exact"` | Checks `textContent.includes(text)`. With `value: "exact"`, uses strict `trim() ===` comparison. |
+| `assert_attribute` | `selector`, `value: "attr=expected"` or `value: "attr"` | With `=`: checks `getAttribute(attr) === expected`. Without: checks `hasAttribute(attr)`. |
+| `assert_class` | `selector`, `value` | Checks `classList.contains(value)`. |
+| `assert_not_visible` | `selector` | Passes if element doesn't exist OR exists but is hidden (display:none/visibility:hidden/opacity:0). |
+| `assert_input_value` | `selector`, `value` | Checks `element.value.includes(value)` on input/select/textarea. |
+| `assert_matches` | `selector`, `value` (regex) | Tests `textContent` against `new RegExp(value)`. |
+| `get_text` | `selector` | Returns `{ value: textContent.trim() }`. Non-assertion — never fails. Result stored in action entry as `{ value: "extracted text" }`. |
+| `assert_count` | `selector`, `value` | Supports exact (`"5"`) and operators (`">3"`, `">=1"`, `"<10"`, `"<=5"`). |
+
+**Key differences:**
+- `assert_text` checks the **entire page body** for text (substring match)
+- `assert_element_text` checks a **specific element's** `textContent` (substring match, or exact with `"value": "exact"`)
+- `assert_matches` checks a specific element's `textContent` against a **regex** pattern
+- `assert_input_value` reads the `.value` property (for `<input>`, `<select>`, `<textarea>`)
+
+**Examples:**
+```json
+// assert_element_text — substring vs exact
+{ "type": "assert_element_text", "selector": "h1", "text": "Dashboard" }
+{ "type": "assert_element_text", "selector": "h1", "text": "Patient Dashboard", "value": "exact" }
+
+// assert_attribute — check value vs check existence
+{ "type": "assert_attribute", "selector": "input#email", "value": "type=email" }
+{ "type": "assert_attribute", "selector": "button.submit", "value": "disabled" }
+
+// assert_class — check if element has a CSS class
+{ "type": "assert_class", "selector": ".nav-item:first-child", "value": "active" }
+
+// assert_input_value — check form field value (substring match)
+{ "type": "assert_input_value", "selector": "#email", "value": "user@example.com" }
+
+// assert_matches — regex match on element text
+{ "type": "assert_matches", "selector": ".phone-number", "value": "\\d{3}-\\d{3}-\\d{4}" }
+
+// get_text — extract text (non-assertion, never fails)
+{ "type": "get_text", "selector": "#patient-name" }
+// Result in action entry: { "value": "John Doe" }
+```
+
+### Action-Level Retry
+
+Individual actions can be retried on failure without rerunning the entire test. Set per-action with `"retries": N` or globally via `actionRetries` config / `--action-retries <n>` / `ACTION_RETRIES` env var. Delay between retries: `actionRetryDelay` (default 500ms).
+
+```json
+{ "type": "click", "selector": "#dynamic-btn", "retries": 3 }
+{ "type": "wait", "selector": ".lazy-loaded", "retries": 2 }
+```
 
 ### Network Error Handling
 
@@ -189,6 +266,17 @@ Tests can include an `expect` field — a text description of what the final vis
 
 No API key required — Claude Code itself does the visual verification.
 
+### Serial Tests
+
+Tests that share state (e.g., two tests modifying the same patient) can be marked as serial to prevent race conditions:
+
+```json
+{ "name": "create-service-request", "serial": true, "actions": [...] }
+{ "name": "list-service-requests", "serial": true, "actions": [...] }
+```
+
+Serial tests run one at a time **after** all parallel tests finish. This prevents interference between tests that modify shared resources without slowing down independent tests.
+
 ### Retry on Flaky Tests
 
 Tests can be retried on failure. Set globally via `retries` config / `--retries <n>` or per-test with `"retries": 3` in the test JSON. The `retryDelay` (default 1000ms) controls the wait between attempts. Flaky tests (pass after retry) are logged with a "flaky" indicator. Each retry attempt gets its own test-level timeout.
@@ -235,7 +323,7 @@ Activate with `--env staging` or `E2E_ENV=staging`. Profile values override all 
 ### Important Details
 
 - The `baseUrl` default is `http://host.docker.internal:3000` because Chrome runs inside Docker and must reach the host machine
-- `click` with `text` (no selector) searches across `button, a, [role="button"], [role="tab"], [role="menuitem"], div[class*="cursor"], span` for text content match
+- `click` with `text` (no selector) searches across `button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6, dd, dt` for text content match
 - `type`/`fill` actions triple-click + Backspace to clear before typing
 - Failed tests auto-capture an error screenshot to `screenshotsDir`
 - Report JSON is saved to `{screenshotsDir}/report.json`
@@ -346,6 +434,13 @@ Turns bug reports and feature requests into executable E2E tests.
 **Key files:** `src/issues.js` (provider drivers), `src/ai-generate.js` (prompt builder + Claude API), `src/verify.js` (orchestrator)
 
 **Bug verification logic:** Generated tests assert CORRECT behavior. Test failure = bug confirmed. All tests pass = not reproducible.
+
+**GitLab limitations:**
+- Requires `glab` CLI installed and authenticated (`glab auth login`)
+- Self-hosted GitLab instances are supported via URL detection
+- Verify mode works with GitLab issues (generates tests + runs them) but does NOT post comments back to the issue
+- Private repos require `glab` to be authenticated with appropriate access — there is no separate auth header parameter in the MCP tool
+- The `authToken`/`authStorageKey` params on `e2e_issue` are for the **app under test**, not for GitLab API auth
 
 ### Pool-Aware Queue
 
