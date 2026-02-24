@@ -107,6 +107,13 @@ function migrate(db) {
     db.exec('ALTER TABLE test_results ADD COLUMN network_logs TEXT');
   }
 
+  // Add actions_json column if upgrading from older schema
+  try {
+    db.prepare('SELECT actions_json FROM test_results LIMIT 0').run();
+  } catch {
+    db.exec('ALTER TABLE test_results ADD COLUMN actions_json TEXT');
+  }
+
   // Add triggered_by column if upgrading from older schema
   try {
     db.prepare('SELECT triggered_by FROM runs LIMIT 0').run();
@@ -315,8 +322,8 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
   `);
 
   const insertTest = d.prepare(`
-    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots, network_logs)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots, network_logs, actions_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertHash = d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id, test_name, step_index, page_url, screenshot_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -346,6 +353,19 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
         .filter(a => a.type === 'screenshot' && a.result?.screenshot)
         .map(a => a.result.screenshot);
 
+      // Condensed actions for narrative display
+      const actionsCondensed = (r.actions || []).map(a => ({
+        type: a.type,
+        selector: a.selector || undefined,
+        value: a.value || undefined,
+        text: a.text || undefined,
+        success: a.success,
+        duration: a.duration,
+        narrative: a.narrative || undefined,
+        error: a.error || undefined,
+        actionRetries: a.actionRetries || undefined,
+      }));
+
       insertTest.run(
         runDbId,
         r.name,
@@ -361,6 +381,7 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
         r.networkErrors ? JSON.stringify(r.networkErrors) : null,
         screenshots.length ? JSON.stringify(screenshots) : null,
         r.networkLogs?.length ? JSON.stringify(r.networkLogs) : null,
+        actionsCondensed.length ? JSON.stringify(actionsCondensed) : null,
       );
 
       // Register screenshot hashes with metadata
@@ -464,6 +485,7 @@ export function getRunDetail(runDbId) {
         consoleLogs: t.console_logs ? JSON.parse(t.console_logs) : [],
         networkErrors: t.network_errors ? JSON.parse(t.network_errors) : [],
         networkLogs: t.network_logs ? JSON.parse(t.network_logs) : [],
+        actions: t.actions_json ? JSON.parse(t.actions_json) : [],
         screenshotHashes,
       };
     }),
