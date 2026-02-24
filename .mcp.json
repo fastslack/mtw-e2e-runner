@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "e2e-runner": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/mcp-server.js"],
+      "cwd": "${CLAUDE_PLUGIN_ROOT}"
+    }
+  }
+}

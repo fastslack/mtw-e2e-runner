@@ -15,7 +15,12 @@
   "files": [
     "bin/",
     "src/",
-    "templates/"
+    "templates/",
+    ".claude-plugin/",
+    ".mcp.json",
+    "skills/",
+    "commands/",
+    "agents/"
   ],
   "keywords": [
     "e2e",

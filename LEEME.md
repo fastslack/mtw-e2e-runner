@@ -30,7 +30,7 @@ Pero lo que realmente lo diferencia es su **integración profunda con IA**. Con 
 
 🧪 **Tests sin código** — Archivos JSON que cualquier persona de tu equipo puede leer y escribir. Sin JavaScript, sin compilación, sin dependencia de framework.
 
-🤖 **Testing con IA** — Claude Code crea, ejecuta y depura tests nativamente a través de 12 herramientas MCP. Pedile que "testee el flujo de checkout" y construye el JSON, lo ejecuta y te reporta el resultado.
+🤖 **Testing con IA** — Claude Code crea, ejecuta y depura tests nativamente a través de 13 herramientas MCP. Pedile que "testee el flujo de checkout" y construye el JSON, lo ejecuta y te reporta el resultado.
 
 🐛 **Pipeline Issue-to-Test** — Pegá una URL de issue de GitHub o GitLab. El runner lo busca, genera tests E2E, los ejecuta y te dice: *bug confirmado* o *no reproducible*.
 
@@ -104,9 +104,15 @@ npx e2e-runner dashboard
 **Agregar a Claude Code** (una vez, disponible en todos los proyectos):
 
 ```bash
+# Plugin completo: herramientas MCP + skills + commands + agents
+claude plugin install npm:@matware/e2e-runner
+
+# O solo MCP (herramientas sin skills/commands/agents):
 claude mcp add --transport stdio --scope user e2e-runner \
   -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
+
+El **plugin** es la forma recomendada — instala las 13 herramientas MCP *más* un skill que le enseña a Claude el workflow óptimo, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`) y 2 agentes especializados para análisis y creación de tests.
 
 ---
 
@@ -442,16 +448,41 @@ Cada screenshot recibe un hash determinístico (`ss:a3f2b1c9`). Usá `e2e_screen
 
 ---
 
-## Integración con Claude Code (MCP)
+## Integración con Claude Code
 
-El paquete incluye un [servidor MCP](https://modelcontextprotocol.io/) integrado que le da a Claude Code acceso nativo al test runner.
+El paquete se distribuye como un **plugin de Claude Code** — una sola instalación que le da a Claude acceso nativo al test runner, le enseña el workflow óptimo, y agrega slash commands y agentes especializados.
 
-**Instalar una vez** (disponible en todos los proyectos):
+### Instalar como Plugin (recomendado)
+
+```bash
+claude plugin install npm:@matware/e2e-runner
+```
+
+**Qué incluye:**
+
+| Componente | Descripción |
+|------------|-------------|
+| **13 herramientas MCP** | Ejecutar tests, crear archivos de test, capturar screenshots, consultar logs de red, gestionar dashboard, verificar issues, consultar aprendizajes |
+| **Skill** | Le enseña a Claude el workflow completo de e2e-runner — cómo combinar herramientas, interpretar resultados, depurar fallos, crear tests |
+| **3 Commands** | `/e2e-runner:run` — ejecutar y analizar tests<br>`/e2e-runner:create-test` — explorar UI y crear tests<br>`/e2e-runner:verify-issue <url>` — verificar bugs de GitHub/GitLab |
+| **2 Agents** | **test-analyzer** — diagnostica fallos, analiza tests flaky, profundiza en errores de red<br>**test-creator** — explora UI, descubre selectores, diseña y valida tests |
+
+### Instalar solo MCP (alternativa)
+
+Si solo querés las 13 herramientas MCP sin skills, commands ni agents:
 
 ```bash
 claude mcp add --transport stdio --scope user e2e-runner \
   -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
+
+### Slash Commands
+
+| Command | Descripción |
+|---------|-------------|
+| `/e2e-runner:run` | Verificar pool, listar suites, ejecutar tests, analizar resultados con screenshots y drill-down de red |
+| `/e2e-runner:create-test` | Explorar la UI con screenshots, buscar selectores en el código fuente, diseñar acciones de test, crear y validar |
+| `/e2e-runner:verify-issue <url>` | Buscar issue de GitHub/GitLab, crear tests que verifiquen el comportamiento correcto, reportar bug confirmado o no reproducible |
 
 ### Herramientas MCP
 
@@ -467,6 +498,7 @@ claude mcp add --transport stdio --scope user e2e-runner \
 | `e2e_dashboard_start` | Iniciar el dashboard web |
 | `e2e_dashboard_stop` | Detener el dashboard web |
 | `e2e_issue` | Buscar issue de GitHub/GitLab y generar tests. `mode: "prompt"` o `mode: "verify"` |
+| `e2e_network_logs` | Consultar logs de requests/responses de red por `runDbId`. Filtrar por nombre de test, método, status, patrón de URL. Soporta headers y bodies |
 | `e2e_learnings` | Consultar el sistema de aprendizaje: `summary`, `flaky`, `selectors`, `pages`, `apis`, `errors`, `trends` |
 | `e2e_neo4j` | Gestionar contenedor Neo4j de grafo de conocimiento: `start`, `stop`, `status` |
 

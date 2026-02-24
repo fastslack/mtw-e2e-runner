@@ -30,7 +30,7 @@ But what makes it truly different is its **deep AI integration**. With a built-i
 
 🧪 **Zero-code tests** — JSON files that anyone on your team can read and write. No JavaScript, no compilation, no framework lock-in.
 
-🤖 **AI-powered testing** — Claude Code creates, executes, and debugs tests natively through 12 MCP tools. Ask it to "test the checkout flow" and it builds the JSON, runs it, and reports back.
+🤖 **AI-powered testing** — Claude Code creates, executes, and debugs tests natively through 13 MCP tools. Ask it to "test the checkout flow" and it builds the JSON, runs it, and reports back.
 
 🐛 **Issue-to-Test pipeline** — Paste a GitHub or GitLab issue URL. The runner fetches it, generates E2E tests, runs them, and tells you: *bug confirmed* or *not reproducible*.
 
@@ -104,9 +104,15 @@ npx e2e-runner dashboard
 **Add to Claude Code** (once, available in all projects):
 
 ```bash
+# Full plugin: MCP tools + skills + commands + agents
+claude plugin install npm:@matware/e2e-runner
+
+# Or MCP-only (tools without skills/commands/agents):
 claude mcp add --transport stdio --scope user e2e-runner \
   -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
+
+The **plugin** is the recommended approach — it installs the 13 MCP tools *plus* a skill that teaches Claude the optimal workflow, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`), and 2 specialized agents for test analysis and creation.
 
 ---
 
@@ -442,16 +448,41 @@ Every screenshot gets a deterministic hash (`ss:a3f2b1c9`). Use `e2e_screenshot`
 
 ---
 
-## Claude Code Integration (MCP)
+## Claude Code Integration
 
-The package includes a built-in [MCP server](https://modelcontextprotocol.io/) that gives Claude Code native access to the test runner.
+The package ships as a **Claude Code plugin** — a single install that gives Claude native access to the test runner, teaches it the optimal workflow, and adds slash commands and specialized agents.
 
-**Install once** (available in all projects):
+### Install as Plugin (recommended)
+
+```bash
+claude plugin install npm:@matware/e2e-runner
+```
+
+**What you get:**
+
+| Component | Description |
+|-----------|-------------|
+| **13 MCP tools** | Run tests, create test files, capture screenshots, query network logs, manage dashboard, verify issues, query learnings |
+| **Skill** | Teaches Claude the full e2e-runner workflow — how to combine tools, interpret results, debug failures, create tests |
+| **3 Commands** | `/e2e-runner:run` — run & analyze tests<br>`/e2e-runner:create-test` — explore UI and create tests<br>`/e2e-runner:verify-issue <url>` — verify GitHub/GitLab bugs |
+| **2 Agents** | **test-analyzer** — diagnoses failures, analyzes flaky tests, drills into network errors<br>**test-creator** — explores UI, discovers selectors, designs and validates tests |
+
+### Install MCP-only (alternative)
+
+If you only want the 13 MCP tools without skills, commands, or agents:
 
 ```bash
 claude mcp add --transport stdio --scope user e2e-runner \
   -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/e2e-runner:run` | Check pool, list suites, run tests, analyze results with screenshots and network drill-down |
+| `/e2e-runner:create-test` | Explore the UI with screenshots, find selectors in source code, design test actions, create and validate |
+| `/e2e-runner:verify-issue <url>` | Fetch a GitHub/GitLab issue, create tests that verify correct behavior, report bug confirmed or not reproducible |
 
 ### MCP Tools
 
@@ -467,6 +498,7 @@ claude mcp add --transport stdio --scope user e2e-runner \
 | `e2e_dashboard_start` | Start the web dashboard |
 | `e2e_dashboard_stop` | Stop the web dashboard |
 | `e2e_issue` | Fetch GitHub/GitLab issue and generate tests. `mode: "prompt"` or `mode: "verify"` |
+| `e2e_network_logs` | Query network request/response logs by `runDbId`. Filter by test name, method, status, URL pattern. Supports headers and bodies |
 | `e2e_learnings` | Query the learning system: `summary`, `flaky`, `selectors`, `pages`, `apis`, `errors`, `trends` |
 | `e2e_neo4j` | Manage Neo4j knowledge graph container: `start`, `stop`, `status` |
 
