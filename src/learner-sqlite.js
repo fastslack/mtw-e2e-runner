@@ -13,23 +13,43 @@ import { getDb } from './db.js';
  */
 export function getLearningsSummary(projectId) {
   const d = getDb();
-  const row = d.prepare('SELECT * FROM learning_summary WHERE project_id = ?').get(projectId);
+  const empty = {
+    totalRuns: 0, totalTests: 0, overallPassRate: 0, avgDurationMs: 0,
+    flakyTests: [], slowTests: [], unstableSelectors: [],
+    failingPages: [], apiIssues: [], topErrors: [], updatedAt: null,
+  };
 
-  if (!row) {
+  // Cross-project aggregate when projectId is null
+  if (projectId === null || projectId === undefined) {
+    const rows = d.prepare('SELECT * FROM learning_summary').all();
+    if (!rows.length) return empty;
+    let totalRuns = 0, totalTests = 0, passSumW = 0, durSumW = 0;
+    let allFlaky = [], allSlow = [], allSelectors = [], allPages = [], allApis = [], allErrors = [];
+    let latestUpdate = null;
+    for (const row of rows) {
+      totalRuns += row.total_runs;
+      totalTests += row.total_tests;
+      passSumW += row.overall_pass_rate * row.total_tests;
+      durSumW += row.avg_duration_ms * row.total_tests;
+      allFlaky = allFlaky.concat(JSON.parse(row.flaky_tests || '[]'));
+      allSlow = allSlow.concat(JSON.parse(row.slow_tests || '[]'));
+      allSelectors = allSelectors.concat(JSON.parse(row.unstable_selectors || '[]'));
+      allPages = allPages.concat(JSON.parse(row.failing_pages || '[]'));
+      allApis = allApis.concat(JSON.parse(row.api_issues || '[]'));
+      allErrors = allErrors.concat(JSON.parse(row.top_errors || '[]'));
+      if (!latestUpdate || (row.updated_at && row.updated_at > latestUpdate)) latestUpdate = row.updated_at;
+    }
     return {
-      totalRuns: 0,
-      totalTests: 0,
-      overallPassRate: 0,
-      avgDurationMs: 0,
-      flakyTests: [],
-      slowTests: [],
-      unstableSelectors: [],
-      failingPages: [],
-      apiIssues: [],
-      topErrors: [],
-      updatedAt: null,
+      totalRuns, totalTests,
+      overallPassRate: totalTests > 0 ? Math.round(passSumW / totalTests * 10) / 10 : 0,
+      avgDurationMs: totalTests > 0 ? Math.round(durSumW / totalTests) : 0,
+      flakyTests: allFlaky, slowTests: allSlow, unstableSelectors: allSelectors,
+      failingPages: allPages, apiIssues: allApis, topErrors: allErrors, updatedAt: latestUpdate,
     };
   }
+
+  const row = d.prepare('SELECT * FROM learning_summary WHERE project_id = ?').get(projectId);
+  if (!row) return empty;
 
   return {
     totalRuns: row.total_runs,
@@ -148,6 +168,9 @@ export function getErrorPatterns(projectId) {
 /** Test pass/fail trends over time — aggregated by day, or by hour when all data is from a single day. */
 export function getTestTrends(projectId, days = 7) {
   const d = getDb();
+  const projectClause = (projectId !== null && projectId !== undefined) ? 'project_id = ? AND' : '';
+  const params = (projectId !== null && projectId !== undefined) ? [projectId, days] : [days];
+
   const daily = d.prepare(`
     SELECT
       DATE(created_at) AS date,
@@ -158,10 +181,10 @@ export function getTestTrends(projectId, days = 7) {
       ROUND(AVG(duration_ms)) AS avg_duration_ms,
       SUM(flaky) AS flaky_count
     FROM test_learnings
-    WHERE project_id = ? AND created_at >= datetime('now', '-' || ? || ' days')
+    WHERE ${projectClause} created_at >= datetime('now', '-' || ? || ' days')
     GROUP BY DATE(created_at)
     ORDER BY date ASC
-  `).all(projectId, days);
+  `).all(...params);
 
   // If all data is from a single day, provide hourly breakdown instead
   if (daily.length <= 1 && daily[0]?.total_tests > 1) {
@@ -175,10 +198,10 @@ export function getTestTrends(projectId, days = 7) {
         ROUND(AVG(duration_ms)) AS avg_duration_ms,
         SUM(flaky) AS flaky_count
       FROM test_learnings
-      WHERE project_id = ? AND created_at >= datetime('now', '-' || ? || ' days')
+      WHERE ${projectClause} created_at >= datetime('now', '-' || ? || ' days')
       GROUP BY strftime('%Y-%m-%d %H', created_at)
       ORDER BY date ASC
-    `).all(projectId, days);
+    `).all(...params);
     if (hourly.length > 1) {
       return { granularity: 'hourly', data: hourly };
     }

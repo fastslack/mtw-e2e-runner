@@ -321,7 +321,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       const test = queue.shift();
       activeCount++;
       log('▶▶▶', `${C.cyan}${test.name}${C.reset} ${C.dim}(${activeCount} active)${C.reset}`);
-      _progress({ event: 'test:start', name: test.name, activeCount, queueRemaining: queue.length });
+      _progress({ event: 'test:start', name: test.name, serial: test.serial || false, activeCount, queueRemaining: queue.length });
 
       const maxAttempts = (test.retries ?? config.retries ?? 0) + 1;
       const testTimeout = test.timeout ?? config.testTimeout ?? 60000;
