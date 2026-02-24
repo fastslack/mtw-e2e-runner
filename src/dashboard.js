@@ -280,6 +280,60 @@ export async function startDashboard(config) {
         return;
       }
 
+      // API: DB — cross-project learnings (when no project selected)
+      const crossLearningsMatch = pathname.match(/^\/api\/db\/learnings(?:\/(\w+))?$/);
+      if (crossLearningsMatch) {
+        try {
+          const category = crossLearningsMatch[1] || 'summary';
+          const days = parseInt(url.searchParams.get('days') || '30', 10);
+          let data;
+          switch (category) {
+            case 'summary': {
+              const summary = getLearningsSummary(null);
+              const trends = getTestTrends(null, 7);
+              data = { ...summary, recentTrend: trends };
+              break;
+            }
+            default:
+              jsonResponse(res, { error: `Unknown learnings category: ${category}` }, 400);
+              return;
+          }
+          jsonResponse(res, data);
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — project modules list
+      const projectModulesMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/modules$/);
+      if (projectModulesMatch) {
+        try {
+          const projectId = parseInt(projectModulesMatch[1], 10);
+          const projectCwd = dbGetProjectCwd(projectId);
+          if (!projectCwd) { jsonResponse(res, []); return; }
+          const modulesDir = path.join(projectCwd, 'e2e', 'modules');
+          if (!fs.existsSync(modulesDir)) { jsonResponse(res, []); return; }
+          const files = fs.readdirSync(modulesDir).filter(f => f.endsWith('.json')).sort();
+          const modules = files.map(f => {
+            try {
+              const data = JSON.parse(fs.readFileSync(path.join(modulesDir, f), 'utf-8'));
+              return {
+                name: f.replace('.json', ''),
+                file: f,
+                description: data.description || null,
+                params: data.params || [],
+                actionCount: Array.isArray(data.actions) ? data.actions.length : 0,
+              };
+            } catch { return { name: f.replace('.json', ''), file: f, description: null, params: [], actionCount: 0 }; }
+          });
+          jsonResponse(res, modules);
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
       // API: DB — project learnings (summary or specific category)
       const learningsMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/learnings(?:\/(\w+))?$/);
       if (learningsMatch) {
