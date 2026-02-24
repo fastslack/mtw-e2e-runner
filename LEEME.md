@@ -179,6 +179,26 @@ button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
 { "type": "click", "text": "Iniciar Sesión" }
 ```
 
+### Acciones para Frameworks (React/MUI)
+
+Estas acciones manejan patrones comunes en apps React/MUI que normalmente requieren boilerplate extenso con `evaluate`:
+
+| Acción | Campos | Descripción |
+|--------|--------|-------------|
+| `type_react` | `selector`, `value` | Escribir en inputs controlados de React usando el setter nativo de value. Dispara eventos `input` + `change` para que el estado de React se actualice correctamente. |
+| `click_regex` | `text` (regex), opcional `selector`, opcional `value: "last"` | Click en elemento cuyo textContent coincide con una regex (case-insensitive). Default: primer match. Usar `value: "last"` para el último. |
+| `click_option` | `text` | Click en un elemento `[role="option"]` por texto — común en dropdowns de autocomplete/select. |
+| `focus_autocomplete` | `text` (texto del label) | Hacer focus en un input de autocomplete por texto de su label. Soporta MUI y genérico `[role="combobox"]`. |
+| `click_chip` | `text` | Click en un chip/tag por texto. Busca en `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
+
+```json
+// Antes: 5 líneas de boilerplate con evaluate
+{ "type": "evaluate", "value": "const input = document.querySelector('#search'); const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; nativeSet.call(input, 'term'); input.dispatchEvent(new Event('input', {bubbles: true})); input.dispatchEvent(new Event('change', {bubbles: true}));" }
+
+// Después: 1 acción
+{ "type": "type_react", "selector": "#search", "value": "term" }
+```
+
 ---
 
 ## Reintentos
@@ -339,9 +359,12 @@ Consultá insights a través de la herramienta MCP `e2e_learnings`:
 | `page:<path>` | Historial detallado de una página específica |
 | `selector:<valor>` | Historial detallado de un selector específico |
 
-Los aprendizajes se almacenan en SQLite (`~/.e2e-runner/dashboard.db`) y opcionalmente se exportan a un grafo de conocimiento Neo4j para análisis basado en relaciones.
+**Almacenamiento y exportación:**
+- SQLite (`~/.e2e-runner/dashboard.db`) — por defecto, sin configuración
+- Grafo de conocimiento Neo4j — opcional, para análisis basado en relaciones. Gestionar vía herramienta MCP `e2e_neo4j` o `docker compose`
+- Reporte markdown (`e2e/learnings.md`) — auto-generado después de cada ejecución
 
-Un reporte markdown (`e2e/learnings.md`) se auto-genera después de cada ejecución.
+**Narración de tests:** Cada ejecución genera una narrativa legible de lo que pasó paso a paso, visible en la salida del CLI y en el dashboard.
 
 ---
 
@@ -485,6 +508,18 @@ Cuando está deshabilitado (por defecto), el runner igual recolecta y reporta er
 ### Logging Completo de Red
 
 Todas las requests XHR/fetch se capturan con: URL, método, status, duración, headers de request/response y cuerpo de response (truncado a 50KB). Visible en el dashboard con filas de detalle de request expandibles.
+
+**Flujo de drill-down MCP:**
+
+```
+1. e2e_run          → networkSummary compacto + runDbId
+2. e2e_network_logs(runDbId)                     → todas las requests (url, method, status, duration)
+3. e2e_network_logs(runDbId, errorsOnly: true)   → solo requests fallidas
+4. e2e_network_logs(runDbId, includeHeaders: true) → con headers
+5. e2e_network_logs(runDbId, includeBodies: true)  → cuerpos completos de request/response
+```
+
+La respuesta de `e2e_run` se mantiene compacta (~5KB) sin importar cuántas requests se capturaron. Usá `e2e_network_logs` con el `runDbId` retornado para profundizar en los detalles bajo demanda.
 
 ---
 

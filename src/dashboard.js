@@ -17,7 +17,7 @@ import { createWebSocketServer } from './websocket.js';
 import { getPoolStatus, waitForPool } from './pool.js';
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
-import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, closeDb } from './db.js';
+import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends } from './learner-sqlite.js';
@@ -199,6 +199,27 @@ export async function startDashboard(config) {
           } else {
             jsonResponse(res, { error: 'Run not found' }, 404);
           }
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — network logs for a run (filterable)
+      const networkLogsMatch = pathname.match(/^\/api\/db\/runs\/(\d+)\/network-logs$/);
+      if (networkLogsMatch) {
+        try {
+          const runDbId = parseInt(networkLogsMatch[1], 10);
+          const filters = {};
+          if (url.searchParams.has('testName')) filters.testName = url.searchParams.get('testName');
+          if (url.searchParams.has('method')) filters.method = url.searchParams.get('method');
+          if (url.searchParams.has('statusMin')) filters.statusMin = parseInt(url.searchParams.get('statusMin'), 10);
+          if (url.searchParams.has('statusMax')) filters.statusMax = parseInt(url.searchParams.get('statusMax'), 10);
+          if (url.searchParams.has('urlPattern')) filters.urlPattern = url.searchParams.get('urlPattern');
+          if (url.searchParams.get('errorsOnly') === 'true') filters.errorsOnly = true;
+          if (url.searchParams.get('includeHeaders') === 'true') filters.includeHeaders = true;
+          if (url.searchParams.get('includeBodies') === 'true') filters.includeBodies = true;
+          jsonResponse(res, dbGetNetworkLogs(runDbId, filters));
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
         }

@@ -123,20 +123,80 @@ tbody tr.selected td{background:var(--accent-dim)}
 .chart-bar .tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:var(--surface3);border:1px solid var(--border);padding:4px 8px;border-radius:4px;font-size:10px;white-space:nowrap;z-index:10;pointer-events:none}
 .chart-bar:hover .tip{display:block}
 
+/* ── Project Accordion ── */
+.project-accordion{margin-bottom:2px}
+.project-accordion-header{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;transition:all .15s;user-select:none}
+.project-accordion-header:hover{background:var(--surface2);border-color:var(--border-hi)}
+.project-accordion.open>.project-accordion-header{border-radius:var(--r) var(--r) 0 0;border-bottom-color:transparent;background:var(--surface2)}
+.project-accordion-chevron{font-size:10px;color:var(--text3);transition:transform .2s ease;flex-shrink:0;width:16px;text-align:center}
+.project-accordion.open>.project-accordion-header .project-accordion-chevron{transform:rotate(90deg);color:var(--accent)}
+.project-accordion-name{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project-accordion-meta{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.project-accordion-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--surface3);color:var(--text2)}
+.project-accordion-body{overflow:hidden;max-height:0;transition:max-height .3s ease;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);background:var(--bg)}
+.project-accordion.open>.project-accordion-body{max-height:5000px}
+
 /* ── Suite Cards ── */
-.suite-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.suite-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .15s}
-.suite-card:hover{border-color:var(--border-hi)}
-.suite-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-.suite-card-name{font-weight:600;font-size:13px}
-.suite-card-count{font-size:10px;color:var(--text3)}
-.suite-card-tests{list-style:none;margin-bottom:12px}
-.suite-card-tests li{font-size:11px;color:var(--text2);padding:2px 0;padding-left:14px;position:relative;cursor:pointer;transition:color .15s}
-.suite-card-tests li:hover{color:var(--text)}
-.suite-card-tests li::before{content:">";position:absolute;left:0;color:var(--text3)}
-.suite-card-tests li.expanded{color:var(--accent)}
-.suite-card-tests li.expanded::before{content:"v"}
-.suite-test-steps{padding:6px 0 6px 14px;border-left:2px solid var(--border);margin:4px 0 4px 6px}
+.suite-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;padding:16px}
+.suite-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;transition:border-color .2s,box-shadow .2s}
+.suite-card:hover{border-color:var(--border-hi);box-shadow:0 2px 12px rgba(0,0,0,.25)}
+.suite-card-head{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.suite-card-icon{width:32px;height:32px;border-radius:6px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--accent);flex-shrink:0}
+.suite-card-info{flex:1;min-width:0}
+.suite-card-name{font-family:var(--sans);font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.suite-card-file{font-size:10px;color:var(--text3);margin-top:1px;font-family:var(--mono)}
+.suite-card-count{flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:40px;height:40px;border-radius:var(--r);background:var(--surface3);border:1px solid var(--border)}
+.suite-card-count-num{font-size:16px;font-weight:700;color:var(--text);line-height:1}
+.suite-card-count-lbl{font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;line-height:1;margin-top:2px}
+.suite-card-body{padding:0}
+.suite-card-tests{list-style:none;max-height:180px;overflow-y:auto}
+.suite-card-tests::-webkit-scrollbar{width:4px}
+.suite-card-tests::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.suite-card-tests li{font-size:11px;color:var(--text2);padding:6px 16px 6px 30px;position:relative;cursor:pointer;transition:all .15s;border-bottom:1px solid rgba(35,39,56,.5)}
+.suite-card-tests li:last-child{border-bottom:none}
+.suite-card-tests li:hover{color:var(--text);background:var(--surface2)}
+.suite-card-tests li::before{content:"\25B8";position:absolute;left:14px;color:var(--text3);font-size:9px;top:7px;transition:transform .15s}
+.suite-card-tests li.expanded{color:var(--accent);background:var(--accent-dim)}
+.suite-card-tests li.expanded::before{content:"\25BE";color:var(--accent)}
+.suite-test-steps{padding:8px 0 8px 14px;border-left:2px solid var(--accent-dim);margin:6px 0 4px 6px}
+.suite-card-footer{padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;background:var(--surface)}
+
+/* ── Suite Detail Modal ── */
+.suite-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:none;align-items:flex-start;justify-content:center;padding:32px 24px;overflow-y:auto;backdrop-filter:blur(4px)}
+.suite-modal-overlay.open{display:flex}
+.suite-modal{width:100%;max-width:960px;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;animation:suiteModalIn .2s ease}
+@keyframes suiteModalIn{from{opacity:0;transform:translateY(-12px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.suite-modal-header{display:flex;align-items:center;gap:14px;padding:18px 24px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.suite-modal-header .suite-card-icon{width:36px;height:36px;font-size:16px}
+.suite-modal-title{flex:1;min-width:0}
+.suite-modal-title h2{font-family:var(--sans);font-size:16px;font-weight:700;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.suite-modal-title span{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.suite-modal-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.suite-modal-close{width:32px;height:32px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface3);color:var(--text2);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1}
+.suite-modal-close:hover{background:var(--red-dim);border-color:rgba(239,68,68,.3);color:var(--red)}
+.suite-modal-body{padding:0}
+.suite-modal-loading{padding:32px;text-align:center;color:var(--text3);font-size:12px}
+.suite-modal-test{border-bottom:1px solid var(--border)}
+.suite-modal-test:last-child{border-bottom:none}
+.suite-modal-test-header{display:flex;align-items:center;gap:10px;padding:12px 24px;cursor:pointer;transition:background .15s;user-select:none}
+.suite-modal-test-header:hover{background:var(--surface2)}
+.suite-modal-test.open>.suite-modal-test-header{background:var(--surface2)}
+.suite-modal-test-chevron{font-size:9px;color:var(--text3);transition:transform .15s;width:14px;text-align:center;flex-shrink:0}
+.suite-modal-test.open>.suite-modal-test-header .suite-modal-test-chevron{transform:rotate(90deg);color:var(--accent)}
+.suite-modal-test-name{font-size:12px;font-weight:500;color:var(--text);flex:1}
+.suite-modal-test-badge{font-size:9px;padding:2px 7px;border-radius:8px;background:var(--surface3);color:var(--text3);flex-shrink:0}
+.suite-modal-test-actions{display:none;padding:0 24px 16px 48px}
+.suite-modal-test.open>.suite-modal-test-actions{display:block}
+.suite-modal-step{display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:11px;font-family:var(--mono);border-bottom:1px solid rgba(35,39,56,.3)}
+.suite-modal-step:last-child{border-bottom:none}
+.suite-modal-step-num{width:22px;text-align:right;color:var(--text3);flex-shrink:0;font-size:10px;padding-top:1px}
+.suite-modal-step-type{color:var(--purple);font-weight:600;flex-shrink:0;min-width:120px}
+.suite-modal-step-detail{color:var(--text2);flex:1;min-width:0;word-break:break-word}
+.suite-modal-step-detail .step-sel{color:var(--accent)}
+.suite-modal-step-detail .step-arrow{color:var(--text3);margin:0 4px}
+.suite-modal-step-detail .step-val{color:var(--text)}
+.suite-modal-expect{padding:10px 24px 10px 48px;background:var(--green-dim);border-bottom:1px solid var(--border);font-size:11px;color:var(--green);display:flex;align-items:flex-start;gap:8px}
+.suite-modal-expect-label{font-weight:600;flex-shrink:0}
 
 /* ── Live Execution ── */
 .live-panel{display:none;background:var(--surface);border:1px solid var(--purple);border-radius:var(--r);overflow:hidden;animation:fadeSlide .3s ease;flex-direction:column}
@@ -363,6 +423,10 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
   .nav-item{justify-content:center;padding:12px}.nav-item .icon{width:auto}
   .main{margin-left:60px}
   .suite-grid,.gallery{grid-template-columns:1fr}
+  .project-accordion-header{padding:10px 12px}
+  .suite-card-head{padding:10px 12px}
+  .suite-card-tests li{padding:5px 12px 5px 26px}
+  .suite-card-tests li::before{left:10px}
   .lr-test-grid{grid-template-columns:1fr}
 }
 </style>
@@ -448,8 +512,8 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
   <div class="view active" id="view-suites">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <div style="font-family:var(--sans);font-size:16px;font-weight:600">Test Suites</div>
-      <button class="btn primary" id="btnRunAll">Run All Tests</button>
     </div>
+    <div id="suiteAccordionContainer"></div>
     <div class="suite-grid" id="suiteGrid"></div>
     <div class="empty" id="suitesEmpty" style="display:none">
       <div class="empty-icon">&#9655;</div>
@@ -523,6 +587,7 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
 </div>
 
 <div class="modal" id="modal"><img id="modalImg" src="" alt=""></div>
+<div class="suite-modal-overlay" id="suiteModal"><div class="suite-modal" id="suiteModalContent"></div></div>
 
 <script>
 (function(){
@@ -832,18 +897,21 @@ $('#projectSelect').addEventListener('change',function(){
 
 /* ── Suites ── */
 function refreshSuites(){
-  var grid=$('#suiteGrid'),empty=$('#suitesEmpty');
+  var grid=$('#suiteGrid'),empty=$('#suitesEmpty'),accordion=$('#suiteAccordionContainer');
   grid.textContent='';
+  accordion.textContent='';
 
   if(S.project){
-    // Single project — fetch its suites
+    // Single project — show suites directly in grid (no accordion)
+    grid.style.display='';
     api('/api/db/projects/'+S.project+'/suites').then(function(suites){
       if(!Array.isArray(suites)||suites.length===0){empty.style.display='block';empty.querySelector('p').textContent='No test suites found for this project.';return}
       empty.style.display='none';
       renderSuiteCards(grid,suites,S.project);
     }).catch(function(){});
   } else {
-    // All projects — fetch each project's suites
+    // All projects — accordion layout, collapsed by default
+    grid.style.display='none';
     api('/api/db/projects').then(function(projects){
       if(!Array.isArray(projects)||projects.length===0){empty.style.display='block';empty.querySelector('p').textContent='No projects registered yet.';return}
       var loaded=0,hasAny=false;
@@ -852,16 +920,43 @@ function refreshSuites(){
           loaded++;
           if(Array.isArray(suites)&&suites.length>0){
             hasAny=true;
-            var label=el('div',{style:'grid-column:1/-1;font-family:var(--sans);font-size:13px;font-weight:600;margin-top:'+(grid.children.length?'16':'0')+'px;padding-bottom:6px;border-bottom:1px solid var(--border);color:var(--text2)'},p.name);
-            grid.appendChild(label);
-            renderSuiteCards(grid,suites,p.id);
+            renderProjectAccordion(accordion,p,suites);
           }
-          if(loaded===projects.length&&!hasAny){empty.style.display='block';empty.querySelector('p').textContent='No test suites found.'}
+          if(loaded===projects.length){
+            if(!hasAny){empty.style.display='block';empty.querySelector('p').textContent='No test suites found.'}
+            else{empty.style.display='none'}
+          }
         }).catch(function(){loaded++;});
       });
     }).catch(function(){});
   }
 }
+
+function renderProjectAccordion(container,project,suites){
+  var totalTests=suites.reduce(function(sum,s){return sum+(s.testCount||0)},0);
+  var body=el('div',{className:'project-accordion-body'});
+  var innerGrid=el('div',{className:'suite-grid'});
+  renderSuiteCards(innerGrid,suites,project.id);
+  body.appendChild(innerGrid);
+
+  var header=el('div',{className:'project-accordion-header'},[
+    el('span',{className:'project-accordion-chevron'},'\u25B6'),
+    el('span',{className:'project-accordion-name'},project.name),
+    el('div',{className:'project-accordion-meta'},[
+      el('span',{className:'project-accordion-badge'},suites.length+(suites.length===1?' suite':' suites')),
+      el('span',{className:'project-accordion-badge'},totalTests+(totalTests===1?' test':' tests'))
+    ])
+  ]);
+
+  var wrapper=el('div',{className:'project-accordion'},[header,body]);
+
+  header.addEventListener('click',function(){
+    wrapper.classList.toggle('open');
+  });
+
+  container.appendChild(wrapper);
+}
+
 var _suiteCache={};
 function renderSuiteCards(container,suites,projectId){
   suites.forEach(function(s){
@@ -906,13 +1001,28 @@ function renderSuiteCards(container,suites,projectId){
       });
       tests.appendChild(li);
     });
-    var card=el('div',{className:'suite-card'},[
-      el('div',{className:'suite-card-head'},[
+
+    var cardHead=el('div',{className:'suite-card-head',style:'cursor:pointer'},[
+      el('div',{className:'suite-card-icon'},'\u25B6'),
+      el('div',{className:'suite-card-info'},[
         el('div',{className:'suite-card-name'},s.name),
-        el('span',{className:'suite-card-count'},s.testCount+' tests')
+        el('div',{className:'suite-card-file'},s.file||s.name+'.json')
       ]),
-      tests,
-      el('button',{className:'btn sm primary',onclick:function(){triggerRun(s.name,pid)}},'Run Suite')
+      el('div',{className:'suite-card-count'},[
+        el('div',{className:'suite-card-count-num'},String(s.testCount||0)),
+        el('div',{className:'suite-card-count-lbl'},'tests')
+      ])
+    ]);
+    (function(name,projId){
+      cardHead.addEventListener('click',function(){openSuiteModal(name,projId)});
+    })(s.name,pid);
+
+    var card=el('div',{className:'suite-card'},[
+      cardHead,
+      el('div',{className:'suite-card-body'},[tests]),
+      el('div',{className:'suite-card-footer'},[
+        el('button',{className:'btn sm primary',onclick:function(){triggerRun(s.name,pid)}},'Run Suite')
+      ])
     ]);
     container.appendChild(card);
   });
@@ -1488,13 +1598,94 @@ function renderLive(){
   });
 }
 
-/* ── Actions ── */
-$('#btnRunAll').addEventListener('click',function(){triggerRun()});
-
 /* ── Modal ── */
 function openModal(src){$('#modalImg').src=src;$('#modal').classList.add('open')}
 $('#modal').addEventListener('click',function(){$('#modal').classList.remove('open')});
-document.addEventListener('keydown',function(e){if(e.key==='Escape')$('#modal').classList.remove('open')});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){$('#modal').classList.remove('open');closeSuiteModal()}
+});
+
+/* ── Suite Detail Modal ── */
+function openSuiteModal(suiteName,projectId){
+  var overlay=$('#suiteModal'),content=$('#suiteModalContent');
+  content.textContent='';
+
+  var closeBtn=el('button',{className:'suite-modal-close',onclick:closeSuiteModal},'\u00D7');
+  var runBtn=el('button',{className:'btn sm primary',onclick:function(){closeSuiteModal();triggerRun(suiteName,projectId)}},'Run Suite');
+  var header=el('div',{className:'suite-modal-header'},[
+    el('div',{className:'suite-card-icon'},'\u25B6'),
+    el('div',{className:'suite-modal-title'},[
+      el('h2',null,suiteName),
+      el('span',null,suiteName+'.json')
+    ]),
+    el('div',{className:'suite-modal-actions'},[runBtn,closeBtn])
+  ]);
+  var body=el('div',{className:'suite-modal-body'},[
+    el('div',{className:'suite-modal-loading'},'Loading suite details...')
+  ]);
+  content.appendChild(header);
+  content.appendChild(body);
+  overlay.classList.add('open');
+
+  var cacheKey=projectId+'::'+suiteName;
+  var p=_suiteCache[cacheKey]||api('/api/db/projects/'+projectId+'/suites/'+encodeURIComponent(suiteName));
+  _suiteCache[cacheKey]=p;
+  p.then(function(data){
+    body.textContent='';
+    var tests=data.tests||[];
+    if(!tests.length){
+      body.appendChild(el('div',{className:'suite-modal-loading'},'No tests in this suite.'));
+      return;
+    }
+    tests.forEach(function(t,idx){
+      var actions=t.actions||[];
+      var chevron=el('span',{className:'suite-modal-test-chevron'},'\u25B6');
+      var actionsDiv=el('div',{className:'suite-modal-test-actions'});
+
+      // Render action steps
+      actions.forEach(function(a,i){
+        var detailChildren=[];
+        if(a.selector&&(a.value||a.text)){
+          detailChildren.push(el('span',{className:'step-sel'},a.selector));
+          detailChildren.push(el('span',{className:'step-arrow'},'\u2192'));
+          detailChildren.push(el('span',{className:'step-val'},a.text||a.value));
+        } else {
+          detailChildren.push(document.createTextNode(a.selector||a.value||a.text||''));
+        }
+        actionsDiv.appendChild(el('div',{className:'suite-modal-step'},[
+          el('span',{className:'suite-modal-step-num'},String(i+1)),
+          el('span',{className:'suite-modal-step-type'},a.type),
+          el('span',{className:'suite-modal-step-detail'},detailChildren)
+        ]));
+      });
+
+      var testRow=el('div',{className:'suite-modal-test'},[
+        el('div',{className:'suite-modal-test-header'},[
+          chevron,
+          el('span',{className:'suite-modal-test-name'},t.name),
+          el('span',{className:'suite-modal-test-badge'},actions.length+(actions.length===1?' action':' actions'))
+        ]),
+        t.expect?el('div',{className:'suite-modal-expect'},[
+          el('span',{className:'suite-modal-expect-label'},'expect:'),
+          el('span',null,t.expect)
+        ]):null,
+        actionsDiv
+      ]);
+
+      testRow.querySelector('.suite-modal-test-header').addEventListener('click',function(){
+        testRow.classList.toggle('open');
+      });
+
+      body.appendChild(testRow);
+    });
+  }).catch(function(){
+    body.textContent='';
+    body.appendChild(el('div',{className:'suite-modal-loading',style:'color:var(--red)'},'Failed to load suite details.'));
+  });
+}
+
+function closeSuiteModal(){$('#suiteModal').classList.remove('open')}
+$('#suiteModal').addEventListener('click',function(e){if(e.target===this)closeSuiteModal()});
 
 /* ── Learnings ── */
 function refreshLearnings(){

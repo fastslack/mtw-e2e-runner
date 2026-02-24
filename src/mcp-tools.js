@@ -18,7 +18,7 @@ import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuite
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { narrateTest } from './narrate.js';
 import { startDashboard, stopDashboard } from './dashboard.js';
-import { lookupScreenshotHash, ensureProject, computeScreenshotHash, registerScreenshotHash } from './db.js';
+import { lookupScreenshotHash, ensureProject, computeScreenshotHash, registerScreenshotHash, getNetworkLogs } from './db.js';
 import { fetchIssue, checkCliAuth, detectProvider } from './issues.js';
 import { buildPrompt, hasApiKey } from './ai-generate.js';
 import { verifyIssue } from './verify.js';
@@ -113,7 +113,7 @@ export const TOOLS = [
                   properties: {
                     type: {
                       type: 'string',
-                      description: 'Action type: goto, click, type, wait, assert_text, assert_element_text, assert_attribute, assert_class, assert_visible, assert_not_visible, assert_input_value, assert_matches, assert_url, assert_count, assert_no_network_errors, get_text, screenshot, select, clear, clear_cookies, press, scroll, hover, evaluate, navigate',
+                      description: 'Action type: goto, click, click_regex, click_option, click_chip, type, type_react, focus_autocomplete, wait, assert_text, assert_element_text, assert_attribute, assert_class, assert_visible, assert_not_visible, assert_input_value, assert_matches, assert_url, assert_count, assert_no_network_errors, get_text, screenshot, select, clear, clear_cookies, press, scroll, hover, evaluate, navigate',
                     },
                     selector: { type: 'string', description: 'CSS selector' },
                     value: { type: 'string', description: 'Value for the action' },
@@ -215,6 +215,11 @@ export const TOOLS = [
           enum: ['prompt', 'verify'],
           description:
             'prompt = return issue + prompt for Claude Code to create tests (default). verify = auto-generate tests via Claude API and run them.',
+        },
+        testType: {
+          type: 'string',
+          enum: ['e2e', 'api'],
+          description: "Test category: 'e2e' (default) for UI-driven tests, 'api' for backend API tests",
         },
         authToken: {
           type: 'string',
@@ -368,6 +373,53 @@ export const TOOLS = [
       required: ['action'],
     },
   },
+  {
+    name: 'e2e_network_logs',
+    description:
+      'Query network request/response logs for a specific test run. Returns filtered logs from SQLite. Use the runDbId from e2e_run results to drill down into network details on demand.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        runDbId: {
+          type: 'number',
+          description: 'The run database ID (returned by e2e_run in the summary)',
+        },
+        testName: {
+          type: 'string',
+          description: 'Filter by test name',
+        },
+        method: {
+          type: 'string',
+          description: 'Filter by HTTP method (GET, POST, etc.)',
+        },
+        statusMin: {
+          type: 'number',
+          description: 'Minimum HTTP status code (e.g. 400 for errors only)',
+        },
+        statusMax: {
+          type: 'number',
+          description: 'Maximum HTTP status code',
+        },
+        urlPattern: {
+          type: 'string',
+          description: 'Regex pattern to match against request URLs',
+        },
+        errorsOnly: {
+          type: 'boolean',
+          description: 'Only return requests with status >= 400',
+        },
+        includeHeaders: {
+          type: 'boolean',
+          description: 'Include request/response headers (default: false)',
+        },
+        includeBodies: {
+          type: 'boolean',
+          description: 'Include request/response bodies (default: false, implies includeHeaders)',
+        },
+      },
+      required: ['runDbId'],
+    },
+  },
 ];
 
 /** Tools exposed on the dashboard — excludes dashboard start/stop (already running). */
@@ -454,7 +506,7 @@ async function handleRun(args) {
 
   const report = generateReport(results);
   saveReport(report, config.screenshotsDir, config);
-  persistRun(report, config, args.suite || null);
+  const { runDbId } = persistRun(report, config, args.suite || null);
 
   const failures = report.results
     .filter(r => !r.success)
@@ -472,6 +524,7 @@ async function handleRun(args) {
     ...report.summary,
     reportPath: path.join(config.screenshotsDir, 'report.json'),
   };
+  if (runDbId) summary.runDbId = runDbId;
 
   const consoleErrors = report.results
     .filter(r => r.consoleLogs?.some(l => l.type === 'error' || l.type === 'warning'))
@@ -480,9 +533,33 @@ async function handleRun(args) {
     .filter(r => r.networkErrors?.length > 0)
     .map(r => ({ name: r.name, errors: r.networkErrors }));
 
-  const networkLogs = report.results
+  // Compact network summary — full logs available on-demand via e2e_network_logs
+  const networkSummary = report.results
     .filter(r => r.networkLogs?.length > 0)
-    .map(r => ({ name: r.name, requests: r.networkLogs }));
+    .map(r => {
+      const logs = r.networkLogs;
+      const statusDist = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, other: 0 };
+      let totalDuration = 0;
+      for (const l of logs) {
+        const s = l.status;
+        if (s >= 200 && s < 300) statusDist['2xx']++;
+        else if (s >= 300 && s < 400) statusDist['3xx']++;
+        else if (s >= 400 && s < 500) statusDist['4xx']++;
+        else if (s >= 500 && s < 600) statusDist['5xx']++;
+        else statusDist.other++;
+        totalDuration += l.duration || 0;
+      }
+      const failed = logs.filter(l => l.status >= 400).map(l => ({ url: l.url, method: l.method, status: l.status }));
+      const slowest = [...logs].sort((a, b) => (b.duration || 0) - (a.duration || 0)).slice(0, 3).map(l => ({ url: l.url, method: l.method, status: l.status, duration: l.duration }));
+      return {
+        name: r.name,
+        totalRequests: logs.length,
+        statusDistribution: statusDist,
+        avgDurationMs: logs.length > 0 ? Math.round(totalDuration / logs.length) : 0,
+        failedRequests: failed,
+        slowestRequests: slowest,
+      };
+    });
 
   const verifications = report.results
     .filter(r => r.expect && r.verificationScreenshot)
@@ -507,7 +584,10 @@ async function handleRun(args) {
       }
     }
   }
-  if (networkLogs.length > 0) summary.networkLogs = networkLogs;
+  if (networkSummary.length > 0) {
+    summary.networkSummary = networkSummary;
+    if (runDbId) summary.networkLogsHint = 'Full network logs available via e2e_network_logs tool using the runDbId above.';
+  }
   if (verifications.length > 0) {
     summary.verifications = verifications;
     summary.verificationInstructions = 'For each verification, call e2e_screenshot with the screenshotHash to view the screenshot. Then compare what you see against the "expect" description. Report any mismatches as FAIL.';
@@ -668,6 +748,7 @@ async function handleIssue(args) {
   if (!args.url) return errorResult('Missing required parameter: url');
 
   const mode = args.mode || 'prompt';
+  const testType = args.testType || 'e2e';
   const config = await loadConfig({}, args.cwd);
 
   // Check provider and auth
@@ -690,6 +771,7 @@ async function handleIssue(args) {
 
     if (args.authToken) config.authToken = args.authToken;
     if (args.authStorageKey) config.authStorageKey = args.authStorageKey;
+    config.testType = testType;
 
     const result = await verifyIssue(args.url, config);
     const status = result.bugConfirmed ? 'BUG CONFIRMED' : 'NOT REPRODUCIBLE';
@@ -712,7 +794,7 @@ async function handleIssue(args) {
 
   // Default: prompt mode
   const issue = fetchIssue(args.url);
-  const promptData = buildPrompt(issue, config);
+  const promptData = buildPrompt(issue, config, testType);
 
   return textResult(promptData.prompt);
 }
@@ -880,7 +962,7 @@ async function handleLearnings(args) {
   if (!args.query) return errorResult('Missing required parameter: query');
 
   const config = await loadConfig({}, args.cwd);
-  const days = args.days || config.learningsDays || 30;
+  const days = Math.min(Math.max(parseInt(args.days || config.learningsDays || 30, 10) || 30, 1), 365);
   const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
 
   const query = args.query.trim().toLowerCase();
@@ -935,6 +1017,28 @@ async function handleLearnings(args) {
   }
 }
 
+async function handleNetworkLogs(args) {
+  if (!args.runDbId) return errorResult('Missing required parameter: runDbId');
+
+  const filters = {};
+  if (args.testName) filters.testName = args.testName;
+  if (args.method) filters.method = args.method;
+  if (args.statusMin !== undefined) filters.statusMin = args.statusMin;
+  if (args.statusMax !== undefined) filters.statusMax = args.statusMax;
+  if (args.urlPattern) filters.urlPattern = args.urlPattern;
+  if (args.errorsOnly) filters.errorsOnly = true;
+  if (args.includeHeaders) filters.includeHeaders = true;
+  if (args.includeBodies) filters.includeBodies = true;
+
+  const results = getNetworkLogs(args.runDbId, filters);
+
+  if (results.length === 0) {
+    return textResult('No network logs found for the given filters.');
+  }
+
+  return textResult(JSON.stringify(results, null, 2));
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function textResult(text) {
@@ -974,6 +1078,8 @@ export async function dispatchTool(name, args = {}) {
       return await handleLearnings(args);
     case 'e2e_neo4j':
       return await handleNeo4j(args);
+    case 'e2e_network_logs':
+      return await handleNetworkLogs(args);
     default:
       return errorResult(`Unknown tool: ${name}`);
   }

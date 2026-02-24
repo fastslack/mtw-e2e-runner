@@ -83,6 +83,7 @@ function parseCLIConfig() {
   if (getFlag('--action-retry-delay')) cliArgs.actionRetryDelay = parseInt(getFlag('--action-retry-delay'));
   if (getFlag('--auth-token')) cliArgs.authToken = getFlag('--auth-token');
   if (getFlag('--auth-storage-key')) cliArgs.authStorageKey = getFlag('--auth-storage-key');
+  if (getFlag('--test-type')) cliArgs.testType = getFlag('--test-type');
   return cliArgs;
 }
 
@@ -112,6 +113,7 @@ ${C.bold}Usage:${C.reset}
   e2e-runner issue <url> --generate     Generate test file via Claude API
   e2e-runner issue <url> --verify       Generate + run + report bug status
   e2e-runner issue <url> --prompt       Output the AI prompt (for piping)
+  e2e-runner issue <url> --test-type e2e|api  Test category (default: e2e)
 
   e2e-runner pool start                 Start the Chrome Pool
   e2e-runner pool stop                  Stop the Chrome Pool
@@ -463,11 +465,12 @@ async function cmdIssue() {
 
   const cliArgs = parseCLIConfig();
   const config = await loadConfig(cliArgs);
+  const testType = cliArgs.testType || 'e2e';
 
   if (hasFlag('--prompt')) {
     // Output AI prompt as JSON to stdout
     const issue = fetchIssue(url);
-    const promptData = buildPrompt(issue, config);
+    const promptData = buildPrompt(issue, config, testType);
     console.log(JSON.stringify(promptData, null, 2));
     return;
   }
@@ -482,6 +485,7 @@ async function cmdIssue() {
     console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
     log('🔍', 'Fetching issue...');
 
+    config.testType = testType;
     const result = await verifyIssue(url, config);
     const { issue, report, bugConfirmed } = result;
 
@@ -510,9 +514,9 @@ async function cmdIssue() {
 
     const issue = fetchIssue(url);
     log('📋', `${C.cyan}${issue.title}${C.reset}`);
-    log('🤖', 'Generating tests via Claude API...');
+    log('🤖', `Generating ${testType} tests via Claude API...`);
 
-    const { tests, suiteName } = await generateTests(issue, config);
+    const { tests, suiteName } = await generateTests(issue, config, testType);
 
     if (!fs.existsSync(config.testsDir)) {
       fs.mkdirSync(config.testsDir, { recursive: true });

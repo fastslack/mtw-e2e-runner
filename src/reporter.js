@@ -152,10 +152,11 @@ export function loadHistoryRun(screenshotsDir, runId) {
 /** Persists a run to both filesystem history and SQLite (never throws). */
 export function persistRun(report, config, suiteName) {
   const runId = saveHistory(report, config.screenshotsDir, config.maxHistoryRuns);
+  let runDbId = null;
 
   try {
     const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
-    const runDbId = saveRunToDb(projectId, report, runId, suiteName || null, config.triggeredBy || null);
+    runDbId = saveRunToDb(projectId, report, runId, suiteName || null, config.triggeredBy || null);
 
     // Fire-and-forget: learn from this run (never blocks or crashes the runner)
     if (config.learningsEnabled !== false) {
@@ -178,7 +179,7 @@ export function persistRun(report, config, suiteName) {
     process.stderr.write(`[e2e-runner] SQLite write failed: ${err.message}\n`);
   }
 
-  return runId;
+  return { runId, runDbId };
 }
 
 /** Prints a formatted report summary to the console */

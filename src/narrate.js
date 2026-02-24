@@ -111,6 +111,24 @@ export function narrateAction(action, result) {
     case 'navigate':
       return `Navigated (SPA) to ${value}${time}`;
 
+    case 'type_react': {
+      const masked = isSensitive(selector) ? '***' : value;
+      return `Typed "${masked}" into React input "${selector}"${time}`;
+    }
+
+    case 'click_regex':
+      if (selector) return `Clicked ${value === 'last' ? 'last ' : ''}element matching /${text}/i in "${selector}"${time}`;
+      return `Clicked ${value === 'last' ? 'last ' : ''}element matching /${text}/i${time}`;
+
+    case 'click_option':
+      return `Clicked dropdown option "${text}"${time}`;
+
+    case 'focus_autocomplete':
+      return `Focused autocomplete labeled "${text}"${time}`;
+
+    case 'click_chip':
+      return `Clicked chip "${text}"${time}`;
+
     case 'evaluate': {
       const snippet = value.length > 80 ? value.slice(0, 77) + '...' : value;
       const evalResult = result.result?.value;
@@ -162,6 +180,11 @@ function describeIntent(action) {
     case 'hover':      return `Hover over "${selector}"`;
     case 'clear_cookies': return 'Clear cookies and storage';
     case 'navigate':   return `Navigate to ${value}`;
+    case 'type_react':            return `Type into React input "${selector}"`;
+    case 'click_regex':           return `Click element matching /${text}/i`;
+    case 'click_option':          return `Click option "${text}"`;
+    case 'focus_autocomplete':    return `Focus autocomplete "${text}"`;
+    case 'click_chip':            return `Click chip "${text}"`;
     case 'evaluate':   return 'Execute JS';
     default:           return `Action "${type}"`;
   }

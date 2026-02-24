@@ -1,5 +1,80 @@
 # Changelog
 
+## [1.2.0] - 2026-02-23
+
+### Added
+
+- **Framework-aware actions** for React/MUI apps — replace verbose `evaluate` boilerplate with single actions
+  - `type_react` — type into React controlled inputs using native value setter + synthetic events
+  - `click_regex` — click element by regex match on textContent (case-insensitive, first/last)
+  - `click_option` — click `[role="option"]` by text (autocomplete/select dropdowns)
+  - `focus_autocomplete` — focus autocomplete input by label text (MUI + generic combobox)
+  - `click_chip` — click chip/tag element by text
+
+- **Learning system** — tracks test stability across runs and surfaces actionable insights
+  - SQLite-backed analysis: flaky tests, unstable selectors, page health, API error rates, error patterns, trends
+  - `e2e_learnings` MCP tool with 10 query types: `summary`, `flaky`, `selectors`, `pages`, `apis`, `errors`, `trends`, `test:<name>`, `page:<path>`, `selector:<value>`
+  - Auto-generated markdown report (`e2e/learnings.md`) after each run
+  - New files: `src/learner.js`, `src/learner-sqlite.js`, `src/learner-markdown.js`
+
+- **Neo4j knowledge graph** — optional relationship-based analysis
+  - `e2e_neo4j` MCP tool: `start`, `stop`, `status` for container lifecycle
+  - Graph export: tests, pages, selectors, errors as nodes with relationships
+  - New files: `src/learner-neo4j.js`, `src/neo4j-pool.js`
+
+- **Test narration** — human-readable step-by-step narrative for each test
+  - Visible in CLI output and dashboard
+  - New file: `src/narrate.js`
+
+- **Network summary optimization** — `e2e_run` MCP response stays compact (~5KB)
+  - Returns `networkSummary` with per-test stats: status distribution, failed requests, slowest requests
+  - Returns `runDbId` for drill-down via `e2e_network_logs`
+
+- **`e2e_network_logs` MCP tool** — query full network logs by run ID
+  - Filters: `testName`, `method`, `statusMin`/`statusMax`, `urlPattern`, `errorsOnly`
+  - Options: `includeHeaders`, `includeBodies`
+
+- **`e2e_create_module` MCP tool** — create reusable modules with parameterized actions
+
+- **API test generation** (`testType: "api"`) — generate backend API tests from issues
+  - CLI: `e2e-runner issue <url> --test-type api`
+  - MCP: `e2e_issue({ url, testType: "api" })`
+
+- **Dashboard overhaul**
+  - Network request logs with clickable expandable rows (headers, bodies, formatted JSON)
+  - Screenshots gallery with hash search
+  - Narration view per test result
+  - Learnings integration
+
+- **LEEME.md** — full Spanish translation of the README
+
+### Changed
+
+- `e2e_run` now returns `runDbId` and compact `networkSummary` instead of full network logs
+- Dashboard network logs view: click any request row to expand full detail
+- `printReport()` now includes test narration in CLI output
+
+### Security
+
+- Fix JavaScript injection vulnerability in `verify.js` auth token interpolation
+- Add null check for property descriptor in `type_react` action
+- Add bounds validation (1–365) for `days` parameter in `e2e_learnings`
+
+## [1.1.1] - 2025-02-xx
+
+- Action-level retry with `retries` field on individual actions
+- Serial tests (`"serial": true`) — run after parallel tests finish
+- Exclude patterns for `--all` runs
+- On-demand screenshot capture (`e2e_capture` MCP tool, `e2e-runner capture` CLI)
+- Auth token injection for capture and verify flows
+- Network error warnings in MCP responses
+- Screenshot metadata in SQLite
+- `beforeAll` hook warning (runs on separate page)
+- Improved error context for `wait`, `evaluate`, and `assert_url` actions
+- `.env` support and `CLAUDE.md` project context for AI test generation
+- Visual verification with `expect` field
+- Strict test JSON validation
+
 ## [1.1.0] - 2025-02-16
 
 ### Added

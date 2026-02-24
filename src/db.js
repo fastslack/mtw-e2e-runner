@@ -490,6 +490,66 @@ export function getRunCount() {
   return row.cnt;
 }
 
+/** Query network logs for a run with optional filters.
+ * Filters: testName, method, statusMin, statusMax, urlPattern, errorsOnly, includeHeaders, includeBodies.
+ * By default returns only: url, method, status, statusText, duration.
+ */
+export function getNetworkLogs(runDbId, filters = {}) {
+  const d = getDb();
+
+  let query = 'SELECT name, network_logs FROM test_results WHERE run_id = ?';
+  const params = [runDbId];
+
+  if (filters.testName) {
+    query += ' AND name = ?';
+    params.push(filters.testName);
+  }
+
+  const rows = d.prepare(query).all(...params);
+  const results = [];
+
+  for (const row of rows) {
+    if (!row.network_logs) continue;
+    let logs = JSON.parse(row.network_logs);
+
+    if (filters.method) {
+      logs = logs.filter(l => l.method === filters.method.toUpperCase());
+    }
+    if (filters.statusMin !== undefined) {
+      logs = logs.filter(l => l.status >= filters.statusMin);
+    }
+    if (filters.statusMax !== undefined) {
+      logs = logs.filter(l => l.status <= filters.statusMax);
+    }
+    if (filters.urlPattern) {
+      const re = new RegExp(filters.urlPattern, 'i');
+      logs = logs.filter(l => re.test(l.url));
+    }
+    if (filters.errorsOnly) {
+      logs = logs.filter(l => l.status >= 400);
+    }
+
+    const mapped = logs.map(l => {
+      const entry = { url: l.url, method: l.method, status: l.status, statusText: l.statusText, duration: l.duration };
+      if (filters.includeHeaders || filters.includeBodies) {
+        entry.requestHeaders = l.requestHeaders;
+        entry.responseHeaders = l.responseHeaders;
+      }
+      if (filters.includeBodies) {
+        entry.requestBody = l.requestBody;
+        entry.responseBody = l.responseBody;
+      }
+      return entry;
+    });
+
+    if (mapped.length > 0) {
+      results.push({ testName: row.name, logs: mapped });
+    }
+  }
+
+  return results;
+}
+
 /** Close the database connection. */
 export function closeDb() {
   if (db) {

@@ -45,6 +45,7 @@ npx e2e-runner issue <url>                # fetch and display
 npx e2e-runner issue <url> --generate     # generate test via Claude API
 npx e2e-runner issue <url> --verify       # generate + run + report
 npx e2e-runner issue <url> --prompt       # output AI prompt as JSON
+npx e2e-runner issue <url> --test-type api  # generate API tests instead of UI tests
 ```
 
 There are no unit tests, linter, or build step in this project.
@@ -116,7 +117,12 @@ Each JSON file is an array of test objects. Each test has a `name` and an `actio
       { "type": "press", "value": "Enter" },
       { "type": "scroll", "selector": ".target" },
       { "type": "hover", "selector": ".menu" },
-      { "type": "evaluate", "value": "document.title" }
+      { "type": "evaluate", "value": "document.title" },
+      { "type": "type_react", "selector": "input#search", "value": "search term" },
+      { "type": "click_regex", "text": "iniciar encuentro", "selector": "button", "value": "last" },
+      { "type": "click_option", "text": "Option Label" },
+      { "type": "focus_autocomplete", "text": "Search by label" },
+      { "type": "click_chip", "text": "Tag Name" }
     ]
   }
 ]
@@ -201,6 +207,46 @@ These assertion types cover common verification patterns — prefer them over `e
 // Result in action entry: { "value": "John Doe" }
 ```
 
+### Framework-Aware Actions
+
+These actions handle common patterns in React/MUI apps that normally require verbose `evaluate` JS:
+
+| Action | Fields | Behavior |
+|--------|--------|----------|
+| `type_react` | `selector`, `value` | Types into React controlled inputs using the native value setter. Dispatches `input` + `change` events so React state updates correctly. Supports both `<input>` and `<textarea>`. |
+| `click_regex` | `text` (regex), optional `selector`, optional `value: "last"` | Click element whose textContent matches a regex (case-insensitive). Default: clicks first match. Use `value: "last"` for last match. `selector` scopes the search (default: common clickable elements). |
+| `click_option` | `text` | Click a `[role="option"]` element by text — common in autocomplete/select dropdowns. Waits for the option to appear. |
+| `focus_autocomplete` | `text` (label text) | Focus an autocomplete input by its label text. Supports MUI `.MuiAutocomplete-root` and generic `[role="combobox"]`. |
+| `click_chip` | `text` | Click a chip/tag element by text. Searches `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
+
+**Examples — before and after:**
+
+```json
+// BEFORE: 5 lines of evaluate boilerplate for React input
+{ "type": "evaluate", "value": "const input = document.querySelector('#search'); const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; nativeSet.call(input, 'cefalea'); input.dispatchEvent(new Event('input', {bubbles: true})); input.dispatchEvent(new Event('change', {bubbles: true}));" }
+
+// AFTER: 1 action
+{ "type": "type_react", "selector": "#search", "value": "cefalea" }
+
+// BEFORE: regex click with last-match
+{ "type": "evaluate", "value": "const btns = Array.from(document.querySelectorAll('button')).filter(b => /iniciar encuentro/i.test(b.textContent)); btns[btns.length - 1].click();" }
+
+// AFTER: 1 action
+{ "type": "click_regex", "text": "iniciar encuentro", "selector": "button", "value": "last" }
+
+// BEFORE: click autocomplete option
+{ "type": "evaluate", "value": "const opt = [...document.querySelectorAll('[role=\"option\"]')].find(el => el.textContent.includes('Cefalea')); opt.click();" }
+
+// AFTER: 1 action
+{ "type": "click_option", "text": "Cefalea" }
+
+// BEFORE: focus MUI autocomplete by label
+{ "type": "evaluate", "value": "const auto = [...document.querySelectorAll('.MuiAutocomplete-root')].find(a => { const l = a.querySelector('label'); return l && l.textContent.includes('Motivo'); }); auto.querySelector('input').focus(); auto.querySelector('input').click();" }
+
+// AFTER: 1 action
+{ "type": "focus_autocomplete", "text": "Motivo" }
+```
+
 ### Action-Level Retry
 
 Individual actions can be retried on failure without rerunning the entire test. Set per-action with `"retries": N` or globally via `actionRetries` config / `--action-retries <n>` / `ACTION_RETRIES` env var. Delay between retries: `actionRetryDelay` (default 500ms).
@@ -233,6 +279,33 @@ All XHR/fetch requests are captured with full detail regardless of status code:
 - `responseBody` — full response text (truncated at 50KB)
 
 Response bodies are read asynchronously and flushed via `Promise.allSettled` before the browser disconnects. This data is stored in the `network_logs` column in SQLite and displayed in the dashboard.
+
+**MCP response optimization:** The `e2e_run` MCP tool returns a compact `networkSummary` instead of full logs to keep the response small (~5KB vs ~400KB for 37 requests). The summary includes per-test stats:
+
+```json
+{
+  "networkSummary": [{
+    "name": "test-name",
+    "totalRequests": 37,
+    "statusDistribution": { "2xx": 30, "3xx": 5, "4xx": 1, "5xx": 0, "other": 1 },
+    "avgDurationMs": 245,
+    "failedRequests": [{ "url": "/api/x", "method": "POST", "status": 500 }],
+    "slowestRequests": [{ "url": "/api/y", "method": "GET", "status": 200, "duration": 1200 }]
+  }]
+}
+```
+
+The response also includes `runDbId` — the SQLite row ID for the run. Use it with `e2e_network_logs` to drill down:
+
+```
+1. e2e_run → compact summary + runDbId
+2. e2e_network_logs(runDbId) → all requests (url, method, status, duration)
+3. e2e_network_logs(runDbId, errorsOnly: true) → only failed requests
+4. e2e_network_logs(runDbId, includeHeaders: true) → with headers
+5. e2e_network_logs(runDbId, includeBodies: true) → full request/response bodies
+```
+
+Dashboard REST equivalent: `GET /api/db/runs/:id/network-logs?testName=X&errorsOnly=true&includeHeaders=true`
 
 ### Visual Verification (`expect` field)
 
@@ -343,7 +416,7 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 
 | Tool | Description |
 |------|-------------|
-| `e2e_run` | Run tests: `all`, by `suite` name, or by `file` path. Supports `concurrency`, `baseUrl`, `retries`, `failOnNetworkError` overrides. Returns verifications if tests have `expect`. |
+| `e2e_run` | Run tests: `all`, by `suite` name, or by `file` path. Supports `concurrency`, `baseUrl`, `retries`, `failOnNetworkError` overrides. Returns `runDbId` for drill-down, compact `networkSummary`, and verifications if tests have `expect`. |
 | `e2e_list` | List available test suites with test names and counts |
 | `e2e_create_test` | Create a new test JSON file with name, tests array, and optional hooks |
 | `e2e_pool_status` | Get Chrome pool availability, running sessions, capacity |
@@ -351,7 +424,8 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 | `e2e_capture` | Capture a screenshot of any URL on demand. Connects to pool, navigates, screenshots, returns image + `ss:HASH`. Supports `fullPage`, `selector`, `delay`, `filename`. |
 | `e2e_dashboard_start` | Start the E2E Runner web dashboard |
 | `e2e_dashboard_stop` | Stop the E2E Runner web dashboard |
-| `e2e_issue` | Fetch a GitHub/GitLab issue and generate E2E tests. `mode: "prompt"` (default) returns issue + prompt for Claude Code. `mode: "verify"` auto-generates tests via Claude API and runs them. |
+| `e2e_issue` | Fetch a GitHub/GitLab issue and generate E2E tests. `mode: "prompt"` (default) returns issue + prompt for Claude Code. `mode: "verify"` auto-generates tests via Claude API and runs them. `testType: "e2e"` (default) for UI-driven tests, `"api"` for backend API tests. |
+| `e2e_network_logs` | Query full network logs for a run by `runDbId`. Supports filters: `testName`, `method`, `statusMin`/`statusMax`, `urlPattern`, `errorsOnly`, `includeHeaders`, `includeBodies`. |
 
 > **Note:** Pool start/stop are only available via CLI (`e2e-runner pool start|stop`), not via MCP — restarting the pool kills all active sessions from other clients.
 
@@ -441,6 +515,16 @@ Turns bug reports and feature requests into executable E2E tests.
 - Verify mode works with GitLab issues (generates tests + runs them) but does NOT post comments back to the issue
 - Private repos require `glab` to be authenticated with appropriate access — there is no separate auth header parameter in the MCP tool
 - The `authToken`/`authStorageKey` params on `e2e_issue` are for the **app under test**, not for GitLab API auth
+
+**Test categories (`testType`):**
+
+The `--test-type` CLI flag (or `testType` MCP parameter) controls what kind of tests the AI generates:
+
+- **`e2e`** (default): UI-driven tests — navigate pages, interact with elements (click, type, select), verify visible state (assert_text, assert_visible, assert_url). Never uses `evaluate` for API calls.
+- **`api`**: Backend API tests — use `evaluate` actions for GraphQL/REST calls, assert response shapes and values. No UI interaction needed.
+
+CLI: `e2e-runner issue <url> --generate --test-type api`
+MCP: `e2e_issue({ url, testType: "api" })`
 
 ### Pool-Aware Queue
 

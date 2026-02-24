@@ -47,10 +47,22 @@ The test format is:
       { "type": "press", "value": "Enter" },
       { "type": "scroll", "selector": ".target" },
       { "type": "hover", "selector": ".menu" },
-      { "type": "evaluate", "value": "document.title" }
+      { "type": "evaluate", "value": "document.title" },
+      { "type": "type_react", "selector": "input#search", "value": "search term" },
+      { "type": "click_regex", "text": "submit order", "selector": "button", "value": "last" },
+      { "type": "click_option", "text": "Option Label" },
+      { "type": "focus_autocomplete", "text": "Search by label" },
+      { "type": "click_chip", "text": "Tag Name" }
     ]
   }
 ]
+
+Framework-aware action reference (prefer these over evaluate for React/MUI apps):
+- type_react: types into React controlled inputs using native value setter + input/change events (works with both input and textarea)
+- click_regex: click element by regex text match (case-insensitive). Use "value": "last" for last match. Optional "selector" scopes the search
+- click_option: click a [role="option"] element by text — for autocomplete/select dropdowns
+- focus_autocomplete: focus an autocomplete input by its label text (supports MUI .MuiAutocomplete-root and [role="combobox"])
+- click_chip: click a chip/tag element by text (searches [class*="Chip"], [data-chip])
 
 Assertion action reference:
 - assert_text: checks if text appears anywhere in the page body
@@ -77,6 +89,11 @@ Rules:
   * Use assert_input_value instead of evaluate to check input/select/textarea values
   * Use assert_matches instead of evaluate for regex text matching
   * Use assert_not_visible instead of evaluate to verify elements are hidden
+  * Use type_react instead of evaluate with native value setter for React controlled inputs
+  * Use click_regex instead of evaluate with Array.from(querySelectorAll).filter(regex) patterns
+  * Use click_option instead of evaluate with querySelectorAll('[role="option"]') patterns
+  * Use focus_autocomplete instead of evaluate with MuiAutocomplete-root label search patterns
+  * Use click_chip instead of evaluate with querySelectorAll('[class*="Chip"]') patterns
   * Reserve evaluate ONLY for complex logic that cannot be expressed with existing action types
 - "click" with "text" (no selector) finds buttons/links by visible text
 - "goto" values starting with "/" are relative to the app's base URL
@@ -86,6 +103,27 @@ Rules:
 - Prefer CSS selectors that are stable (data-testid, name, role) over fragile ones (nth-child, classes)
 - If the issue description is vague, create a reasonable test that covers the described scenario
 - If project context is provided (from CLAUDE.md), use the REAL routes, selectors, and UI patterns described there — never invent routes or selectors`;
+
+const E2E_RULES = `
+CRITICAL — UI-first testing rules:
+- Every test MUST start with a "goto" action to navigate to a real page
+- Tests MUST interact with UI elements: click, type, select, hover, scroll
+- Verify results through visible page state: assert_text, assert_visible, assert_element_text, assert_url
+- NEVER use evaluate to call APIs directly (no fetch, no GraphQL, no XHR, no window.__e2e.gql)
+- NEVER use evaluate to set up or verify data — use the UI workflow instead
+- Test the user journey as a real person would use the application
+- Include screenshot actions before key assertions for debugging
+`;
+
+const API_RULES = `
+API testing rules:
+- Tests verify backend API behavior directly via evaluate actions
+- Each test should: set up context → call API → assert response shape and values
+- Use evaluate for GraphQL mutations, queries, and REST calls
+- Name tests clearly describing the API operation (e.g. "createUser-returns-new-user")
+- Include error case tests (invalid input, missing fields, auth failures)
+- No need for goto/click/type — this is not UI testing
+`;
 
 /**
  * Reads the project's CLAUDE.md for app context (routes, selectors, UI structure).
@@ -111,7 +149,7 @@ function loadProjectContext(cwd) {
  * @param {object} config - Loaded config
  * @returns {object}
  */
-export function buildPrompt(issue, config) {
+export function buildPrompt(issue, config, testType = 'e2e') {
   let existingSuites = [];
   try {
     existingSuites = listSuites(config.testsDir).map(s => s.name);
@@ -122,7 +160,9 @@ export function buildPrompt(issue, config) {
     ? `\n## Project Context (from CLAUDE.md)\nUse these REAL routes, selectors, and UI patterns — do NOT invent your own.\n\n${projectContext}\n`
     : '';
 
-  const prompt = `Based on the following issue, generate E2E test actions using the e2e_create_test tool.
+  const categoryRules = testType === 'api' ? API_RULES : E2E_RULES;
+
+  const prompt = `Based on the following issue, generate ${testType === 'api' ? 'API' : 'E2E'} test actions using the e2e_create_test tool.
 
 ## Issue: ${issue.title}
 **Repo:** ${issue.repo}
@@ -133,8 +173,10 @@ export function buildPrompt(issue, config) {
 ### Description
 ${issue.body || 'No description provided.'}
 ${contextBlock}
+## Test Category: ${testType}
+${categoryRules}
 ## Instructions
-1. Analyze the issue and determine what user flows to test
+1. Analyze the issue and determine what ${testType === 'api' ? 'API operations' : 'user flows'} to test
 2. Create one or more tests that verify the expected behavior
 3. For bug reports: assert the CORRECT behavior (test failure = bug confirmed)
 4. Use the \`e2e_create_test\` tool with suite name \`issue-${issue.number}\`
@@ -175,7 +217,7 @@ export function hasApiKey(config = {}) {
  * @param {object} config - Loaded config
  * @returns {Promise<{ tests: object[], suiteName: string }>}
  */
-export async function generateTests(issue, config) {
+export async function generateTests(issue, config, testType = 'e2e') {
   const apiKey = config.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY is required for test generation. Set it as an environment variable or in config.');
@@ -189,7 +231,9 @@ export async function generateTests(issue, config) {
     ? `\n## Project Context (from CLAUDE.md)\nIMPORTANT: Use these REAL routes, selectors, and UI patterns — do NOT invent your own.\n\n${projectContext}\n`
     : '';
 
-  const userMessage = `Generate E2E tests for this issue:
+  const categoryRules = testType === 'api' ? API_RULES : E2E_RULES;
+
+  const userMessage = `Generate ${testType === 'api' ? 'API' : 'E2E'} tests for this issue:
 
 Title: ${issue.title}
 Repo: ${issue.repo}
@@ -199,6 +243,8 @@ State: ${issue.state}
 Description:
 ${issue.body || 'No description provided.'}
 ${contextBlock}
+Test Category: ${testType}
+${categoryRules}
 Base URL: ${config.baseUrl}
 
 Output a JSON array of test objects. Nothing else.`;

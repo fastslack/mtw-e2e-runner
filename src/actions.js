@@ -301,6 +301,114 @@ export async function executeAction(page, action, config) {
       break;
     }
 
+    case 'type_react': {
+      // Types into React controlled inputs using the native value setter.
+      // This bypasses React's synthetic event system which ignores programmatic .value changes.
+      await page.waitForSelector(selector, { timeout });
+      await page.evaluate((sel, val) => {
+        const input = document.querySelector(sel);
+        if (!input) throw new Error(`type_react: element "${sel}" not found`);
+        const proto = input instanceof HTMLTextAreaElement
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (!descriptor || !descriptor.set) {
+          throw new Error(`type_react: element "${sel}" has no writable value property`);
+        }
+        descriptor.set.call(input, val);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        input.focus();
+      }, selector, value);
+      break;
+    }
+
+    case 'click_regex': {
+      // Click an element whose textContent matches a regex pattern.
+      // text = regex pattern (always case-insensitive)
+      // selector = optional CSS scope (defaults to common clickable elements)
+      // value = "last" to click the last match (default: first)
+      const matchSelector = selector || 'button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1, h2, h3, h4, h5, h6, dd, dt';
+      const matchLast = value === 'last';
+      await page.waitForFunction(
+        (regex, sel) => [...document.querySelectorAll(sel)].some(el => new RegExp(regex, 'i').test(el.textContent)),
+        { timeout },
+        text, matchSelector
+      );
+      const clicked = await page.$$eval(matchSelector, (els, regex, last) => {
+        const matches = els.filter(el => new RegExp(regex, 'i').test(el.textContent));
+        if (matches.length === 0) return false;
+        const target = last ? matches[matches.length - 1] : matches[0];
+        target.click();
+        return true;
+      }, text, matchLast);
+      if (!clicked) {
+        throw new Error(`click_regex failed: no element matching /${text}/i found`);
+      }
+      break;
+    }
+
+    case 'click_option': {
+      // Click a [role="option"] element by text content — common in autocomplete dropdowns.
+      await page.waitForFunction(
+        (t) => [...document.querySelectorAll('[role="option"]')].some(el => el.textContent.includes(t)),
+        { timeout },
+        text
+      );
+      const optionClicked = await page.$$eval('[role="option"]', (els, t) => {
+        const match = els.find(el => el.textContent.includes(t));
+        if (match) { match.click(); return true; }
+        return false;
+      }, text);
+      if (!optionClicked) {
+        throw new Error(`click_option failed: no [role="option"] containing "${text}" found`);
+      }
+      break;
+    }
+
+    case 'focus_autocomplete': {
+      // Focus an autocomplete/combobox input by its label text.
+      // Supports MUI Autocomplete (.MuiAutocomplete-root) and generic [role="combobox"].
+      const focused = await page.evaluate((labelText) => {
+        const containers = [
+          ...document.querySelectorAll('.MuiAutocomplete-root'),
+          ...document.querySelectorAll('[role="combobox"]'),
+        ];
+        const match = containers.find(c => {
+          const label = c.querySelector('label');
+          return label && label.textContent.includes(labelText);
+        });
+        if (!match) return null;
+        const input = match.querySelector('input');
+        if (!input) return null;
+        input.focus();
+        input.click();
+        return input.id || 'focused';
+      }, text);
+      if (!focused) {
+        throw new Error(`focus_autocomplete failed: no autocomplete with label "${text}" found`);
+      }
+      break;
+    }
+
+    case 'click_chip': {
+      // Click a chip/tag element by text content.
+      // Searches MUI Chip classes and common chip patterns.
+      const chipClicked = await page.evaluate((chipText) => {
+        const chips = Array.from(document.querySelectorAll(
+          '[class*="Chip"], [class*="chip"], [data-chip], [role="option"][aria-selected]'
+        ));
+        const match = chips.find(c => c.textContent.includes(chipText));
+        if (!match) return false;
+        match.click();
+        return true;
+      }, text);
+      if (!chipClicked) {
+        throw new Error(`click_chip failed: no chip containing "${text}" found`);
+      }
+      break;
+    }
+
     case 'evaluate': {
       // Intentional: runs JS in browser page context (from test JSON files)
       const jsSnippet = value.length > 120 ? value.slice(0, 120) + '...' : value;

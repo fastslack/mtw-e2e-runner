@@ -179,6 +179,26 @@ button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
 { "type": "click", "text": "Sign In" }
 ```
 
+### Framework-Aware Actions
+
+These actions handle common patterns in React/MUI apps that normally require verbose `evaluate` boilerplate:
+
+| Action | Fields | Description |
+|--------|--------|-------------|
+| `type_react` | `selector`, `value` | Type into React controlled inputs using the native value setter. Dispatches `input` + `change` events so React state updates correctly. |
+| `click_regex` | `text` (regex), optional `selector`, optional `value: "last"` | Click element whose textContent matches a regex (case-insensitive). Default: first match. Use `value: "last"` for last match. |
+| `click_option` | `text` | Click a `[role="option"]` element by text — common in autocomplete/select dropdowns. |
+| `focus_autocomplete` | `text` (label text) | Focus an autocomplete input by its label text. Supports MUI and generic `[role="combobox"]`. |
+| `click_chip` | `text` | Click a chip/tag element by text. Searches `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
+
+```json
+// Before: 5 lines of evaluate boilerplate
+{ "type": "evaluate", "value": "const input = document.querySelector('#search'); const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set; nativeSet.call(input, 'term'); input.dispatchEvent(new Event('input', {bubbles: true})); input.dispatchEvent(new Event('change', {bubbles: true}));" }
+
+// After: 1 action
+{ "type": "type_react", "selector": "#search", "value": "term" }
+```
+
 ---
 
 ## Retries
@@ -339,9 +359,12 @@ Query insights via the `e2e_learnings` MCP tool:
 | `page:<path>` | Drill-down history for a specific page |
 | `selector:<value>` | Drill-down history for a specific selector |
 
-Learnings are stored in SQLite (`~/.e2e-runner/dashboard.db`) and optionally exported to a Neo4j knowledge graph for relationship-based analysis.
+**Storage & export:**
+- SQLite (`~/.e2e-runner/dashboard.db`) — default, zero setup
+- Neo4j knowledge graph — optional, for relationship-based analysis. Manage via `e2e_neo4j` MCP tool or `docker compose`
+- Markdown report (`e2e/learnings.md`) — auto-generated after each run
 
-A markdown report (`e2e/learnings.md`) is auto-generated after each run.
+**Test narration:** Each test run generates a human-readable narrative of what happened step by step, visible in the CLI output and the dashboard.
 
 ---
 
@@ -485,6 +508,18 @@ When disabled (default), the runner still collects and reports network errors �
 ### Full Network Logging
 
 All XHR/fetch requests are captured with: URL, method, status, duration, request/response headers, and response body (truncated at 50KB). Viewable in the dashboard with expandable request detail rows.
+
+**MCP drill-down flow:**
+
+```
+1. e2e_run          → compact networkSummary + runDbId
+2. e2e_network_logs(runDbId)                     → all requests (url, method, status, duration)
+3. e2e_network_logs(runDbId, errorsOnly: true)   → only failed requests
+4. e2e_network_logs(runDbId, includeHeaders: true) → with headers
+5. e2e_network_logs(runDbId, includeBodies: true)  → full request/response bodies
+```
+
+The `e2e_run` response stays compact (~5KB) regardless of how many requests were captured. Use `e2e_network_logs` with the returned `runDbId` to drill into details on demand.
 
 ---
 

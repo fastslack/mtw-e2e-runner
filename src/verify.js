@@ -25,7 +25,7 @@ export async function verifyIssue(url, config) {
   const issue = fetchIssue(url);
 
   // 2. Generate tests via Claude API
-  const { tests, suiteName } = await generateTests(issue, config);
+  const { tests, suiteName } = await generateTests(issue, config, config.testType || 'e2e');
 
   // 3. Save tests to a temp file (underscore prefix for cleanup identification)
   const testFile = path.join(config.testsDir, `_verify-${suiteName}.json`);
@@ -38,10 +38,12 @@ export async function verifyIssue(url, config) {
     // 4. Build hooks (inject auth if provided)
     const hooks = {};
     if (config.authToken) {
-      const storageKey = config.authStorageKey || 'accessToken';
+      const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const storageKey = esc(config.authStorageKey || 'accessToken');
+      const token = esc(config.authToken);
       hooks.beforeEach = [
         { type: 'goto', value: '/' },
-        { type: 'evaluate', value: `localStorage.setItem('${storageKey}', '${config.authToken}')` },
+        { type: 'evaluate', value: `localStorage.setItem('${storageKey}', '${token}')` },
         { type: 'goto', value: '/' },
         { type: 'wait', value: '1000' },
       ];
