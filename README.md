@@ -104,15 +104,18 @@ npx e2e-runner dashboard
 **Add to Claude Code** (once, available in all projects):
 
 ```bash
-# Full plugin: MCP tools + skills + commands + agents
-claude plugin install npm:@matware/e2e-runner
+# 1. Add the marketplace (one-time)
+claude plugin marketplace add fastslack/mtw-e2e-runner
+
+# 2. Install the plugin
+claude plugin install e2e-runner@matware
 
 # Or MCP-only (tools without skills/commands/agents):
 claude mcp add --transport stdio --scope user e2e-runner \
   -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
 
-The **plugin** is the recommended approach — it installs the 13 MCP tools *plus* a skill that teaches Claude the optimal workflow, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`), and 2 specialized agents for test analysis and creation.
+The **plugin** is the recommended approach — it installs the 13 MCP tools *plus* a skill that teaches Claude the optimal workflow, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`), and 3 specialized agents for test analysis, creation, and improvement.
 
 ---
 
@@ -455,7 +458,11 @@ The package ships as a **Claude Code plugin** — a single install that gives Cl
 ### Install as Plugin (recommended)
 
 ```bash
-claude plugin install npm:@matware/e2e-runner
+# 1. Add the marketplace (one-time)
+claude plugin marketplace add fastslack/mtw-e2e-runner
+
+# 2. Install the plugin
+claude plugin install e2e-runner@matware
 ```
 
 **What you get:**
@@ -465,7 +472,7 @@ claude plugin install npm:@matware/e2e-runner
 | **13 MCP tools** | Run tests, create test files, capture screenshots, query network logs, manage dashboard, verify issues, query learnings |
 | **Skill** | Teaches Claude the full e2e-runner workflow — how to combine tools, interpret results, debug failures, create tests |
 | **3 Commands** | `/e2e-runner:run` — run & analyze tests<br>`/e2e-runner:create-test` — explore UI and create tests<br>`/e2e-runner:verify-issue <url>` — verify GitHub/GitLab bugs |
-| **2 Agents** | **test-analyzer** — diagnoses failures, analyzes flaky tests, drills into network errors<br>**test-creator** — explores UI, discovers selectors, designs and validates tests |
+| **3 Agents** | **test-analyzer** — diagnoses failures, analyzes flaky tests, drills into network errors<br>**test-creator** — explores UI, discovers selectors, designs and validates tests<br>**test-improver** — refactors verbose evaluate actions, extracts modules, adds waits/retries, eliminates hardcoded delays |
 
 ### Install MCP-only (alternative)
 

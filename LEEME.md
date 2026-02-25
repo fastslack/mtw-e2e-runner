@@ -104,15 +104,18 @@ npx e2e-runner dashboard
 **Agregar a Claude Code** (una vez, disponible en todos los proyectos):
 
 ```bash
-# Plugin completo: herramientas MCP + skills + commands + agents
-claude plugin install npm:@matware/e2e-runner
+# 1. Agregar el marketplace (una sola vez)
+claude plugin marketplace add fastslack/mtw-e2e-runner
+
+# 2. Instalar el plugin
+claude plugin install e2e-runner@matware
 
 # O solo MCP (herramientas sin skills/commands/agents):
 claude mcp add --transport stdio --scope user e2e-runner \
   -- npx -y -p @matware/e2e-runner e2e-runner-mcp
 ```
 
-El **plugin** es la forma recomendada — instala las 13 herramientas MCP *más* un skill que le enseña a Claude el workflow óptimo, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`) y 2 agentes especializados para análisis y creación de tests.
+El **plugin** es la forma recomendada — instala las 13 herramientas MCP *más* un skill que le enseña a Claude el workflow óptimo, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`) y 3 agentes especializados para análisis, creación y mejora de tests.
 
 ---
 
@@ -455,7 +458,11 @@ El paquete se distribuye como un **plugin de Claude Code** — una sola instalac
 ### Instalar como Plugin (recomendado)
 
 ```bash
-claude plugin install npm:@matware/e2e-runner
+# 1. Agregar el marketplace (una sola vez)
+claude plugin marketplace add fastslack/mtw-e2e-runner
+
+# 2. Instalar el plugin
+claude plugin install e2e-runner@matware
 ```
 
 **Qué incluye:**
@@ -465,7 +472,7 @@ claude plugin install npm:@matware/e2e-runner
 | **13 herramientas MCP** | Ejecutar tests, crear archivos de test, capturar screenshots, consultar logs de red, gestionar dashboard, verificar issues, consultar aprendizajes |
 | **Skill** | Le enseña a Claude el workflow completo de e2e-runner — cómo combinar herramientas, interpretar resultados, depurar fallos, crear tests |
 | **3 Commands** | `/e2e-runner:run` — ejecutar y analizar tests<br>`/e2e-runner:create-test` — explorar UI y crear tests<br>`/e2e-runner:verify-issue <url>` — verificar bugs de GitHub/GitLab |
-| **2 Agents** | **test-analyzer** — diagnostica fallos, analiza tests flaky, profundiza en errores de red<br>**test-creator** — explora UI, descubre selectores, diseña y valida tests |
+| **3 Agents** | **test-analyzer** — diagnostica fallos, analiza tests flaky, profundiza en errores de red<br>**test-creator** — explora UI, descubre selectores, diseña y valida tests<br>**test-improver** — refactoriza evaluate verbosos, extrae módulos, agrega waits/retries, elimina delays hardcodeados |
 
 ### Instalar solo MCP (alternativa)
 
