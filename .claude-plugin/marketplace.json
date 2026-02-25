@@ -1,0 +1,21 @@
+{
+  "name": "matware",
+  "owner": {
+    "name": "Matware"
+  },
+  "metadata": {
+    "description": "E2E testing tools by Matware"
+  },
+  "plugins": [
+    {
+      "name": "e2e-runner",
+      "source": ".",
+      "description": "JSON-driven E2E browser test runner with Chrome pool, visual verification, and learning system",
+      "version": "1.2.1",
+      "author": { "name": "Matware" },
+      "repository": "https://github.com/fastslack/mtw-e2e-runner",
+      "license": "Apache-2.0",
+      "keywords": ["e2e", "testing", "chrome", "puppeteer", "mcp"]
+    }
+  ]
+}
