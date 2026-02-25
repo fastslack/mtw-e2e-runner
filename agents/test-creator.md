@@ -69,6 +69,17 @@ You are a specialist in creating robust E2E tests for web applications. You expl
 - Clear field → `clear`
 - Submit → `click` on submit button or `press` Enter
 
+### Storage
+- Set localStorage key → `set_storage` with `value: "key=val"`
+- Set sessionStorage key → `set_storage` with `value: "key=val"`, `selector: "session"`
+- Assert storage key exists → `assert_storage` with `value: "key"`
+- Assert storage value → `assert_storage` with `value: "key=expected"`
+
+### Smart Clicks
+- Click icon button → `click_icon` with `value` (icon identifier like "edit", "delete")
+- Click menu item → `click_menu_item` with `text` (after opening the menu)
+- Click element in a specific row/card → `click_in_context` with `text` (row text) + `selector` (child to click)
+
 ### Waiting
 - Element appears → `wait` with `selector`
 - Text appears → `wait` with `text`

@@ -31,6 +31,21 @@ Complete catalog of all action types supported by @matware/e2e-runner.
 | `focus_autocomplete` | `text` (label text) | Focus an autocomplete input by label. Supports MUI `.MuiAutocomplete-root` and `[role="combobox"]`. |
 | `click_chip` | `text` | Click a chip/tag element by text. Searches `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
 
+## Storage
+
+| Action | Fields | Description |
+|--------|--------|-------------|
+| `set_storage` | `value` (`"key=val"`), `selector` (`"session"` optional) | Set a `localStorage` key (default) or `sessionStorage` key (with `selector: "session"`). |
+| `assert_storage` | `value` (`"key"` or `"key=expected"`), `selector` (`"session"` optional) | Without `=`: checks key exists. With `=`: checks exact value match. Uses `localStorage` by default, `sessionStorage` with `selector: "session"`. |
+
+## Smart Interaction
+
+| Action | Fields | Description |
+|--------|--------|-------------|
+| `click_icon` | `value` (icon identifier), `selector` (scope, optional) | Click an icon by `data-testid`, `data-icon`, `aria-label`, CSS class, or SVG title. Walks up to nearest clickable ancestor (`button`, `a`, `[role="button"]`). Works with MUI, FontAwesome, Heroicons, Bootstrap Icons, Lucide. |
+| `click_menu_item` | `text` (menu item text), `selector` (scope, optional) | Click a menu item by text. Searches `[role="menuitem"]`, `[role="menuitemradio"]`, `[role="menuitemcheckbox"]`, `.dropdown-item`, `.menu-item`, `[class*="MenuItem"]`, `[role="menu"] > li`. Waits for element to appear. |
+| `click_in_context` | `text` (container text), `selector` (child to click) | Find the smallest container whose text includes `text`, then click the `selector` child within it. Containers: `section`, `article`, `[class*="card"]`, `li`, `tr`, `div[class]`, etc. Both fields required. |
+
 ## Assertions
 
 | Action | Fields | Description |
@@ -97,4 +112,20 @@ Delay between retries: `actionRetryDelay` config (default 500ms).
 { "type": "assert_input_value", "selector": "#email", "value": "user@example.com" },
 { "type": "assert_matches", "selector": ".phone", "value": "\\d{3}-\\d{3}-\\d{4}" },
 { "type": "assert_count", "selector": ".table-row", "value": ">3" }
+```
+
+### Storage operations
+```json
+{ "type": "set_storage", "value": "authToken=eyJhbGciOiJIUzI1NiJ9..." },
+{ "type": "assert_storage", "value": "authToken" },
+{ "type": "set_storage", "value": "theme=dark", "selector": "session" },
+{ "type": "assert_storage", "value": "theme=dark", "selector": "session" }
+```
+
+### Icon, menu, and contextual clicks
+```json
+{ "type": "click_icon", "value": "edit" },
+{ "type": "click_icon", "value": "delete", "selector": ".user-card" },
+{ "type": "click_menu_item", "text": "Export as PDF" },
+{ "type": "click_in_context", "text": "John Doe", "selector": "button.edit" }
 ```

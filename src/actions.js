@@ -409,6 +409,211 @@ export async function executeAction(page, action, config) {
       break;
     }
 
+    case 'set_storage': {
+      // Set a localStorage or sessionStorage key.
+      // value: "key=val", selector: "session" for sessionStorage (default: localStorage)
+      const eqIdx = value.indexOf('=');
+      if (eqIdx === -1) {
+        throw new Error(`set_storage: value must be "key=value", got "${value}"`);
+      }
+      const storageKey = value.slice(0, eqIdx);
+      const storageVal = value.slice(eqIdx + 1);
+      const storageType = selector === 'session' ? 'sessionStorage' : 'localStorage';
+      await page.evaluate((sType, k, v) => {
+        window[sType].setItem(k, v);
+      }, storageType, storageKey, storageVal);
+      break;
+    }
+
+    case 'assert_storage': {
+      // Assert a localStorage or sessionStorage key exists or has a specific value.
+      // value: "key" (existence) or "key=expected" (value match)
+      // selector: "session" for sessionStorage (default: localStorage)
+      const storageType = selector === 'session' ? 'sessionStorage' : 'localStorage';
+      const eqIdx = value.indexOf('=');
+      if (eqIdx === -1) {
+        // Existence check
+        const exists = await page.evaluate((sType, k) => window[sType].getItem(k) !== null, storageType, value);
+        if (!exists) {
+          throw new Error(`assert_storage failed: ${storageType} key "${value}" does not exist`);
+        }
+      } else {
+        const storageKey = value.slice(0, eqIdx);
+        const expectedVal = value.slice(eqIdx + 1);
+        const actual = await page.evaluate((sType, k) => window[sType].getItem(k), storageType, storageKey);
+        if (actual === null) {
+          throw new Error(`assert_storage failed: ${storageType} key "${storageKey}" does not exist`);
+        }
+        if (actual !== expectedVal) {
+          throw new Error(`assert_storage failed: ${storageType} key "${storageKey}" is "${actual}", expected "${expectedVal}"`);
+        }
+      }
+      break;
+    }
+
+    case 'click_icon': {
+      // Click an icon element by identifier — works with MUI, FontAwesome, Heroicons, Bootstrap Icons, etc.
+      // value: icon identifier (data-testid fragment, class fragment, aria-label, or SVG text/title)
+      // selector: optional CSS scope to narrow the search
+      const iconId = value;
+      const iconScope = selector || null;
+      await page.waitForFunction(
+        (id, scope) => {
+          const root = scope ? document.querySelector(scope) : document;
+          if (!root) return false;
+          // Search by common icon attribute patterns
+          const attrSelectors = [
+            `[data-testid*="${id}"]`,
+            `[data-icon*="${id}"]`,
+            `[aria-label*="${id}"]`,
+            `svg[class*="${id}"]`,
+            `i[class*="${id}"]`,
+            `span[class*="${id}"]`,
+          ];
+          for (const sel of attrSelectors) {
+            if (root.querySelector(sel)) return true;
+          }
+          // Search all SVGs for matching text content or title
+          for (const svg of root.querySelectorAll('svg')) {
+            const title = svg.querySelector('title');
+            if (title && title.textContent.toLowerCase().includes(id.toLowerCase())) return true;
+            if (svg.getAttribute('aria-label')?.toLowerCase().includes(id.toLowerCase())) return true;
+          }
+          return false;
+        },
+        { timeout },
+        iconId, iconScope
+      );
+      const clicked = await page.evaluate(
+        (id, scope) => {
+          const root = scope ? document.querySelector(scope) : document;
+          if (!root) return false;
+          let icon = null;
+          const attrSelectors = [
+            `[data-testid*="${id}"]`,
+            `[data-icon*="${id}"]`,
+            `[aria-label*="${id}"]`,
+            `svg[class*="${id}"]`,
+            `i[class*="${id}"]`,
+            `span[class*="${id}"]`,
+          ];
+          for (const sel of attrSelectors) {
+            icon = root.querySelector(sel);
+            if (icon) break;
+          }
+          // Fallback: search SVGs by title/aria-label text
+          if (!icon) {
+            for (const svg of root.querySelectorAll('svg')) {
+              const title = svg.querySelector('title');
+              if (title && title.textContent.toLowerCase().includes(id.toLowerCase())) { icon = svg; break; }
+              if (svg.getAttribute('aria-label')?.toLowerCase().includes(id.toLowerCase())) { icon = svg; break; }
+            }
+          }
+          if (!icon) return false;
+          // Walk up to nearest clickable ancestor
+          const clickableSelector = 'button, a, [role="button"], [role="tab"], [role="menuitem"]';
+          const clickable = icon.closest(clickableSelector);
+          (clickable || icon).click();
+          return true;
+        },
+        iconId, iconScope
+      );
+      if (!clicked) {
+        throw new Error(`click_icon failed: no icon matching "${iconId}" found${iconScope ? ` in "${iconScope}"` : ''}`);
+      }
+      break;
+    }
+
+    case 'click_menu_item': {
+      // Click a menu item by text content.
+      // text: menu item text to match (case-sensitive, substring)
+      // selector: optional CSS scope
+      const menuSelector = [
+        '[role="menuitem"]',
+        '[role="menuitemradio"]',
+        '[role="menuitemcheckbox"]',
+        '.dropdown-item',
+        '.menu-item',
+        '[class*="MenuItem"]',
+        '[role="menu"] > li',
+      ].join(', ');
+      const menuScope = selector || null;
+      await page.waitForFunction(
+        (t, sel, scope) => {
+          const root = scope ? document.querySelector(scope) : document;
+          if (!root) return false;
+          return [...root.querySelectorAll(sel)].some(el => el.textContent.includes(t));
+        },
+        { timeout },
+        text, menuSelector, menuScope
+      );
+      const clicked = await page.evaluate(
+        (t, sel, scope) => {
+          const root = scope ? document.querySelector(scope) : document;
+          if (!root) return false;
+          const match = [...root.querySelectorAll(sel)].find(el => el.textContent.includes(t));
+          if (match) { match.click(); return true; }
+          return false;
+        },
+        text, menuSelector, menuScope
+      );
+      if (!clicked) {
+        throw new Error(`click_menu_item failed: no menu item containing "${text}" found${menuScope ? ` in "${menuScope}"` : ''}`);
+      }
+      break;
+    }
+
+    case 'click_in_context': {
+      // Click a child element within a container identified by text content.
+      // text: text to find the container (required)
+      // selector: CSS selector for the child to click within that container (required)
+      if (!text || !selector) {
+        throw new Error('click_in_context requires both "text" (container text) and "selector" (child to click)');
+      }
+      const containerSelectors = [
+        'section', 'article',
+        '[class*="card"]', '[class*="Card"]',
+        '[class*="panel"]', '[class*="Panel"]',
+        '[class*="item"]', '[class*="Item"]',
+        '.MuiGrid-item', '[class*="MuiGrid2"]',
+        '[class*="row"]', '[class*="Row"]',
+        'details', 'fieldset',
+        '[role="region"]', '[role="group"]', '[role="listitem"]',
+        'li', 'tr', 'div[class]',
+      ].join(', ');
+      await page.waitForFunction(
+        (t, childSel, containerSels) => {
+          const containers = [...document.querySelectorAll(containerSels)]
+            .filter(el => el.textContent.includes(t));
+          // Sort by innerHTML length (smallest = most specific)
+          containers.sort((a, b) => a.innerHTML.length - b.innerHTML.length);
+          for (const c of containers) {
+            if (c.querySelector(childSel)) return true;
+          }
+          return false;
+        },
+        { timeout },
+        text, selector, containerSelectors
+      );
+      const clicked = await page.evaluate(
+        (t, childSel, containerSels) => {
+          const containers = [...document.querySelectorAll(containerSels)]
+            .filter(el => el.textContent.includes(t));
+          containers.sort((a, b) => a.innerHTML.length - b.innerHTML.length);
+          for (const c of containers) {
+            const child = c.querySelector(childSel);
+            if (child) { child.click(); return true; }
+          }
+          return false;
+        },
+        text, selector, containerSelectors
+      );
+      if (!clicked) {
+        throw new Error(`click_in_context failed: no "${selector}" found in container with text "${text}"`);
+      }
+      break;
+    }
+
     case 'evaluate': {
       // Intentional: runs JS in browser page context (from test JSON files)
       const jsSnippet = value.length > 120 ? value.slice(0, 120) + '...' : value;

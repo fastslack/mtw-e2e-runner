@@ -129,6 +129,33 @@ export function narrateAction(action, result) {
     case 'click_chip':
       return `Clicked chip "${text}"${time}`;
 
+    case 'set_storage': {
+      const storageType = selector === 'session' ? 'sessionStorage' : 'localStorage';
+      const eqIdx = value.indexOf('=');
+      const sKey = eqIdx === -1 ? value : value.slice(0, eqIdx);
+      const sVal = eqIdx === -1 ? '' : value.slice(eqIdx + 1);
+      const displayVal = isSensitive(sKey) ? '***' : (sVal.length > 30 ? sVal.slice(0, 27) + '...' : sVal);
+      return `Set ${storageType}.${sKey} = "${displayVal}"${time}`;
+    }
+
+    case 'assert_storage': {
+      const storageType = selector === 'session' ? 'sessionStorage' : 'localStorage';
+      const eqIdx = value.indexOf('=');
+      if (eqIdx === -1) {
+        return `Verified ${storageType} key "${value}" exists${time}`;
+      }
+      return `Verified ${storageType} key "${value.slice(0, eqIdx)}" has expected value${time}`;
+    }
+
+    case 'click_icon':
+      return `Clicked icon "${value}"${selector ? ` in "${selector}"` : ''}${time}`;
+
+    case 'click_menu_item':
+      return `Clicked menu item "${text}"${selector ? ` in "${selector}"` : ''}${time}`;
+
+    case 'click_in_context':
+      return `Clicked "${selector}" in container with text "${text}"${time}`;
+
     case 'evaluate': {
       const snippet = value.length > 80 ? value.slice(0, 77) + '...' : value;
       const evalResult = result.result?.value;
@@ -185,6 +212,16 @@ function describeIntent(action) {
     case 'click_option':          return `Click option "${text}"`;
     case 'focus_autocomplete':    return `Focus autocomplete "${text}"`;
     case 'click_chip':            return `Click chip "${text}"`;
+    case 'set_storage':            return `Set ${selector === 'session' ? 'sessionStorage' : 'localStorage'} key "${value?.split('=')[0] || value}"`;
+    case 'assert_storage': {
+      const eqIdx = value?.indexOf('=') ?? -1;
+      return eqIdx === -1
+        ? `Assert ${selector === 'session' ? 'sessionStorage' : 'localStorage'} key "${value}" exists`
+        : `Assert ${selector === 'session' ? 'sessionStorage' : 'localStorage'} key "${value.slice(0, eqIdx)}" value`;
+    }
+    case 'click_icon':             return `Click icon "${value}"`;
+    case 'click_menu_item':        return `Click menu item "${text}"`;
+    case 'click_in_context':       return `Click "${selector}" in context of "${text}"`;
     case 'evaluate':   return 'Execute JS';
     default:           return `Action "${type}"`;
   }

@@ -122,7 +122,16 @@ Each JSON file is an array of test objects. Each test has a `name` and an `actio
       { "type": "click_regex", "text": "iniciar encuentro", "selector": "button", "value": "last" },
       { "type": "click_option", "text": "Option Label" },
       { "type": "focus_autocomplete", "text": "Search by label" },
-      { "type": "click_chip", "text": "Tag Name" }
+      { "type": "click_chip", "text": "Tag Name" },
+      { "type": "set_storage", "value": "token=abc123" },
+      { "type": "set_storage", "value": "theme=dark", "selector": "session" },
+      { "type": "assert_storage", "value": "token" },
+      { "type": "assert_storage", "value": "token=abc123" },
+      { "type": "click_icon", "value": "edit" },
+      { "type": "click_icon", "value": "delete", "selector": ".user-card" },
+      { "type": "click_menu_item", "text": "Delete" },
+      { "type": "click_menu_item", "text": "Export", "selector": ".actions-menu" },
+      { "type": "click_in_context", "text": "John Doe", "selector": "button.edit" }
     ]
   }
 ]
@@ -245,6 +254,63 @@ These actions handle common patterns in React/MUI apps that normally require ver
 
 // AFTER: 1 action
 { "type": "focus_autocomplete", "text": "Motivo" }
+```
+
+### Storage Actions
+
+These actions provide direct access to `localStorage` and `sessionStorage` without `evaluate`:
+
+| Action | Fields | Behavior |
+|--------|--------|----------|
+| `set_storage` | `value: "key=val"`, optional `selector: "session"` | Sets a storage key. Default: `localStorage`. Use `selector: "session"` for `sessionStorage`. |
+| `assert_storage` | `value: "key"` or `value: "key=expected"`, optional `selector: "session"` | Without `=`: checks key exists (`getItem !== null`). With `=`: checks exact value match. |
+
+**Examples — before and after:**
+
+```json
+// BEFORE: evaluate for localStorage
+{ "type": "evaluate", "value": "localStorage.setItem('authToken', 'abc123')" }
+
+// AFTER: 1 action
+{ "type": "set_storage", "value": "authToken=abc123" }
+
+// BEFORE: evaluate for sessionStorage check
+{ "type": "evaluate", "value": "if (sessionStorage.getItem('theme') !== 'dark') throw new Error('wrong theme')" }
+
+// AFTER: 1 action
+{ "type": "assert_storage", "value": "theme=dark", "selector": "session" }
+```
+
+### Smart Interaction Actions
+
+These actions handle common UI patterns across any framework (React, Angular, Vue, Bootstrap, MUI, Tailwind, vanilla HTML):
+
+| Action | Fields | Behavior |
+|--------|--------|----------|
+| `click_icon` | `value` (icon identifier), optional `selector` (scope) | Finds icons by `data-testid`, `data-icon`, `aria-label`, CSS class, or SVG title (case-insensitive). Walks up to nearest clickable ancestor (`button`, `a`, `[role="button"]`). Falls back to clicking the icon element itself. |
+| `click_menu_item` | `text` (menu item text), optional `selector` (scope) | Clicks `[role="menuitem"]`, `[role="menuitemradio"]`, `[role="menuitemcheckbox"]`, `.dropdown-item`, `.menu-item`, `[class*="MenuItem"]`, or `[role="menu"] > li` by text content. Waits for element to appear (handles animated menus). |
+| `click_in_context` | `text` (container text, required), `selector` (child to click, required) | Finds containers (`section`, `article`, `[class*="card"]`, `li`, `tr`, `div[class]`, etc.) whose `textContent.includes(text)`, picks the **smallest** matching container (most specific), then clicks the `selector` child within it. |
+
+**Examples — before and after:**
+
+```json
+// BEFORE: evaluate to click icon button
+{ "type": "evaluate", "value": "document.querySelector('svg[data-testid=\"EditIcon\"]').closest('button').click()" }
+
+// AFTER: 1 action
+{ "type": "click_icon", "value": "Edit" }
+
+// BEFORE: evaluate to click menu item
+{ "type": "evaluate", "value": "const items = [...document.querySelectorAll('[role=\"menuitem\"]')]; items.find(el => el.textContent.includes('Delete')).click();" }
+
+// AFTER: 1 action
+{ "type": "click_menu_item", "text": "Delete" }
+
+// BEFORE: evaluate to click edit button in a specific row
+{ "type": "evaluate", "value": "const rows = [...document.querySelectorAll('tr')]; const row = rows.find(r => r.textContent.includes('John Doe')); row.querySelector('button.edit').click();" }
+
+// AFTER: 1 action
+{ "type": "click_in_context", "text": "John Doe", "selector": "button.edit" }
 ```
 
 ### Action-Level Retry

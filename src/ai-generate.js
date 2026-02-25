@@ -52,7 +52,16 @@ The test format is:
       { "type": "click_regex", "text": "submit order", "selector": "button", "value": "last" },
       { "type": "click_option", "text": "Option Label" },
       { "type": "focus_autocomplete", "text": "Search by label" },
-      { "type": "click_chip", "text": "Tag Name" }
+      { "type": "click_chip", "text": "Tag Name" },
+      { "type": "set_storage", "value": "token=abc123" },
+      { "type": "set_storage", "value": "theme=dark", "selector": "session" },
+      { "type": "assert_storage", "value": "token" },
+      { "type": "assert_storage", "value": "theme=dark", "selector": "session" },
+      { "type": "click_icon", "value": "edit" },
+      { "type": "click_icon", "value": "delete", "selector": ".user-card" },
+      { "type": "click_menu_item", "text": "Delete" },
+      { "type": "click_menu_item", "text": "Export", "selector": ".actions-menu" },
+      { "type": "click_in_context", "text": "John Doe", "selector": "button.edit" }
     ]
   }
 ]
@@ -63,6 +72,15 @@ Framework-aware action reference (prefer these over evaluate for React/MUI apps)
 - click_option: click a [role="option"] element by text — for autocomplete/select dropdowns
 - focus_autocomplete: focus an autocomplete input by its label text (supports MUI .MuiAutocomplete-root and [role="combobox"])
 - click_chip: click a chip/tag element by text (searches [class*="Chip"], [data-chip])
+
+Storage actions:
+- set_storage: set a localStorage key. "value": "key=val". Use "selector": "session" for sessionStorage
+- assert_storage: assert a storage key exists ("value": "key") or has a value ("value": "key=expected"). Use "selector": "session" for sessionStorage
+
+Smart interaction actions:
+- click_icon: click an icon by identifier (data-testid fragment, class fragment, aria-label, SVG title). Walks up to nearest clickable parent (button, a, etc.). Optional "selector" scopes the search
+- click_menu_item: click a menu item by text. Searches [role="menuitem"], .dropdown-item, .menu-item, [class*="MenuItem"]. Optional "selector" scopes the search
+- click_in_context: click a child element within a container identified by text. "text" finds the container, "selector" is the child to click. Picks the smallest matching container
 
 Assertion action reference:
 - assert_text: checks if text appears anywhere in the page body
@@ -94,6 +112,11 @@ Rules:
   * Use click_option instead of evaluate with querySelectorAll('[role="option"]') patterns
   * Use focus_autocomplete instead of evaluate with MuiAutocomplete-root label search patterns
   * Use click_chip instead of evaluate with querySelectorAll('[class*="Chip"]') patterns
+  * Use set_storage instead of evaluate with localStorage.setItem or sessionStorage.setItem
+  * Use assert_storage instead of evaluate with localStorage.getItem or sessionStorage.getItem checks
+  * Use click_icon instead of evaluate with querySelector('svg[data-testid]').closest('button').click() patterns
+  * Use click_menu_item instead of evaluate with querySelectorAll('[role="menuitem"]') patterns
+  * Use click_in_context instead of evaluate that finds a container by text then clicks a child element
   * Reserve evaluate ONLY for complex logic that cannot be expressed with existing action types
 - "click" with "text" (no selector) finds buttons/links by visible text
 - "goto" values starting with "/" are relative to the app's base URL
