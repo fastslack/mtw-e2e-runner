@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "e2e-runner",
-      "source": ".",
+      "source": "./",
       "description": "JSON-driven E2E browser test runner with Chrome pool, visual verification, and learning system",
       "version": "1.2.1",
       "author": { "name": "Matware" },
