@@ -384,7 +384,7 @@ function refreshProjects(){
 $('#projectSelect').addEventListener('change',function(){
   S.project=this.value?parseInt(this.value,10):null;
   S.selectedRun=null;
-  refreshRuns();refreshSuites();refreshScreenshots();refreshLearnings();
+  refreshRuns();refreshSuites();refreshScreenshots();refreshLearnings();refreshVariables();
 });
 
 /* ══════════════════════════════════════════════════════════════════
@@ -1232,6 +1232,137 @@ $('#btnExportLearnings').addEventListener('click',function(){
 });
 
 /* ══════════════════════════════════════════════════════════════════
+   Variables
+   ══════════════════════════════════════════════════════════════════ */
+var _varsData={};
+
+function refreshVariables(){
+  if(!S.project){$('#variablesContainer').replaceChildren();$('#variablesEmpty').style.display='block';$('#badgeVariables').textContent='-';return}
+  fetch('/api/db/projects/'+S.project+'/variables').then(function(r){return r.json()}).then(function(data){
+    _varsData=data;
+    renderVariables(data);
+  }).catch(function(){$('#variablesContainer').replaceChildren();$('#variablesEmpty').style.display='block'});
+}
+
+function renderVariables(data){
+  var container=$('#variablesContainer');
+  container.replaceChildren();
+  var scopes=Object.keys(data);
+  var totalCount=0;
+  scopes.forEach(function(s){totalCount+=Object.keys(data[s]).length});
+  $('#badgeVariables').textContent=totalCount||'-';
+  if(totalCount===0){$('#variablesEmpty').style.display='block';return}
+  $('#variablesEmpty').style.display='none';
+
+  // Sort: 'project' first, then suite names alphabetically
+  scopes.sort(function(a,b){if(a==='project')return -1;if(b==='project')return 1;return a.localeCompare(b)});
+
+  scopes.forEach(function(scope){
+    var vars=data[scope];
+    var keys=Object.keys(vars).sort();
+    if(!keys.length)return;
+
+    var group=el('div',{className:'var-scope-group'});
+    var label=scope==='project'?'Project Variables':'Suite: '+scope;
+    group.appendChild(el('div',{className:'var-scope-header'},[
+      el('span',null,label),
+      el('span',{className:'scope-badge'},keys.length+' var'+(keys.length===1?'':'s'))
+    ]));
+
+    var table=el('table',{className:'var-table'});
+    var thead=el('thead');
+    var hr=el('tr');
+    hr.appendChild(el('th',{style:'width:200px'},'Key'));
+    hr.appendChild(el('th',null,'Value'));
+    hr.appendChild(el('th',{style:'width:140px;text-align:right'},'Actions'));
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody=el('tbody');
+    keys.forEach(function(key){
+      var tr=el('tr');
+      tr.appendChild(el('td',{className:'var-key'},'{{var.'+key+'}}'));
+
+      var valTd=el('td');
+      var valSpan=el('span',{className:'var-value',onclick:function(){
+        if(valSpan.classList.contains('revealed')){valSpan.textContent='\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';valSpan.classList.remove('revealed');valSpan.classList.add('var-value-masked')}
+        else{valSpan.textContent=vars[key];valSpan.classList.add('revealed');valSpan.classList.remove('var-value-masked')}
+      }});
+      valSpan.textContent='\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+      valSpan.classList.add('var-value-masked');
+      valTd.appendChild(valSpan);
+      tr.appendChild(valTd);
+
+      var actTd=el('td',{className:'var-actions'});
+      actTd.appendChild(el('button',{onclick:function(){startEditVar(tr,scope,key,vars[key])}},'Edit'));
+      actTd.appendChild(el('button',{className:'danger',onclick:function(){deleteVar(scope,key)}},'Delete'));
+      tr.appendChild(actTd);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    group.appendChild(table);
+    container.appendChild(group);
+  });
+}
+
+function startEditVar(tr,scope,key,currentVal){
+  var valTd=tr.children[1];
+  valTd.replaceChildren();
+  var input=el('input',{className:'var-edit-input',value:currentVal});
+  valTd.appendChild(input);
+  input.focus();
+  input.select();
+  function save(){
+    var newVal=input.value;
+    if(newVal===currentVal){refreshVariables();return}
+    fetch('/api/db/projects/'+S.project+'/variables',{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scope:scope,key:key,value:newVal})
+    }).then(function(r){return r.json()}).then(function(){showToast('Variable updated','success');refreshVariables()}).catch(function(e){showToast('Error: '+e.message,'error')});
+  }
+  input.addEventListener('keydown',function(e){if(e.key==='Enter')save();if(e.key==='Escape')refreshVariables()});
+  input.addEventListener('blur',save);
+}
+
+function deleteVar(scope,key){
+  if(!confirm('Delete variable "'+key+'" (scope: '+scope+')?'))return;
+  fetch('/api/db/projects/'+S.project+'/variables/'+encodeURIComponent(scope)+'/'+encodeURIComponent(key),{method:'DELETE'})
+    .then(function(r){return r.json()}).then(function(){showToast('Variable deleted','success');refreshVariables()}).catch(function(e){showToast('Error: '+e.message,'error')});
+}
+
+$('#btnAddVar').addEventListener('click',function(){
+  var form=$('#varAddForm');
+  if(form.style.display!=='none'){form.style.display='none';return}
+  form.replaceChildren();
+  form.style.display='block';
+  var wrap=el('div',{className:'var-add-form'});
+
+  var scopeLabel=el('label',null,[el('span',null,'Scope'),el('input',{type:'text',id:'newVarScope',value:'project',placeholder:'project or suite name'})]);
+  var keyLabel=el('label',null,[el('span',null,'Key'),el('input',{type:'text',id:'newVarKey',placeholder:'e.g. JWT_TOKEN'})]);
+  var valLabel=el('label',{style:'flex:1'},[el('span',null,'Value'),el('input',{type:'text',id:'newVarValue',placeholder:'Variable value'})]);
+  var saveBtn=el('button',{className:'btn sm primary',onclick:function(){
+    var s=$('#newVarScope').value.trim()||'project';
+    var k=$('#newVarKey').value.trim();
+    var v=$('#newVarValue').value;
+    if(!k){showToast('Key is required','error');return}
+    fetch('/api/db/projects/'+S.project+'/variables',{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({scope:s,key:k,value:v})
+    }).then(function(r){return r.json()}).then(function(){showToast('Variable added','success');form.style.display='none';refreshVariables()}).catch(function(e){showToast('Error: '+e.message,'error')});
+  }},'Save');
+  var cancelBtn=el('button',{className:'btn sm',onclick:function(){form.style.display='none'}},'Cancel');
+
+  wrap.appendChild(scopeLabel);
+  wrap.appendChild(keyLabel);
+  wrap.appendChild(valLabel);
+  wrap.appendChild(saveBtn);
+  wrap.appendChild(cancelBtn);
+  form.appendChild(wrap);
+  setTimeout(function(){$('#newVarKey').focus()},50);
+});
+
+/* ══════════════════════════════════════════════════════════════════
    Keyboard Shortcuts
    ══════════════════════════════════════════════════════════════════ */
 document.addEventListener('keydown',function(e){
@@ -1252,11 +1383,12 @@ document.addEventListener('keydown',function(e){
     return;
   }
   if(e.key==='?'){$('#kbModal').classList.toggle('open');return}
-  var viewMap={'1':'suites','2':'runs','3':'screenshots','4':'learnings','5':'live'};
+  var viewMap={'1':'suites','2':'runs','3':'screenshots','4':'learnings','5':'live','6':'variables'};
   if(viewMap[e.key]){showView(viewMap[e.key]);return}
   if(e.key==='r'){
     if(S.view==='suites')refreshSuites();else if(S.view==='runs')refreshRuns();
     else if(S.view==='screenshots')refreshScreenshots();else if(S.view==='learnings')refreshLearnings();
+    else if(S.view==='variables')refreshVariables();
     return;
   }
   if(S.view==='runs'&&(e.key==='j'||e.key==='k')){
@@ -1285,4 +1417,5 @@ refreshSuites();
 refreshRuns();
 refreshScreenshots();
 refreshLearnings();
+refreshVariables();
 })();

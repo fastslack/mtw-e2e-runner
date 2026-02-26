@@ -42,6 +42,16 @@ Help the user create a new E2E test file by exploring the application and design
 
 8. **Validate** — Run the newly created test with `e2e_run` using the `suite` parameter. Analyze results and iterate if needed.
 
+## Naming Rules (CRITICAL)
+
+Suite names MUST be unique and specific to the feature, issue, or user flow:
+- GOOD: `login-valid-credentials`, `issue-1743-auth-redirect`, `checkout-payment-flow`
+- BAD: `all`, `test`, `debug`, `new`, `temp`, `main`, `suite`
+
+If testing a GitHub/GitLab issue, include the issue number: `issue-1743-auth-timeout`, `bug-502-duplicate-submit`
+
+Before creating, always call `e2e_list` to verify the name doesn't already exist.
+
 ## Arguments
 
 The user may provide:

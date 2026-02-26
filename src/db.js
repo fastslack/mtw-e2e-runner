@@ -231,6 +231,23 @@ function migrate(db) {
     );
   `);
 
+  // ── Variables table ──────────────────────────────────────────────────────────
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS variables (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES projects(id),
+      scope      TEXT NOT NULL DEFAULT 'project',
+      key        TEXT NOT NULL,
+      value      TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(project_id, scope, key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_vars_project ON variables(project_id);
+    CREATE INDEX IF NOT EXISTS idx_vars_scope   ON variables(project_id, scope);
+  `);
+
   // Migrations: add metadata columns to screenshot_hashes
   const ssColumns = db.pragma('table_info(screenshot_hashes)').map(c => c.name);
   if (!ssColumns.includes('test_name')) {
@@ -573,6 +590,47 @@ export function getNetworkLogs(runDbId, filters = {}) {
   }
 
   return results;
+}
+
+// ── Variables CRUD ────────────────────────────────────────────────────────────
+
+/** Upsert a variable. Scope is 'project' or a suite name. */
+export function setVariable(projectId, scope, key, value) {
+  const d = getDb();
+  d.prepare(`
+    INSERT INTO variables (project_id, scope, key, value, updated_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(project_id, scope, key)
+    DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+  `).run(projectId, scope, key, value);
+}
+
+/** Get variables for a specific scope. Returns { key: value } map. */
+export function getVariables(projectId, scope) {
+  const d = getDb();
+  const rows = d.prepare('SELECT key, value FROM variables WHERE project_id = ? AND scope = ?').all(projectId, scope);
+  const map = {};
+  for (const r of rows) map[r.key] = r.value;
+  return map;
+}
+
+/** Delete a variable. Returns true if deleted. */
+export function deleteVariable(projectId, scope, key) {
+  const d = getDb();
+  const info = d.prepare('DELETE FROM variables WHERE project_id = ? AND scope = ? AND key = ?').run(projectId, scope, key);
+  return info.changes > 0;
+}
+
+/** List all variables for a project, grouped by scope. Returns { scope: { key: value } }. */
+export function listVariables(projectId) {
+  const d = getDb();
+  const rows = d.prepare('SELECT scope, key, value FROM variables WHERE project_id = ? ORDER BY scope, key').all(projectId);
+  const grouped = {};
+  for (const r of rows) {
+    if (!grouped[r.scope]) grouped[r.scope] = {};
+    grouped[r.scope][r.key] = r.value;
+  }
+  return grouped;
 }
 
 /** Close the database connection. */

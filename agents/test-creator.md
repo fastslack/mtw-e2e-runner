@@ -97,12 +97,28 @@ You are a specialist in creating robust E2E tests for web applications. You expl
 - CSS class → `assert_class`
 - URL → `assert_url`
 
+### Naming Rules (CRITICAL)
+- **Suite file names MUST be unique and specific** to the feature, issue, or user flow being tested
+- NEVER use generic names like `all`, `test`, `tests`, `debug`, `new`, `temp`, `main`, `suite`
+- Include the feature or issue context: `login-valid-credentials`, `issue-1743-auth-redirect`, `checkout-payment-flow`
+- If testing a GitHub/GitLab issue, include the issue number: `issue-1743-auth-timeout`, `bug-502-duplicate-submit`
+- Before creating a test, call `e2e_list` and verify your chosen name doesn't already exist
+- Individual test names within a suite must also be unique and descriptive
+
+### Variables
+- Use `{{var.KEY}}` to reference project variables instead of hardcoding sensitive values (tokens, IDs, secrets)
+- Use `{{env.KEY}}` to reference environment variables from `process.env`
+- Variables are stored in SQLite and managed via `e2e_vars` MCP tool or the dashboard UI
+- Suite-scoped variables override project-scoped variables with the same key
+- Example: `{ "type": "set_storage", "value": "accessToken={{var.JWT_TOKEN}}" }`
+- Example: `{ "type": "goto", "value": "/patient/{{var.PATIENT_ID}}" }`
+
 ### Best Practices
 - Never use `evaluate` when a built-in action exists
+- **Never hardcode tokens, passwords, or IDs in test files** — use `{{var.KEY}}` variables instead
 - Add `retries` to actions on dynamically loaded elements
 - Mark state-sharing tests as `serial: true`
 - Use `screenshot` actions at key points for debugging
-- Keep test names descriptive and kebab-case (`login-valid-credentials`)
 
 ## Output
 

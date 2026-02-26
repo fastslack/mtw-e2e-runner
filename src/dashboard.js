@@ -17,7 +17,7 @@ import { createWebSocketServer } from './websocket.js';
 import { getPoolStatus, waitForPool } from './pool.js';
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
-import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, closeDb } from './db.js';
+import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot } from './learner-sqlite.js';
@@ -86,7 +86,7 @@ export async function startDashboard(config) {
     if (origin && allowedOrigins.includes(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
     }
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Mcp-Session-Id');
 
     if (req.method === 'OPTIONS') {
@@ -378,6 +378,57 @@ export async function startDashboard(config) {
             } catch { return { name: f.replace('.json', ''), file: f, description: null, params: [], actionCount: 0 }; }
           });
           jsonResponse(res, modules);
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — project variables (list)
+      const projectVarsMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/variables$/);
+      if (projectVarsMatch && req.method === 'GET') {
+        try {
+          const projectId = parseInt(projectVarsMatch[1], 10);
+          jsonResponse(res, dbListVariables(projectId));
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — project variables (set/upsert)
+      if (projectVarsMatch && req.method === 'PUT') {
+        let body = '';
+        let oversize = false;
+        req.on('data', chunk => { body += chunk; if (body.length > MAX_BODY) { oversize = true; req.destroy(); } });
+        req.on('end', () => {
+          if (oversize) { jsonResponse(res, { error: 'Payload too large' }, 413); return; }
+          try {
+            const projectId = parseInt(projectVarsMatch[1], 10);
+            const { scope, key, value } = JSON.parse(body);
+            if (!key || value === undefined) { jsonResponse(res, { error: 'Missing key or value' }, 400); return; }
+            dbSetVariable(projectId, scope || 'project', key, value);
+            jsonResponse(res, { ok: true });
+          } catch (error) {
+            jsonResponse(res, { error: error.message }, 500);
+          }
+        });
+        return;
+      }
+
+      // API: DB — project variables (delete)
+      const varDeleteMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/variables\/([^/]+)\/([^/]+)$/);
+      if (varDeleteMatch && req.method === 'DELETE') {
+        try {
+          const projectId = parseInt(varDeleteMatch[1], 10);
+          const scope = decodeURIComponent(varDeleteMatch[2]);
+          const key = decodeURIComponent(varDeleteMatch[3]);
+          const deleted = dbDeleteVariable(projectId, scope, key);
+          if (deleted) {
+            jsonResponse(res, { ok: true });
+          } else {
+            jsonResponse(res, { error: 'Variable not found' }, 404);
+          }
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
         }

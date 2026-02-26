@@ -560,6 +560,9 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
   <div class="nav-item" data-view="learnings">
     <i class="icon">&#9733;</i><span>Learnings</span><span class="badge" id="badgeLearnings">-</span>
   </div>
+  <div class="nav-item" data-view="variables">
+    <i class="icon">&#9881;</i><span>Variables</span><span class="badge" id="badgeVariables">-</span>
+  </div>
 
   <div class="pool-status" id="poolStatus">
     <div class="pool-info">
@@ -678,6 +681,20 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
     </div>
   </div>
 
+  <!-- Variables View -->
+  <div class="view" id="view-variables">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Variables</div>
+      <button class="btn sm primary" id="btnAddVar">+ Add Variable</button>
+    </div>
+    <div id="varAddForm" style="display:none"></div>
+    <div id="variablesContainer"></div>
+    <div class="empty" id="variablesEmpty" style="display:none">
+      <div class="empty-icon">&#9881;</div>
+      <p>No variables set. Add variables to use <code>{{var.KEY}}</code> in your tests.</p>
+    </div>
+  </div>
+
   <!-- Screenshots View -->
   <div class="view" id="view-screenshots">
     <div style="font-family:var(--sans);font-size:16px;font-weight:600;margin-bottom:20px">Screenshots</div>
@@ -705,6 +722,7 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
     <div class="kb-row"><span class="kb-key">3</span><span class="kb-desc">Screenshots view</span></div>
     <div class="kb-row"><span class="kb-key">4</span><span class="kb-desc">Learnings view</span></div>
     <div class="kb-row"><span class="kb-key">5</span><span class="kb-desc">Live view</span></div>
+    <div class="kb-row"><span class="kb-key">6</span><span class="kb-desc">Variables view</span></div>
     <div class="kb-row"><span class="kb-key">j / k</span><span class="kb-desc">Navigate runs (next / previous)</span></div>
     <div class="kb-row"><span class="kb-key">Enter</span><span class="kb-desc">Expand / collapse selected run</span></div>
     <div class="kb-row"><span class="kb-key">Esc</span><span class="kb-desc">Close modal / collapse run</span></div>

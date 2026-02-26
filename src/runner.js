@@ -12,6 +12,7 @@ import { executeAction } from './actions.js';
 import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
 import { resolveTestData } from './module-resolver.js';
+import { ensureProject, getVariables } from './db.js';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -42,6 +43,46 @@ function mergeHooks(configHooks, suiteHooks) {
     beforeEach: suiteHooks.beforeEach?.length ? suiteHooks.beforeEach : base.beforeEach || [],
     afterEach: suiteHooks.afterEach?.length ? suiteHooks.afterEach : base.afterEach || [],
   };
+}
+
+/** Replaces {{var.KEY}} and {{env.KEY}} in all string fields of an action object.
+ *  Skips {{param}} patterns (no dot) — those are module params handled by module-resolver. */
+function resolveVarsInAction(action, vars) {
+  const resolved = { ...action };
+  for (const key of Object.keys(resolved)) {
+    if (typeof resolved[key] !== 'string') continue;
+    resolved[key] = resolved[key].replace(/\{\{(var|env)\.([^}]+)\}\}/g, (match, ns, name) => {
+      if (ns === 'env') {
+        if (process.env[name] !== undefined) return process.env[name];
+        throw new Error(`Unresolved variable: {{env.${name}}} — environment variable not set`);
+      }
+      // ns === 'var'
+      if (vars[name] !== undefined) return vars[name];
+      throw new Error(`Unresolved variable: {{var.${name}}} — not found in project or suite variables`);
+    });
+  }
+  return resolved;
+}
+
+/** Loads merged variables for a test (project scope + suite scope overlay). */
+function loadVarsForTest(config, suiteName) {
+  try {
+    const cwd = config._cwd || process.cwd();
+    const projectName = config.projectName || cwd.split('/').pop() || 'default';
+    const projectId = ensureProject(cwd, projectName, config.screenshotsDir, config.testsDir);
+    const projectVars = getVariables(projectId, 'project');
+    if (!suiteName) return projectVars;
+    const suiteVars = getVariables(projectId, suiteName);
+    return { ...projectVars, ...suiteVars };
+  } catch {
+    return {};
+  }
+}
+
+/** Resolves variables in an array of actions. */
+function resolveVarsInActions(actions, vars) {
+  if (!actions || !actions.length) return actions;
+  return actions.map(a => resolveVarsInAction(a, vars));
 }
 
 /** Executes an array of hook actions on a page */
@@ -148,6 +189,14 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
         pendingBodies.push(bodyPromise);
       }
     });
+
+    // Resolve {{var.X}} and {{env.X}} in test actions and hooks
+    const vars = loadVarsForTest(config, config._suiteName);
+    if (Object.keys(vars).length > 0 || /\{\{(var|env)\./.test(JSON.stringify(test.actions))) {
+      test = { ...test, actions: resolveVarsInActions(test.actions, vars) };
+      if (hooks.beforeEach?.length) hooks = { ...hooks, beforeEach: resolveVarsInActions(hooks.beforeEach, vars) };
+      if (hooks.afterEach?.length) hooks = { ...hooks, afterEach: resolveVarsInActions(hooks.afterEach, vars) };
+    }
 
     // Run beforeEach hook
     if (hooks.beforeEach?.length) {

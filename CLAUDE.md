@@ -640,6 +640,7 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 | `e2e_dashboard_stop` | Stop the E2E Runner web dashboard |
 | `e2e_issue` | Fetch a GitHub/GitLab issue and generate E2E tests. `mode: "prompt"` (default) returns issue + prompt for Claude Code. `mode: "verify"` auto-generates tests via Claude API and runs them. `testType: "e2e"` (default) for UI-driven tests, `"api"` for backend API tests. |
 | `e2e_network_logs` | Query full network logs for a run by `runDbId`. Supports filters: `testName`, `method`, `statusMin`/`statusMax`, `urlPattern`, `errorsOnly`, `includeHeaders`, `includeBodies`. |
+| `e2e_vars` | Manage project variables stored in SQLite. Actions: `set` (upsert), `get`, `list`, `delete`. Variables are scoped per project or per suite. Referenced in tests as `{{var.KEY}}`. |
 
 > **Note:** Pool start/stop are only available via CLI (`e2e-runner pool start|stop`), not via MCP — restarting the pool kills all active sessions from other clients.
 
@@ -743,3 +744,39 @@ MCP: `e2e_issue({ url, testType: "api" })`
 ### Pool-Aware Queue
 
 Before opening a browser connection, each worker checks the pool's `/pressure` endpoint. If the pool is at capacity, the worker waits (polling every 2s, up to 60s) for a free slot instead of piling requests into browserless's internal queue. This prevents memory pressure and SIGKILL of Chrome processes under heavy load.
+
+### Variables (SQLite-backed, dashboard-editable)
+
+Variables replace hardcoded sensitive values (JWT tokens, patient IDs, etc.) in test JSON. Stored in SQLite (`~/.e2e-runner/dashboard.db`), scoped per project and per suite, editable from the dashboard UI.
+
+**Syntax:**
+```
+{{var.TOKEN}}        → resolves from DB (suite scope → project scope)
+{{env.MY_VAR}}       → resolves from process.env
+{{param}}            → existing module param substitution (unchanged)
+```
+
+**Resolution priority:** suite vars > project vars > error if not found.
+
+**Usage in test JSON:**
+```json
+{ "$use": "auth-jwt", "params": { "token": "{{var.JWT_TOKEN}}", "institutionId": "{{var.INST_ID}}" } }
+{ "type": "goto", "value": "/patient/{{var.PATIENT_ID}}" }
+{ "type": "gql", "value": "{ user(id: \"{{var.USER_ID}}\") { name } }" }
+```
+
+**MCP tool (`e2e_vars`):**
+```
+e2e_vars({ action: "set", key: "TOKEN", value: "abc123", scope: "project" })
+e2e_vars({ action: "set", key: "TOKEN", value: "xyz789", scope: "auth" })  // suite-specific override
+e2e_vars({ action: "list" })
+e2e_vars({ action: "get", key: "TOKEN" })
+e2e_vars({ action: "delete", key: "TOKEN", scope: "project" })
+```
+
+**Dashboard:** Variables tab shows all variables grouped by scope. Values are masked by default (click to reveal). Inline edit, add new, and delete are supported.
+
+**REST API:**
+- `GET /api/db/projects/:id/variables` — list all vars for project
+- `PUT /api/db/projects/:id/variables` — set a variable `{ scope, key, value }`
+- `DELETE /api/db/projects/:id/variables/:scope/:key` — delete a variable

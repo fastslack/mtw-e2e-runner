@@ -18,7 +18,7 @@ import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuite
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { narrateTest } from './narrate.js';
 import { startDashboard, stopDashboard } from './dashboard.js';
-import { lookupScreenshotHash, ensureProject, computeScreenshotHash, registerScreenshotHash, getNetworkLogs } from './db.js';
+import { lookupScreenshotHash, ensureProject, computeScreenshotHash, registerScreenshotHash, getNetworkLogs, setVariable, getVariables, deleteVariable, listVariables } from './db.js';
 import { fetchIssue, checkCliAuth, detectProvider } from './issues.js';
 import { buildPrompt, hasApiKey } from './ai-generate.js';
 import { verifyIssue } from './verify.js';
@@ -478,6 +478,38 @@ export const TOOLS = [
       required: ['runDbId'],
     },
   },
+  {
+    name: 'e2e_vars',
+    description:
+      'Manage project variables stored in SQLite. Variables can be referenced in test JSON as {{var.KEY}}. Supports project-wide and per-suite scoping.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['set', 'get', 'list', 'delete'],
+          description: 'Action to perform: set (upsert), get (one key), list (all), delete',
+        },
+        key: {
+          type: 'string',
+          description: 'Variable name (required for set, get, delete)',
+        },
+        value: {
+          type: 'string',
+          description: 'Variable value (required for set)',
+        },
+        scope: {
+          type: 'string',
+          description: 'Scope: "project" (default) or a suite name for suite-specific override',
+        },
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory.',
+        },
+      },
+      required: ['action'],
+    },
+  },
 ];
 
 /** Tools exposed on the dashboard — excludes dashboard start/stop (already running). */
@@ -739,6 +771,14 @@ async function handleCreateTest(args) {
   }
 
   const safeName = path.basename(args.name);
+
+  // Reject generic/ambiguous suite names
+  const baseName = safeName.replace(/\.json$/, '').replace(/^\d+-/, '');
+  const FORBIDDEN_NAMES = ['all', 'test', 'tests', 'debug', 'new', 'temp', 'tmp', 'main', 'suite', 'run', 'e2e', 'default', 'untitled'];
+  if (FORBIDDEN_NAMES.includes(baseName.toLowerCase())) {
+    return errorResult(`Suite name "${baseName}" is too generic. Use a descriptive name specific to the feature or issue being tested (e.g. "login-valid-credentials", "issue-1743-auth-redirect").`);
+  }
+
   const filename = safeName.endsWith('.json') ? safeName : `${safeName}.json`;
   const filePath = path.join(config.testsDir, filename);
 
@@ -1622,6 +1662,58 @@ async function handleNetworkLogs(args) {
   return textResult(JSON.stringify(results, null, 2));
 }
 
+async function handleVars(args) {
+  const action = args.action;
+  if (!action) return errorResult('Missing required parameter: action');
+
+  const cwd = args.cwd || process.cwd();
+  const config = await loadConfig({}, cwd);
+  const projectName = config.projectName || cwd.split('/').pop() || 'default';
+  const projectId = ensureProject(cwd, projectName, config.screenshotsDir, config.testsDir);
+  const scope = args.scope || 'project';
+
+  switch (action) {
+    case 'set': {
+      if (!args.key) return errorResult('Missing required parameter: key');
+      if (args.value === undefined) return errorResult('Missing required parameter: value');
+      setVariable(projectId, scope, args.key, args.value);
+      return textResult(`Variable set: ${args.key} (scope: ${scope})`);
+    }
+    case 'get': {
+      if (!args.key) return errorResult('Missing required parameter: key');
+      const vars = getVariables(projectId, scope);
+      if (vars[args.key] !== undefined) {
+        return textResult(JSON.stringify({ key: args.key, value: vars[args.key], scope }));
+      }
+      // Fall back to project scope if not found in specific scope
+      if (scope !== 'project') {
+        const projectVars = getVariables(projectId, 'project');
+        if (projectVars[args.key] !== undefined) {
+          return textResult(JSON.stringify({ key: args.key, value: projectVars[args.key], scope: 'project' }));
+        }
+      }
+      return errorResult(`Variable not found: ${args.key} (scope: ${scope})`);
+    }
+    case 'list': {
+      const all = listVariables(projectId);
+      if (Object.keys(all).length === 0) {
+        return textResult('No variables set for this project.');
+      }
+      return textResult(JSON.stringify(all, null, 2));
+    }
+    case 'delete': {
+      if (!args.key) return errorResult('Missing required parameter: key');
+      const deleted = deleteVariable(projectId, scope, args.key);
+      if (deleted) {
+        return textResult(`Variable deleted: ${args.key} (scope: ${scope})`);
+      }
+      return errorResult(`Variable not found: ${args.key} (scope: ${scope})`);
+    }
+    default:
+      return errorResult(`Unknown action: ${action}. Use set, get, list, or delete.`);
+  }
+}
+
 // ── Verification instructions builder ─────────────────────────────────────────
 
 function buildVerificationInstructions(strictness, hasBaselines, hasChecklists) {
@@ -1734,6 +1826,8 @@ export async function dispatchTool(name, args = {}) {
       return await handleNeo4j(args);
     case 'e2e_network_logs':
       return await handleNetworkLogs(args);
+    case 'e2e_vars':
+      return await handleVars(args);
     default:
       return errorResult(`Unknown tool: ${name}`);
   }
