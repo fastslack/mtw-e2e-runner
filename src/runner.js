@@ -7,11 +7,13 @@
 
 import fs from 'fs';
 import path from 'path';
+import http from 'http';
+import https from 'https';
 import { connectToPool, waitForPool, getPoolStatus } from './pool.js';
 import { executeAction } from './actions.js';
 import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
-import { resolveTestData } from './module-resolver.js';
+import { resolveTestData, validateActionTypes } from './module-resolver.js';
 import { ensureProject, getVariables } from './db.js';
 
 function sleep(ms) {
@@ -126,6 +128,47 @@ async function waitForSlot(poolUrl, pollIntervalMs = 2000, maxWaitMs = 60000) {
   log('⚠️', `${C.yellow}Waited ${maxWaitMs / 1000}s for pool slot, proceeding anyway${C.reset}`);
 }
 
+/** Extracts a value from an object using a dot-path (e.g. "data.token"). */
+function getByPath(obj, dotPath) {
+  return dotPath.split('.').reduce((o, key) => o?.[key], obj);
+}
+
+/** Fetches an auth token by POSTing credentials to a login endpoint. */
+function fetchAuthToken(endpoint, credentials, tokenPath) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(endpoint);
+    const transport = url.protocol === 'https:' ? https : http;
+    const body = JSON.stringify(credentials);
+
+    const req = transport.request(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: 15000,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(new Error(`Auth login failed: HTTP ${res.statusCode} from ${endpoint}`));
+        }
+        try {
+          const json = JSON.parse(data);
+          const token = getByPath(json, tokenPath);
+          if (!token) {
+            return reject(new Error(`Auth login: token not found at path "${tokenPath}" in response`));
+          }
+          resolve(token);
+        } catch (e) {
+          reject(new Error(`Auth login: failed to parse response from ${endpoint}: ${e.message}`));
+        }
+      });
+    });
+    req.on('error', (e) => reject(new Error(`Auth login request failed: ${e.message}`)));
+    req.on('timeout', () => { req.destroy(); reject(new Error(`Auth login request timed out: ${endpoint}`)); });
+    req.end(body);
+  });
+}
+
 /** Runs a single test end-to-end */
 export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
   let browser = null;
@@ -156,7 +199,10 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       result.consoleLogs.push({ type: msg.type(), text: msg.text() });
     });
     page.on('requestfailed', (req) => {
-      result.networkErrors.push({ url: req.url(), error: req.failure()?.errorText });
+      const url = req.url();
+      const ignoreDomains = config.networkIgnoreDomains || [];
+      if (ignoreDomains.length > 0 && ignoreDomains.some(d => url.includes(d))) return;
+      result.networkErrors.push({ url, error: req.failure()?.errorText });
     });
 
     const requestTimings = new Map();
@@ -189,6 +235,15 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
         pendingBodies.push(bodyPromise);
       }
     });
+
+    // Auto-inject auth token into localStorage (runs BEFORE beforeEach hooks)
+    if (config.authToken) {
+      const storageKey = config.authStorageKey || 'accessToken';
+      await page.goto(config.baseUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.evaluate((key, token) => {
+        localStorage.setItem(key, token);
+      }, storageKey, config.authToken);
+    }
 
     // Resolve {{var.X}} and {{env.X}} in test actions and hooks
     const vars = loadVarsForTest(config, config._suiteName);
@@ -355,6 +410,22 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     }
   }
 
+  // Auto-login: fetch auth token via API if configured and not already provided
+  if (config.authLoginEndpoint && !config.authToken && config.authCredentials) {
+    log('🔑', `${C.dim}Fetching auth token from ${config.authLoginEndpoint}...${C.reset}`);
+    try {
+      config.authToken = await fetchAuthToken(
+        config.authLoginEndpoint,
+        config.authCredentials,
+        config.authTokenPath || 'token'
+      );
+      log('✅', `${C.dim}Auth token acquired (${config.authToken.length} chars)${C.reset}`);
+    } catch (error) {
+      log('❌', `${C.red}Auth auto-login failed: ${error.message}${C.reset}`);
+      throw error;
+    }
+  }
+
   const concurrency = config.concurrency || 3;
   const _runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const _proj = config.projectName || null;
@@ -488,7 +559,9 @@ export function loadTestFile(filePath, modulesDir) {
   }
   const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   const normalized = normalizeTestData(data);
-  return modulesDir ? resolveTestData(normalized, modulesDir) : normalized;
+  const resolved = modulesDir ? resolveTestData(normalized, modulesDir) : normalized;
+  validateActionTypes(resolved, path.basename(filePath));
+  return resolved;
 }
 
 /** Loads a test suite by name — returns { tests, hooks } */
@@ -505,7 +578,9 @@ export function loadTestSuite(suiteName, testsDir, modulesDir) {
 
   const data = JSON.parse(fs.readFileSync(path.join(testsDir, match), 'utf-8'));
   const normalized = normalizeTestData(data);
-  return modulesDir ? resolveTestData(normalized, modulesDir) : normalized;
+  const resolved = modulesDir ? resolveTestData(normalized, modulesDir) : normalized;
+  validateActionTypes(resolved, match);
+  return resolved;
 }
 
 /** Loads all test suites from the tests directory — returns { tests, hooks } */
@@ -525,6 +600,7 @@ export function loadAllSuites(testsDir, modulesDir, exclude = []) {
     if (modulesDir) {
       ({ tests, hooks } = resolveTestData({ tests, hooks }, modulesDir));
     }
+    validateActionTypes({ tests, hooks }, file);
     // Tag each test with its own suite's hooks so they're preserved
     for (const t of tests) {
       t._suiteHooks = hooks;

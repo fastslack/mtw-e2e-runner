@@ -13,6 +13,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { KNOWN_ACTION_TYPES } from './actions.js';
 
 /**
  * Loads all module definitions from a directory.
@@ -270,4 +271,40 @@ export function listModules(modulesDir) {
   }
 
   return modules;
+}
+
+/**
+ * Validates that all action types in a resolved test data structure are known.
+ * Call AFTER module resolution so $use references have been expanded.
+ * @param {object} data - { tests, hooks } with resolved actions
+ * @param {string} context - File/suite name for error messages
+ * @throws {Error} if any unknown action types are found
+ */
+export function validateActionTypes(data, context) {
+  const unknown = [];
+
+  const check = (actions, location) => {
+    if (!Array.isArray(actions)) return;
+    for (const action of actions) {
+      if (action.$use) continue; // unresolved module ref — skip (shouldn't happen post-resolution)
+      if (action.type && !KNOWN_ACTION_TYPES.has(action.type)) {
+        unknown.push({ type: action.type, location });
+      }
+    }
+  };
+
+  // Check hooks
+  for (const [hookName, actions] of Object.entries(data.hooks || {})) {
+    check(actions, `hooks.${hookName}`);
+  }
+
+  // Check test actions
+  for (const test of data.tests || []) {
+    check(test.actions, `test "${test.name}"`);
+  }
+
+  if (unknown.length > 0) {
+    const details = unknown.map(u => `"${u.type}" in ${u.location}`).join(', ');
+    throw new Error(`Unknown action type(s) in ${context}: ${details}`);
+  }
 }

@@ -8,7 +8,20 @@
  */
 
 import path from 'path';
-import { log } from './logger.js';
+
+/** All recognized action types — single source of truth for validation. */
+export const KNOWN_ACTION_TYPES = new Set([
+  'goto', 'click', 'type', 'fill', 'wait', 'screenshot',
+  'assert_text', 'assert_url', 'assert_visible', 'assert_count',
+  'assert_element_text', 'assert_attribute', 'assert_class',
+  'assert_not_visible', 'assert_input_value', 'assert_matches',
+  'assert_no_network_errors', 'assert_storage',
+  'get_text', 'select', 'clear', 'clear_cookies', 'press', 'scroll', 'hover',
+  'navigate', 'evaluate',
+  'type_react', 'click_regex', 'click_option', 'focus_autocomplete', 'click_chip',
+  'set_storage', 'click_icon', 'click_menu_item', 'click_in_context',
+  'gql', 'wait_network_idle',
+]);
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -697,8 +710,15 @@ export async function executeAction(page, action, config) {
       return evalResult !== undefined && evalResult !== null ? { value: evalResult } : null;
     }
 
+    case 'wait_network_idle': {
+      const idleTime = value ? parseInt(value) : 500;
+      const maxTimeout = action.timeout ? parseInt(action.timeout) : 30000;
+      await page.waitForNetworkIdle({ idleTime, timeout: maxTimeout });
+      break;
+    }
+
     default:
-      log('⚠️', `Unknown action: ${type}`);
+      throw new Error(`Unknown action type: "${type}"`);
   }
 
   return null;

@@ -134,7 +134,8 @@ Each JSON file is an array of test objects. Each test has a `name` and an `actio
       { "type": "click_in_context", "text": "John Doe", "selector": "button.edit" },
       { "type": "gql", "value": "{ users { id name } }" },
       { "type": "gql", "value": "query($id: ID) { user(id: $id) { name } }", "text": "{\"id\": \"123\"}" },
-      { "type": "gql", "value": "mutation { deleteUser(id: \"123\") { success } }" }
+      { "type": "gql", "value": "mutation { deleteUser(id: \"123\") { success } }" },
+      { "type": "wait_network_idle", "value": "500" }
     ]
   }
 ]
@@ -146,8 +147,8 @@ Suite files can have numeric prefixes for ordering (e.g., `01-auth.json`, `02-da
 
 1. Hardcoded defaults in `src/config.js`
 2. `e2e.config.js` or `e2e.config.json` in cwd
-3. Environment variables: `BASE_URL`, `CHROME_POOL_URL`, `TESTS_DIR`, `SCREENSHOTS_DIR`, `CONCURRENCY`, `DEFAULT_TIMEOUT`, `POOL_PORT`, `MAX_SESSIONS`, `RETRIES`, `RETRY_DELAY`, `TEST_TIMEOUT`, `OUTPUT_FORMAT`, `E2E_ENV`, `FAIL_ON_NETWORK_ERROR`, `VERIFICATION_STRICTNESS`, `GQL_ENDPOINT`, `GQL_AUTH_HEADER`, `GQL_AUTH_KEY`, `GQL_AUTH_PREFIX`
-4. CLI flags: `--base-url`, `--pool-url`, `--tests-dir`, `--screenshots-dir`, `--concurrency`, `--timeout`, `--pool-port`, `--max-sessions`, `--retries`, `--retry-delay`, `--test-timeout`, `--output`, `--env`, `--fail-on-network-error`, `--verification-strictness`, `--gql-endpoint`, `--gql-auth-header`, `--gql-auth-key`, `--gql-auth-prefix`
+3. Environment variables: `BASE_URL`, `CHROME_POOL_URL`, `TESTS_DIR`, `SCREENSHOTS_DIR`, `CONCURRENCY`, `DEFAULT_TIMEOUT`, `POOL_PORT`, `MAX_SESSIONS`, `RETRIES`, `RETRY_DELAY`, `TEST_TIMEOUT`, `OUTPUT_FORMAT`, `E2E_ENV`, `FAIL_ON_NETWORK_ERROR`, `NETWORK_IGNORE_DOMAINS`, `VERIFICATION_STRICTNESS`, `GQL_ENDPOINT`, `GQL_AUTH_HEADER`, `GQL_AUTH_KEY`, `GQL_AUTH_PREFIX`, `AUTH_LOGIN_ENDPOINT`, `AUTH_TOKEN_PATH`
+4. CLI flags: `--base-url`, `--pool-url`, `--tests-dir`, `--screenshots-dir`, `--concurrency`, `--timeout`, `--pool-port`, `--max-sessions`, `--retries`, `--retry-delay`, `--test-timeout`, `--output`, `--env`, `--fail-on-network-error`, `--network-ignore-domains`, `--verification-strictness`, `--gql-endpoint`, `--gql-auth-header`, `--gql-auth-key`, `--gql-auth-prefix`, `--auth-login-endpoint`, `--auth-token-path`
 5. Environment profile merge (if `--env` or `E2E_ENV` selects a non-default profile)
 
 ### Excluding Tests from `--all`
@@ -391,6 +392,61 @@ Individual actions can be retried on failure without rerunning the entire test. 
 - MCP: `failOnNetworkError: true` in `e2e_run` args
 
 Default: `false` (opt-in to avoid breaking tests on unrelated failures like missing favicons).
+
+**`networkIgnoreDomains` config option**: Array of domain substrings to filter out from network error tracking. Errors from matching URLs are silently dropped — both `assert_no_network_errors` and `failOnNetworkError` automatically skip them. Set via:
+- Config file: `networkIgnoreDomains: ['google-analytics.com', 'fonts.googleapis.com']`
+- CLI: `--network-ignore-domains google-analytics.com,fonts.googleapis.com`
+- Env var: `NETWORK_IGNORE_DOMAINS=google-analytics.com,fonts.googleapis.com` (comma-separated)
+
+### Wait for Network Idle
+
+The `wait_network_idle` action waits for all network requests to complete. Useful after SPA page transitions or data loading.
+
+```json
+{ "type": "wait_network_idle", "value": "500", "timeout": "30000" }
+```
+
+- `value`: idle time in ms — how long the network must be quiet (default: 500)
+- `timeout`: max wait time in ms before throwing (default: 30000)
+
+Uses Puppeteer's `page.waitForNetworkIdle()` under the hood.
+
+### Action Type Pre-Validation
+
+All action types are validated at **load time** (before any browser connections). If a test file contains an unknown action type (e.g., a typo like `"clik"`), loading throws immediately with the location:
+
+```
+Unknown action type(s) in auth.json: "clik" in test "login-test"
+```
+
+The `KNOWN_ACTION_TYPES` Set in `src/actions.js` is the single source of truth. Unknown actions also throw at runtime as a safety net.
+
+### Auth Auto-Login
+
+Automatically fetch an auth token from a login API endpoint before tests run. Avoids repeating login flows in every test.
+
+**Config fields:**
+- `authLoginEndpoint` — full URL to POST credentials to (env: `AUTH_LOGIN_ENDPOINT`, CLI: `--auth-login-endpoint`)
+- `authCredentials` — object with login credentials, e.g. `{ email: "test@example.com", password: "secret" }` (config file only — never in env vars)
+- `authTokenPath` — dot-path to extract token from response JSON (default: `'token'`, env: `AUTH_TOKEN_PATH`, CLI: `--auth-token-path`)
+
+**Flow:**
+1. Before workers start, if `authLoginEndpoint` is set and `authToken` is NOT already set, `fetchAuthToken()` POSTs `authCredentials` as JSON.
+2. The token is extracted from the response using `authTokenPath` (supports dot notation, e.g. `'data.access_token'`).
+3. The extracted token is stored in `config.authToken`.
+4. Each test worker navigates to `baseUrl` and injects `localStorage[authStorageKey] = authToken` before `beforeEach` hooks run.
+
+**Example config:**
+```js
+export default {
+  authLoginEndpoint: 'https://api.example.com/auth/login',
+  authCredentials: { email: 'test@example.com', password: 'secret123' },
+  authTokenPath: 'data.access_token',
+  authStorageKey: 'accessToken',
+};
+```
+
+If `authToken` is already set (via config, env var, or CLI), the auto-login step is skipped.
 
 ### Network Request/Response Logging
 

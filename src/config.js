@@ -52,6 +52,10 @@ const DEFAULTS = {
   neo4jBoltPort: 7687,
   neo4jHttpPort: 7474,
   verificationStrictness: 'moderate',
+  networkIgnoreDomains: [],
+  authLoginEndpoint: null,
+  authCredentials: null,
+  authTokenPath: 'token',
   gqlEndpoint: '/api/graphql',
   gqlAuthHeader: 'Authorization',
   gqlAuthKey: 'accessToken',
@@ -91,6 +95,9 @@ function loadEnvVars() {
   if (process.env.NEO4J_PASSWORD) env.neo4jPassword = process.env.NEO4J_PASSWORD;
   if (process.env.NEO4J_BOLT_PORT) env.neo4jBoltPort = parseInt(process.env.NEO4J_BOLT_PORT);
   if (process.env.NEO4J_HTTP_PORT) env.neo4jHttpPort = parseInt(process.env.NEO4J_HTTP_PORT);
+  if (process.env.NETWORK_IGNORE_DOMAINS) env.networkIgnoreDomains = process.env.NETWORK_IGNORE_DOMAINS.split(',').map(d => d.trim()).filter(Boolean);
+  if (process.env.AUTH_LOGIN_ENDPOINT) env.authLoginEndpoint = process.env.AUTH_LOGIN_ENDPOINT;
+  if (process.env.AUTH_TOKEN_PATH) env.authTokenPath = process.env.AUTH_TOKEN_PATH;
   if (process.env.GQL_ENDPOINT) env.gqlEndpoint = process.env.GQL_ENDPOINT;
   if (process.env.GQL_AUTH_HEADER) env.gqlAuthHeader = process.env.GQL_AUTH_HEADER;
   if (process.env.GQL_AUTH_KEY) env.gqlAuthKey = process.env.GQL_AUTH_KEY;

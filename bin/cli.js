@@ -84,6 +84,9 @@ function parseCLIConfig() {
   if (getFlag('--auth-token')) cliArgs.authToken = getFlag('--auth-token');
   if (getFlag('--auth-storage-key')) cliArgs.authStorageKey = getFlag('--auth-storage-key');
   if (getFlag('--test-type')) cliArgs.testType = getFlag('--test-type');
+  if (getFlag('--network-ignore-domains')) cliArgs.networkIgnoreDomains = getFlag('--network-ignore-domains').split(',').map(d => d.trim()).filter(Boolean);
+  if (getFlag('--auth-login-endpoint')) cliArgs.authLoginEndpoint = getFlag('--auth-login-endpoint');
+  if (getFlag('--auth-token-path')) cliArgs.authTokenPath = getFlag('--auth-token-path');
   if (getFlag('--gql-endpoint')) cliArgs.gqlEndpoint = getFlag('--gql-endpoint');
   if (getFlag('--gql-auth-header')) cliArgs.gqlAuthHeader = getFlag('--gql-auth-header');
   if (getFlag('--gql-auth-key')) cliArgs.gqlAuthKey = getFlag('--gql-auth-key');
@@ -156,6 +159,9 @@ ${C.bold}Options:${C.reset}
   --env <name>             Environment profile from config (default: default)
   --project-name <name>    Project display name for dashboard (default: directory name)
   --fail-on-network-error  Fail tests when network requests fail (e.g. ERR_CONNECTION_REFUSED)
+  --network-ignore-domains <d1,d2>  Ignore network errors from these domains (comma-separated)
+  --auth-login-endpoint <url>  Auto-login: POST credentials to this URL to get auth token
+  --auth-token-path <path>     Dot-path to token in auth response (default: token)
   --verification-strictness <level>  Visual verification: strict, moderate (default), lenient
 
 ${C.bold}Config:${C.reset}
