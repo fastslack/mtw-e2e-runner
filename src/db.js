@@ -397,6 +397,9 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
       if (r.verificationScreenshot) {
         insertHash.run(computeScreenshotHash(r.verificationScreenshot), r.verificationScreenshot, projectId, runDbId, r.name, null, null, 'verification');
       }
+      if (r.baselineScreenshot) {
+        insertHash.run(computeScreenshotHash(r.baselineScreenshot), r.baselineScreenshot, projectId, runDbId, r.name, null, null, 'baseline');
+      }
     }
 
     return runDbId;

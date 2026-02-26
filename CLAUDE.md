@@ -143,8 +143,8 @@ Suite files can have numeric prefixes for ordering (e.g., `01-auth.json`, `02-da
 
 1. Hardcoded defaults in `src/config.js`
 2. `e2e.config.js` or `e2e.config.json` in cwd
-3. Environment variables: `BASE_URL`, `CHROME_POOL_URL`, `TESTS_DIR`, `SCREENSHOTS_DIR`, `CONCURRENCY`, `DEFAULT_TIMEOUT`, `POOL_PORT`, `MAX_SESSIONS`, `RETRIES`, `RETRY_DELAY`, `TEST_TIMEOUT`, `OUTPUT_FORMAT`, `E2E_ENV`, `FAIL_ON_NETWORK_ERROR`
-4. CLI flags: `--base-url`, `--pool-url`, `--tests-dir`, `--screenshots-dir`, `--concurrency`, `--timeout`, `--pool-port`, `--max-sessions`, `--retries`, `--retry-delay`, `--test-timeout`, `--output`, `--env`, `--fail-on-network-error`
+3. Environment variables: `BASE_URL`, `CHROME_POOL_URL`, `TESTS_DIR`, `SCREENSHOTS_DIR`, `CONCURRENCY`, `DEFAULT_TIMEOUT`, `POOL_PORT`, `MAX_SESSIONS`, `RETRIES`, `RETRY_DELAY`, `TEST_TIMEOUT`, `OUTPUT_FORMAT`, `E2E_ENV`, `FAIL_ON_NETWORK_ERROR`, `VERIFICATION_STRICTNESS`
+4. CLI flags: `--base-url`, `--pool-url`, `--tests-dir`, `--screenshots-dir`, `--concurrency`, `--timeout`, `--pool-port`, `--max-sessions`, `--retries`, `--retry-delay`, `--test-timeout`, `--output`, `--env`, `--fail-on-network-error`, `--verification-strictness`
 5. Environment profile merge (if `--env` or `E2E_ENV` selects a non-default profile)
 
 ### Excluding Tests from `--all`
@@ -375,9 +375,10 @@ Dashboard REST equivalent: `GET /api/db/runs/:id/network-logs?testName=X&errorsO
 
 ### Visual Verification (`expect` field)
 
-Tests can include an `expect` field — a text description of what the final visual state should look like:
+Tests can include an `expect` field — either a text description or a checklist array of criteria:
 
 ```json
+// String form — free-form description
 {
   "name": "dashboard-loads",
   "expect": "Should show the patient list with at least 3 rows, no error messages, and the sidebar with navigation links",
@@ -386,22 +387,71 @@ Tests can include an `expect` field — a text description of what the final vis
     { "type": "wait", "selector": ".patient-list" }
   ]
 }
+
+// Array form — per-criterion checklist (each evaluated independently as PASS/FAIL)
+{
+  "name": "dashboard-loads",
+  "expect": [
+    "Patient list visible with at least 3 rows",
+    "No error messages or red banners",
+    "Sidebar shows navigation links"
+  ],
+  "actions": [
+    { "type": "goto", "value": "/dashboard" },
+    { "type": "wait", "selector": ".patient-list" }
+  ]
+}
 ```
 
+**Double screenshot (before/after):** When `expect` is present, the runner captures TWO screenshots:
+1. **Baseline** (`baseline-{name}-{timestamp}.png`) — captured BEFORE the test actions run (after `beforeEach` hooks).
+2. **Verification** (`verify-{name}-{timestamp}.png`) — captured AFTER all actions complete.
+
+Both hashes are registered in SQLite and returned in the MCP response for before/after comparison.
+
+**Verification strictness:** Controls how strictly Claude Code evaluates visual verification. Set via:
+- Config file: `verificationStrictness: 'moderate'`
+- CLI: `--verification-strictness strict`
+- Env var: `VERIFICATION_STRICTNESS=strict`
+- MCP: `verificationStrictness: 'strict'` in `e2e_run` args
+
+Levels:
+- **`strict`** — No ambiguity allowed. If any criterion is unclear, not fully visible, or doubtful, verdict is FAIL.
+- **`moderate`** (default) — Reasonable judgment. Minor cosmetic differences acceptable, functional mismatches are FAIL.
+- **`lenient`** — Only fail on clear, obvious contradictions.
+
 **Flow:**
-1. Test runs all its actions.
-2. If `expect` is present, the runner auto-captures a full-page verification screenshot (`verify-{name}-{timestamp}.png`).
-3. The hash is registered in SQLite.
-4. The `e2e_run` MCP response includes a `verifications` array:
+1. If `expect` is present, runner captures a baseline screenshot BEFORE actions run.
+2. Test runs all its actions.
+3. Runner captures a verification screenshot AFTER actions complete.
+4. Both hashes are registered in SQLite.
+5. The `e2e_run` MCP response includes a `verifications` array:
    ```json
    {
      "verifications": [
-       { "name": "dashboard-loads", "expect": "Should show...", "success": true, "screenshotHash": "ss:a3f2b1c9" }
+       {
+         "name": "dashboard-loads",
+         "expect": ["Patient list visible...", "No error messages..."],
+         "success": true,
+         "screenshotHash": "ss:a3f2b1c9",
+         "baselineScreenshotHash": "ss:b4e1c2d8",
+         "isChecklist": true
+       }
      ],
-     "verificationInstructions": "For each verification, call e2e_screenshot with the screenshotHash..."
+     "verificationInstructions": "Verification strictness: MODERATE — ..."
    }
    ```
-5. Claude Code calls `e2e_screenshot` for each hash and visually judges if the screenshot matches the `expect` description.
+6. Claude Code calls `e2e_screenshot` for each hash (after + baseline), evaluates against the `expect` criteria, and reports a structured verdict:
+   ```
+   TEST: dashboard-loads
+   VERDICT: PASS
+   STATE CHANGE: Page loaded from blank to populated dashboard
+   CRITERIA:
+     - "Patient list visible with at least 3 rows": PASS
+     - "No error messages or red banners": PASS
+     - "Sidebar shows navigation links": PASS
+   REASON: All criteria met, dashboard fully loaded with expected content
+   ```
 
 No API key required — Claude Code itself does the visual verification.
 
@@ -448,6 +498,45 @@ Hooks run actions at lifecycle points: `beforeAll`, `afterAll`, `beforeEach`, `a
 
 Suite-level hooks override global hooks per key (non-empty array wins). The old array format (`[{ name, actions }]`) is still fully supported.
 
+### Authentication Strategies
+
+Tests can authenticate using multiple strategies depending on the app's auth mechanism:
+
+**UI Login (universal):** Fill the login form in `beforeEach`. Works with any auth system — the browser stores cookies/tokens automatically.
+```json
+{ "hooks": { "beforeEach": [
+  { "type": "goto", "value": "/login" },
+  { "type": "type", "selector": "#email", "value": "test@example.com" },
+  { "type": "type", "selector": "#password", "value": "secret" },
+  { "type": "click", "text": "Sign In" },
+  { "type": "wait", "selector": ".dashboard" }
+]}}
+```
+
+**JWT Injection (SPAs):** Skip the login form by injecting a token into `localStorage` or `sessionStorage`:
+```json
+{ "type": "set_storage", "value": "accessToken=eyJhbG..." }
+{ "type": "set_storage", "value": "token=eyJhbG...", "selector": "session" }
+```
+
+**Config-level token:** Set `authToken` + `authStorageKey` in config, env vars (`AUTH_TOKEN`, `AUTH_STORAGE_KEY`), or CLI flags (`--auth-token`, `--auth-storage-key`). Used by `e2e_capture` and `e2e_issue --verify`.
+
+**Cookie-based (server-rendered):** Set cookies via `evaluate`:
+```json
+{ "type": "evaluate", "value": "document.cookie = 'session_id=abc123; path=/; SameSite=Lax'" }
+```
+
+**API headers:** Override `fetch` to inject Authorization headers (for `--test-type api`):
+```json
+{ "type": "evaluate", "value": "const orig = window.fetch; window.fetch = (url, opts = {}) => { opts.headers = { ...opts.headers, 'Authorization': 'Bearer eyJhbG...' }; return orig(url, opts); }" }
+```
+
+**OAuth/SSO:** Use a test-environment bypass endpoint, pre-authenticated token injection, or CI-obtained session cookie. External OAuth providers (Google, GitHub, Okta) can't be automated directly.
+
+**Clearing state:** Each test runs in a fresh browser context (auto-clean). Use `clear_cookies` to explicitly clear cookies + localStorage + sessionStorage mid-test.
+
+**Reusable auth modules:** Create `e2e/modules/login.json` or `e2e/modules/auth-token.json` and reference via `{ "$use": "login", "params": { "email": "...", "password": "..." } }`.
+
 ### Environment Profiles
 
 Define named environment profiles in config under `environments`:
@@ -482,7 +571,7 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 
 | Tool | Description |
 |------|-------------|
-| `e2e_run` | Run tests: `all`, by `suite` name, or by `file` path. Supports `concurrency`, `baseUrl`, `retries`, `failOnNetworkError` overrides. Returns `runDbId` for drill-down, compact `networkSummary`, and verifications if tests have `expect`. |
+| `e2e_run` | Run tests: `all`, by `suite` name, or by `file` path. Supports `concurrency`, `baseUrl`, `retries`, `failOnNetworkError`, `verificationStrictness` overrides. Returns `runDbId` for drill-down, compact `networkSummary`, and verifications if tests have `expect`. |
 | `e2e_list` | List available test suites with test names and counts |
 | `e2e_create_test` | Create a new test JSON file with name, tests array, and optional hooks |
 | `e2e_pool_status` | Get Chrome pool availability, running sessions, capacity |
@@ -519,7 +608,7 @@ Every screenshot captured during a run is assigned a short hash (`ss:a3f2b1c9`) 
 
 **Flow**: screenshot saved on disk → `saveRun()` registers hash in SQLite `screenshot_hashes` table → dashboard shows `[⌘ ss:XXXXXXXX]` badge (click to copy) → user pastes hash in Claude Code → `e2e_screenshot` MCP tool looks up hash, reads file, returns the image.
 
-- Hashes are registered inside the `saveRun()` transaction (covers action screenshots, error screenshots, and verification screenshots)
+- Hashes are registered inside the `saveRun()` transaction (covers action screenshots, error screenshots, verification screenshots, and baseline screenshots)
 - The `ss:` prefix is optional when calling `e2e_screenshot` — stripped during lookup
 - Dashboard computes hashes client-side (Web Crypto) for the Live view (before `persistRun()` writes to DB)
 - Run detail API (`/api/db/runs/:id`) includes `screenshotHashes` map per test result

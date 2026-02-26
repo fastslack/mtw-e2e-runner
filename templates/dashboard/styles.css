@@ -290,6 +290,7 @@ tbody tr.selected td{background:var(--accent-dim)}
 .rd-net-status.s2xx{color:var(--green)}
 .rd-net-status.s3xx{color:var(--amber)}
 .rd-net-status.s4xx,.rd-net-status.s5xx{color:var(--red)}
+.rd-net-op{flex-shrink:0;padding:1px 7px;border-radius:3px;font-size:9px;font-weight:600;background:var(--purple-dim,rgba(168,85,247,.12));color:var(--purple,#a855f7);font-family:var(--sans);letter-spacing:.01em;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rd-net-url{flex:1;min-width:0;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rd-net-dur{width:60px;flex-shrink:0;text-align:right;color:var(--text3);font-variant-numeric:tabular-nums}
 .rd-net-detail{display:none;border-bottom:1px solid var(--border);background:var(--bg);overflow:hidden}

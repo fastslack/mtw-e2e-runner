@@ -84,6 +84,12 @@ function parseCLIConfig() {
   if (getFlag('--auth-token')) cliArgs.authToken = getFlag('--auth-token');
   if (getFlag('--auth-storage-key')) cliArgs.authStorageKey = getFlag('--auth-storage-key');
   if (getFlag('--test-type')) cliArgs.testType = getFlag('--test-type');
+  if (getFlag('--verification-strictness')) {
+    const val = getFlag('--verification-strictness');
+    if (['strict', 'moderate', 'lenient'].includes(val)) {
+      cliArgs.verificationStrictness = val;
+    }
+  }
   return cliArgs;
 }
 
@@ -146,6 +152,7 @@ ${C.bold}Options:${C.reset}
   --env <name>             Environment profile from config (default: default)
   --project-name <name>    Project display name for dashboard (default: directory name)
   --fail-on-network-error  Fail tests when network requests fail (e.g. ERR_CONNECTION_REFUSED)
+  --verification-strictness <level>  Visual verification: strict, moderate (default), lenient
 
 ${C.bold}Config:${C.reset}
   Looks for e2e.config.js or e2e.config.json in the current directory.

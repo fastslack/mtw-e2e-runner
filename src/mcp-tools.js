@@ -65,6 +65,11 @@ export const TOOLS = [
           type: 'boolean',
           description: 'Fail tests when network requests fail (e.g. ERR_CONNECTION_REFUSED). Default: false.',
         },
+        verificationStrictness: {
+          type: 'string',
+          enum: ['strict', 'moderate', 'lenient'],
+          description: 'Visual verification strictness. strict: no ambiguity allowed, any doubt = FAIL. moderate: reasonable judgment (default). lenient: only fail on clear contradictions.',
+        },
         cwd: {
           type: 'string',
           description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
@@ -104,7 +109,13 @@ export const TOOLS = [
             type: 'object',
             properties: {
               name: { type: 'string', description: 'Test name' },
-              expect: { type: 'string', description: 'Human-readable description of the expected visual outcome. After the test runs, a verification screenshot is captured and Claude Code judges pass/fail against this description.' },
+              expect: {
+                oneOf: [
+                  { type: 'string', description: 'Single description of expected visual outcome.' },
+                  { type: 'array', items: { type: 'string' }, description: 'Checklist of criteria — each evaluated independently as PASS/FAIL.' },
+                ],
+                description: 'Expected visual outcome. String for free-form, array for per-criterion checklist.',
+              },
               actions: {
                 type: 'array',
                 description: 'Sequential browser actions',
@@ -469,6 +480,7 @@ async function handleRun(args) {
   if (args.baseUrl) configOverrides.baseUrl = args.baseUrl;
   if (args.retries !== undefined) configOverrides.retries = args.retries;
   if (args.failOnNetworkError !== undefined) configOverrides.failOnNetworkError = args.failOnNetworkError;
+  if (args.verificationStrictness) configOverrides.verificationStrictness = args.verificationStrictness;
 
   const config = await loadConfig(configOverrides, args.cwd);
   config.triggeredBy = 'mcp';
@@ -563,12 +575,21 @@ async function handleRun(args) {
 
   const verifications = report.results
     .filter(r => r.expect && r.verificationScreenshot)
-    .map(r => ({
-      name: r.name,
-      expect: r.expect,
-      success: r.success,
-      screenshotHash: 'ss:' + computeScreenshotHash(r.verificationScreenshot),
-    }));
+    .map(r => {
+      const entry = {
+        name: r.name,
+        expect: r.expect,
+        success: r.success,
+        screenshotHash: 'ss:' + computeScreenshotHash(r.verificationScreenshot),
+      };
+      if (r.baselineScreenshot) {
+        entry.baselineScreenshotHash = 'ss:' + computeScreenshotHash(r.baselineScreenshot);
+      }
+      if (Array.isArray(r.expect)) {
+        entry.isChecklist = true;
+      }
+      return entry;
+    });
 
   if (flaky.length > 0) summary.flaky = flaky;
   if (failures.length > 0) summary.failures = failures;
@@ -590,7 +611,9 @@ async function handleRun(args) {
   }
   if (verifications.length > 0) {
     summary.verifications = verifications;
-    summary.verificationInstructions = 'For each verification, call e2e_screenshot with the screenshotHash to view the screenshot. Then compare what you see against the "expect" description. Report any mismatches as FAIL.';
+    const hasBaselines = verifications.some(v => v.baselineScreenshotHash);
+    const hasChecklists = verifications.some(v => v.isChecklist);
+    summary.verificationInstructions = buildVerificationInstructions(config.verificationStrictness || 'moderate', hasBaselines, hasChecklists);
   }
 
   // Build per-test narrative: a step-by-step human-readable story of what happened
@@ -1037,6 +1060,75 @@ async function handleNetworkLogs(args) {
   }
 
   return textResult(JSON.stringify(results, null, 2));
+}
+
+// ── Verification instructions builder ─────────────────────────────────────────
+
+function buildVerificationInstructions(strictness, hasBaselines, hasChecklists) {
+  const levels = {
+    strict: 'STRICT — No ambiguity allowed. If ANY criterion is unclear, not fully visible, or doubtful, verdict is FAIL. Err on the side of failing.',
+    moderate: 'MODERATE — Use reasonable judgment. Minor cosmetic differences are acceptable, but functional mismatches or missing elements are FAIL.',
+    lenient: 'LENIENT — Only fail on clear, obvious contradictions. Partial matches and minor discrepancies are acceptable.',
+  };
+
+  const lines = [
+    `Verification strictness: ${levels[strictness] || levels.moderate}`,
+    '',
+    'For each entry in the verifications array:',
+    '',
+    '1. RETRIEVE SCREENSHOTS',
+    '   - Call e2e_screenshot with the screenshotHash (after-state).',
+  ];
+
+  if (hasBaselines) {
+    lines.push('   - If baselineScreenshotHash is present, also call e2e_screenshot with it (before-state).');
+  }
+
+  lines.push(
+    '',
+    '2. EVALUATE',
+  );
+
+  if (hasChecklists) {
+    lines.push(
+      '   - If isChecklist is true, evaluate EACH item in the expect array independently as PASS or FAIL.',
+      '   - If isChecklist is false (or absent), evaluate the single expect description as a whole.',
+    );
+  } else {
+    lines.push('   - Compare the screenshot against the expect description.');
+  }
+
+  if (hasBaselines) {
+    lines.push(
+      '',
+      '3. COMPARE BEFORE/AFTER',
+      '   - If a baseline screenshot was retrieved, describe the state change between baseline and after screenshots.',
+      '   - Verify the state change is consistent with what the test actions intended.',
+    );
+  }
+
+  lines.push(
+    '',
+    `${hasBaselines ? '4' : '3'}. REPORT VERDICT — use this exact format for each test:`,
+    '',
+    '   TEST: <test-name>',
+    '   VERDICT: PASS | FAIL',
+  );
+
+  if (hasBaselines) {
+    lines.push('   STATE CHANGE: <one-line description of what changed from baseline to after>');
+  }
+
+  if (hasChecklists) {
+    lines.push(
+      '   CRITERIA:',
+      '     - "<criterion text>": PASS | FAIL (reason if FAIL)',
+    );
+  }
+
+  lines.push('   REASON: <brief explanation of the verdict>');
+
+  return lines.join('\n');
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

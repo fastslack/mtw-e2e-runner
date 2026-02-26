@@ -51,6 +51,7 @@ const DEFAULTS = {
   neo4jPassword: 'e2erunner',
   neo4jBoltPort: 7687,
   neo4jHttpPort: 7474,
+  verificationStrictness: 'moderate',
 };
 
 function loadEnvVars() {
@@ -86,6 +87,12 @@ function loadEnvVars() {
   if (process.env.NEO4J_PASSWORD) env.neo4jPassword = process.env.NEO4J_PASSWORD;
   if (process.env.NEO4J_BOLT_PORT) env.neo4jBoltPort = parseInt(process.env.NEO4J_BOLT_PORT);
   if (process.env.NEO4J_HTTP_PORT) env.neo4jHttpPort = parseInt(process.env.NEO4J_HTTP_PORT);
+  if (process.env.VERIFICATION_STRICTNESS) {
+    const val = process.env.VERIFICATION_STRICTNESS.toLowerCase();
+    if (['strict', 'moderate', 'lenient'].includes(val)) {
+      env.verificationStrictness = val;
+    }
+  }
   return env;
 }
 

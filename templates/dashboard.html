@@ -359,6 +359,7 @@ tbody tr.selected td{background:var(--accent-dim)}
 .rd-net-status.s2xx{color:var(--green)}
 .rd-net-status.s3xx{color:var(--amber)}
 .rd-net-status.s4xx,.rd-net-status.s5xx{color:var(--red)}
+.rd-net-op{flex-shrink:0;padding:1px 7px;border-radius:3px;font-size:9px;font-weight:600;background:var(--purple-dim,rgba(168,85,247,.12));color:var(--purple,#a855f7);font-family:var(--sans);letter-spacing:.01em;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rd-net-url{flex:1;min-width:0;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rd-net-dur{width:60px;flex-shrink:0;text-align:right;color:var(--text3);font-variant-numeric:tabular-nums}
 .rd-net-detail{display:none;border-bottom:1px solid var(--border);background:var(--bg);overflow:hidden}
@@ -564,6 +565,7 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
   <div class="view active" id="view-suites">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <div style="font-family:var(--sans);font-size:16px;font-weight:600">Test Suites</div>
+      <button class="btn sm primary" id="btnRunAll">&#9655; Run All</button>
     </div>
     <div id="suiteAccordionContainer"></div>
     <div class="suite-grid" id="suiteGrid"></div>
@@ -740,20 +742,40 @@ function buildNdSection(title,contentEl,count,copyText){
   return el('div',{className:'rd-nd-section'},[toggle,contentWrap]);
 }
 
+function gqlOp(n){
+  // 1. Explicit operationName field in POST body
+  if(n.requestBody){
+    try{
+      var b=JSON.parse(n.requestBody);
+      if(b.operationName)return b.operationName;
+      // 2. Parse operation name from query string: "query FooBar(...)" or "mutation FooBar(...)"
+      if(b.query){var m=b.query.match(/^(?:query|mutation|subscription)\s+([A-Za-z_]\w*)/);if(m)return m[1]}
+    }catch(e){}
+  }
+  // 3. URL query param (GET requests or persisted queries)
+  if(n.url){
+    try{var u=new URL(n.url,location.href);var op=u.searchParams.get('operationName');if(op)return op}catch(e){}
+  }
+  return null;
+}
+
 function buildNetRow(n){
   var mCls='rd-net-method '+(n.method||'GET').toLowerCase();
   var sCode=n.status||0;
   var sCls='rd-net-status '+(sCode<300?'s2xx':sCode<400?'s3xx':sCode<500?'s4xx':'s5xx');
   var hasDetail=n.requestBody||n.responseBody||n.requestHeaders||n.responseHeaders;
   var rowCls='rd-net-row'+(sCode>=400?' has-error':'');
-  var row=el('div',{className:rowCls},[
+  var opName=gqlOp(n);
+  var children=[
     el('span',{className:'rd-net-expand'},hasDetail?'\u25B6':''),
     el('span',{className:mCls},n.method||'GET'),
-    el('span',{className:sCls},String(sCode)),
-    el('span',{className:'rd-net-url'},n.url||''),
-    makeCopyBtn(n.url||''),
-    el('span',{className:'rd-net-dur'},dur(n.duration))
-  ]);
+    el('span',{className:sCls},String(sCode))
+  ];
+  if(opName)children.push(el('span',{className:'rd-net-op'},opName));
+  children.push(el('span',{className:'rd-net-url'},n.url||''));
+  children.push(makeCopyBtn(n.url||''));
+  children.push(el('span',{className:'rd-net-dur'},dur(n.duration)));
+  var row=el('div',{className:rowCls},children);
   var detail=null;
   if(hasDetail){
     var sections=[];

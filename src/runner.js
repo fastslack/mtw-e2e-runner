@@ -154,6 +154,16 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       await executeHookActions(page, hooks.beforeEach, config);
     }
 
+    // Auto-capture baseline screenshot if test has "expect" (BEFORE actions)
+    if (test.expect && page) {
+      try {
+        const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+        const baselinePath = path.join(config.screenshotsDir, `baseline-${safeName}-${Date.now()}.png`);
+        await page.screenshot({ path: baselinePath, fullPage: true });
+        result.baselineScreenshot = baselinePath;
+      } catch { /* page may not be ready */ }
+    }
+
     for (let i = 0; i < test.actions.length; i++) {
       const action = test.actions[i];
       const maxActionRetries = action.retries ?? config.actionRetries ?? 0;

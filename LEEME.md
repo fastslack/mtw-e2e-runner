@@ -26,7 +26,230 @@
 
 Pero lo que realmente lo diferencia es su **integración profunda con IA**. Con un [servidor MCP](https://modelcontextprotocol.io/) integrado, Claude Code puede crear tests desde una conversación, ejecutarlos, leer los resultados, capturar screenshots e incluso verificar visualmente que las páginas se ven correctas — todo sin salir del chat. Pegá la URL de un issue de GitHub y recibí un test ejecutable. Así de simple.
 
-### Qué incluye
+### Esto es un test
+
+```json
+[
+  {
+    "name": "flujo-login",
+    "actions": [
+      { "type": "goto", "value": "/login" },
+      { "type": "type", "selector": "#email", "value": "usuario@test.com" },
+      { "type": "type", "selector": "#password", "value": "secreto" },
+      { "type": "click", "text": "Iniciar Sesión" },
+      { "type": "assert_text", "text": "Bienvenido" },
+      { "type": "screenshot", "value": "logueado.png" }
+    ]
+  }
+]
+```
+
+Sin imports. Sin `describe`/`it`. Sin paso de compilación. Solo un archivo JSON que describe lo que hace un usuario — y el runner lo hace realidad.
+
+---
+
+## Primeros Pasos
+
+### Requisitos Previos
+
+- **Node.js** >= 20
+- **Docker** corriendo (para el pool de Chrome)
+- Tu app corriendo en un puerto conocido (ej. `http://localhost:3000`)
+
+> **¿Por qué `host.docker.internal`?**
+>
+> Chrome corre dentro de un contenedor Docker. Desde adentro del contenedor, `localhost` se refiere al contenedor mismo — no a tu máquina. El hostname especial `host.docker.internal` resuelve a tu máquina host, para que Chrome pueda alcanzar tu app corriendo localmente.
+>
+> El `baseUrl` por defecto es `http://host.docker.internal:3000`. Si tu app corre en otro puerto, cambialo en `e2e.config.js` después del init.
+>
+> **Nota para Linux:** En Docker Engine (no Docker Desktop), puede que necesites agregar `--add-host=host.docker.internal:host-gateway` a los flags de Docker, o usar directamente la IP LAN de tu máquina como `baseUrl`.
+
+---
+
+### Ruta A: Con Claude Code
+
+Si usás [Claude Code](https://docs.anthropic.com/en/docs/claude-code), esta es la ruta más rápida — Claude se encarga de crear y depurar tests por vos.
+
+**1. Instalar el paquete**
+
+```bash
+npm install --save-dev @matware/e2e-runner
+```
+
+**2. Crear la estructura del proyecto**
+
+```bash
+npx e2e-runner init
+```
+
+Esto crea `e2e/tests/` con un test de ejemplo y `e2e/screenshots/` para capturas.
+
+**3. Configurar tu base URL**
+
+Editá `e2e.config.js` y configurá `baseUrl` según el puerto de tu app:
+
+```js
+export default {
+  baseUrl: 'http://host.docker.internal:3000', // cambiá 3000 por tu puerto
+};
+```
+
+**4. Iniciar el pool de Chrome**
+
+```bash
+npx e2e-runner pool start
+```
+
+Deberías ver:
+
+```
+✓ Chrome pool started on port 3333 (max 3 sessions)
+```
+
+**5. Instalar el plugin de Claude Code**
+
+```bash
+# Agregar el marketplace (una sola vez)
+claude plugin marketplace add fastslack/mtw-e2e-runner
+
+# Instalar el plugin
+claude plugin install e2e-runner@matware
+```
+
+El plugin le da a Claude 13 herramientas MCP, un skill de workflow, 3 slash commands y 3 agentes especializados.
+
+**6. Pedile a Claude que ejecute el test de ejemplo**
+
+En Claude Code, simplemente decí:
+
+> "Ejecutá todos los tests E2E"
+
+Claude va a verificar el pool, ejecutar el test de ejemplo y reportar:
+
+```
+==================================================
+  E2E RESULTS
+==================================================
+  Total:    1
+  Passed:   1
+  Failed:   0
+  Rate:     100.00%
+  Duration: 1.23s
+==================================================
+```
+
+Desde acá, podés pedirle a Claude que cree nuevos tests ("testeá el flujo de login"), depure fallos o verifique issues de GitHub.
+
+---
+
+### Ruta B: Solo CLI
+
+Sin IA — usá el runner directamente desde tu terminal.
+
+**1. Instalar el paquete**
+
+```bash
+npm install --save-dev @matware/e2e-runner
+```
+
+**2. Crear la estructura del proyecto**
+
+```bash
+npx e2e-runner init
+```
+
+Esto crea `e2e/tests/` con un test de ejemplo y `e2e/screenshots/` para capturas.
+
+**3. Configurar tu base URL**
+
+Editá `e2e.config.js` y configurá `baseUrl` según el puerto de tu app:
+
+```js
+export default {
+  baseUrl: 'http://host.docker.internal:3000', // cambiá 3000 por tu puerto
+};
+```
+
+**4. Iniciar el pool de Chrome**
+
+```bash
+npx e2e-runner pool start
+```
+
+Deberías ver:
+
+```
+✓ Chrome pool started on port 3333 (max 3 sessions)
+```
+
+**5. Ejecutar el test de ejemplo**
+
+```bash
+npx e2e-runner run --all
+```
+
+Salida esperada:
+
+```
+==================================================
+  E2E RESULTS
+==================================================
+  Total:    1
+  Passed:   1
+  Failed:   0
+  Rate:     100.00%
+  Duration: 1.23s
+==================================================
+```
+
+Se guarda un screenshot en `e2e/screenshots/homepage.png`.
+
+**6. Escribí tu primer test real**
+
+Creá `e2e/tests/mi-primer-test.json`:
+
+```json
+[
+  {
+    "name": "homepage-visible",
+    "actions": [
+      { "type": "goto", "value": "/" },
+      { "type": "assert_visible", "selector": "body" },
+      { "type": "screenshot", "value": "mi-primer-test.png" }
+    ]
+  }
+]
+```
+
+Ejecutalo:
+
+```bash
+npx e2e-runner run --suite mi-primer-test
+```
+
+---
+
+### Quickstart en una línea
+
+Si querés saltear el paso a paso y tener todo corriendo en un comando:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/scripts/quickstart.sh | bash
+```
+
+> Esto instala el paquete, crea la estructura del proyecto e inicia el pool de Chrome. Vas a necesitar configurar tu `baseUrl` después.
+
+### Siguientes pasos
+
+- [Formato de Tests](#formato-de-tests) — aprendé el vocabulario completo de acciones
+- [Integración con Claude Code](#integración-con-claude-code) — configurá testing con IA
+- [Verificación Visual](#verificación-visual) — describí páginas esperadas en texto plano
+- [Issue-to-Test](#issue-to-test) — convertí reportes de bugs en tests ejecutables
+- [Dashboard Web](#dashboard-web) — monitoreá tests en tiempo real
+
+---
+
+## Qué incluye
 
 🧪 **Tests sin código** — Archivos JSON que cualquier persona de tu equipo puede leer y escribir. Sin JavaScript, sin compilación, sin dependencia de framework.
 
@@ -52,71 +275,6 @@ Pero lo que realmente lo diferencia es su **integración profunda con IA**. Con 
 
 🐳 **Portable** — Chrome corre en Docker, los tests son archivos JSON en tu repo. Funciona en cualquier máquina con Node.js y Docker.
 
-### Esto es un test
-
-```json
-[
-  {
-    "name": "flujo-login",
-    "actions": [
-      { "type": "goto", "value": "/login" },
-      { "type": "type", "selector": "#email", "value": "usuario@test.com" },
-      { "type": "type", "selector": "#password", "value": "secreto" },
-      { "type": "click", "text": "Iniciar Sesión" },
-      { "type": "assert_text", "text": "Bienvenido" },
-      { "type": "screenshot", "value": "logueado.png" }
-    ]
-  }
-]
-```
-
-Sin imports. Sin `describe`/`it`. Sin paso de compilación. Solo un archivo JSON que describe lo que hace un usuario — y el runner lo hace realidad.
-
----
-
-## Inicio Rápido
-
-**Una línea** (requiere Node.js >= 20 y Docker):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/scripts/quickstart.sh | bash
-```
-
-**Paso a paso:**
-
-```bash
-# 1. Instalar
-npm install --save-dev @matware/e2e-runner
-
-# 2. Crear estructura del proyecto
-npx e2e-runner init
-
-# 3. Iniciar pool de Chrome (requiere Docker)
-npx e2e-runner pool start
-
-# 4. Ejecutar todos los tests
-npx e2e-runner run --all
-
-# 5. Abrir el dashboard
-npx e2e-runner dashboard
-```
-
-**Agregar a Claude Code** (una vez, disponible en todos los proyectos):
-
-```bash
-# 1. Agregar el marketplace (una sola vez)
-claude plugin marketplace add fastslack/mtw-e2e-runner
-
-# 2. Instalar el plugin
-claude plugin install e2e-runner@matware
-
-# O solo MCP (herramientas sin skills/commands/agents):
-claude mcp add --transport stdio --scope user e2e-runner \
-  -- npx -y -p @matware/e2e-runner e2e-runner-mcp
-```
-
-El **plugin** es la forma recomendada — instala las 13 herramientas MCP *más* un skill que le enseña a Claude el workflow óptimo, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`) y 3 agentes especializados para análisis, creación y mejora de tests.
-
 ---
 
 ## Formato de Tests
@@ -129,8 +287,7 @@ Cada archivo `.json` en `e2e/tests/` contiene un array de tests. Cada test tiene
     "name": "carga-homepage",
     "actions": [
       { "type": "goto", "value": "/" },
-      { "type": "wait", "selector": ".hero" },
-      { "type": "assert_text", "text": "Bienvenido" },
+      { "type": "assert_visible", "selector": "body" },
       { "type": "assert_url", "value": "/" },
       { "type": "screenshot", "value": "homepage.png" }
     ]
@@ -248,22 +405,320 @@ Los tests seriales se ejecutan uno a la vez **después** de que todos los tests 
 
 ---
 
+## Testing de Apps con Autenticación
+
+La mayoría de apps reales requieren login antes de interactuar con páginas protegidas. E2E Runner provee múltiples estrategias — elegí la que corresponda al mecanismo de auth de tu app.
+
+### Estrategia 1: Login por UI (cualquier app)
+
+El enfoque más universal — completar el formulario de login como un usuario real. Funciona con **cualquier** sistema de autenticación (session cookies, JWT, redirección OAuth, etc.):
+
+```json
+{
+  "hooks": {
+    "beforeEach": [
+      { "type": "goto", "value": "/login" },
+      { "type": "type", "selector": "#email", "value": "test@example.com" },
+      { "type": "type", "selector": "#password", "value": "test-password" },
+      { "type": "click", "text": "Iniciar Sesión" },
+      { "type": "wait", "selector": ".dashboard" }
+    ]
+  },
+  "tests": [
+    {
+      "name": "pagina-perfil",
+      "actions": [
+        { "type": "goto", "value": "/profile" },
+        { "type": "assert_text", "text": "Mi Perfil" }
+      ]
+    }
+  ]
+}
+```
+
+> **Cuándo usar:** No sabés o no te importa cómo funciona la auth internamente. El browser maneja cookies/tokens automáticamente después del login — igual que un usuario real.
+
+### Estrategia 2: Inyección de Token JWT (SPAs)
+
+Para apps de una sola página que guardan tokens JWT en `localStorage` o `sessionStorage`. Saltar el formulario de login e inyectar el token directamente:
+
+```json
+{
+  "hooks": {
+    "beforeEach": [
+      { "type": "goto", "value": "/" },
+      { "type": "set_storage", "value": "accessToken=eyJhbGciOiJIUzI1NiIs..." },
+      { "type": "goto", "value": "/dashboard" },
+      { "type": "wait", "selector": ".dashboard-loaded" }
+    ]
+  },
+  "tests": [...]
+}
+```
+
+**Nombres comunes de claves de storage** (depende de tu app):
+
+| Framework / Librería | Clave típica | Storage |
+|---------------------|-------------|---------|
+| JWT custom | `accessToken`, `token`, `jwt` | localStorage |
+| Auth0 SPA SDK | `@@auth0spajs@@::*` | localStorage |
+| Firebase Auth | `firebase:authUser:*` | localStorage |
+| AWS Amplify | `CognitoIdentityServiceProvider.*` | localStorage |
+| Supabase | `sb-<ref>-auth-token` | localStorage |
+| NextAuth (client) | `next-auth.session-token` | cookie (ver Estrategia 4) |
+
+**Usando `sessionStorage`:**
+
+```json
+{ "type": "set_storage", "value": "token=eyJhbG...", "selector": "session" }
+```
+
+**Verificar que el token se guardó correctamente:**
+
+```json
+{ "type": "assert_storage", "value": "accessToken" }
+{ "type": "assert_storage", "value": "accessToken=eyJhbG..." }
+```
+
+> **Cuándo usar:** Tu SPA lee tokens de auth del storage del browser. Estrategia más rápida — sin round-trip de red para login.
+
+### Estrategia 3: Token de Auth en Config
+
+Para apps donde todos los tests necesitan el mismo token JWT. Configuralo una vez — se inyecta en `localStorage` antes de cada ejecución de `e2e_capture` y `e2e_issue --verify`:
+
+```js
+// e2e.config.js
+export default {
+  authToken: 'eyJhbGciOiJIUzI1NiIs...',
+  authStorageKey: 'accessToken',  // por defecto
+};
+```
+
+O con variables de entorno:
+
+```bash
+AUTH_TOKEN="eyJhbGciOiJIUzI1NiIs..." npx e2e-runner run --all
+```
+
+O por CLI:
+
+```bash
+npx e2e-runner run --all --auth-token "eyJhbG..." --auth-storage-key "jwt"
+```
+
+Las herramientas MCP (`e2e_capture`, `e2e_issue`) también aceptan `authToken` y `authStorageKey` por llamada.
+
+> **Cuándo usar:** Todos los tests comparten la misma sesión de usuario y tu app usa JWT en localStorage.
+
+### Estrategia 4: Auth basada en Cookies (apps server-rendered)
+
+Para apps que usan HTTP cookies (Rails, Django, Laravel, Express sessions, NextAuth, etc.). Usar `evaluate` para setear cookies antes de navegar:
+
+```json
+{
+  "hooks": {
+    "beforeEach": [
+      { "type": "goto", "value": "/" },
+      { "type": "evaluate", "value": "document.cookie = 'session_id=abc123; path=/; SameSite=Lax'" },
+      { "type": "goto", "value": "/dashboard" }
+    ]
+  },
+  "tests": [...]
+}
+```
+
+**Múltiples cookies:**
+
+```json
+{ "type": "evaluate", "value": "document.cookie = 'session_id=abc123; path=/'; document.cookie = '_csrf_token=xyz789; path=/'" }
+```
+
+**Para cookies `HttpOnly`** (no se pueden setear vía JavaScript), usá la estrategia de login por UI — el browser las guarda automáticamente.
+
+> **Cuándo usar:** Apps server-rendered tradicionales, o cualquier app que autentique vía cookies.
+
+### Estrategia 5: Auth por Headers HTTP (tests de API)
+
+Para tests de API donde necesitás enviar headers `Authorization` en cada request. Usar `evaluate` para sobrescribir `fetch`/`XMLHttpRequest`:
+
+```json
+{
+  "hooks": {
+    "beforeEach": [
+      { "type": "goto", "value": "/" },
+      { "type": "evaluate", "value": "const origFetch = window.fetch; window.fetch = (url, opts = {}) => { opts.headers = { ...opts.headers, 'Authorization': 'Bearer eyJhbG...' }; return origFetch(url, opts); }" }
+    ]
+  },
+  "tests": [
+    {
+      "name": "api-retorna-usuario",
+      "actions": [
+        { "type": "evaluate", "value": "const res = await fetch('/api/me'); const data = await res.json(); if (data.email !== 'test@example.com') throw new Error('Usuario incorrecto: ' + data.email)" }
+      ]
+    }
+  ]
+}
+```
+
+> **Cuándo usar:** Tests a nivel de API (con `--test-type api`) que necesitan headers de auth.
+
+### Estrategia 6: OAuth / SSO (proveedor externo)
+
+Los flujos OAuth redirigen a proveedores externos (Google, GitHub, Okta, etc.) que no se pueden automatizar de forma confiable. Alternativas comunes:
+
+**Opción A — Bypass en entorno de test:** La mayoría de apps tienen un endpoint directo de login para testing que salta OAuth:
+
+```json
+{ "type": "goto", "value": "/auth/test-login?user=test@example.com" }
+```
+
+**Opción B — Token pre-autenticado:** Obtener un token de la API de tu proveedor de auth e inyectarlo:
+
+```json
+{
+  "hooks": {
+    "beforeEach": [
+      { "type": "goto", "value": "/" },
+      { "type": "set_storage", "value": "oidc.user:https://auth.example.com:client_id={\"access_token\":\"...\"}" }
+    ]
+  }
+}
+```
+
+**Opción C — Cookie de sesión desde CI:** Si tu CI puede autenticarse vía API, pasar la cookie de sesión como variable de entorno:
+
+```bash
+SESSION=$(curl -s -c - https://api.example.com/auth/login -d '{"email":"test@example.com","password":"secret"}' | grep session_id | awk '{print $NF}')
+AUTH_TOKEN="$SESSION" AUTH_STORAGE_KEY="session_id" npx e2e-runner run --all
+```
+
+> **Cuándo usar:** Apps con login de Google/GitHub/Okta/Auth0. Casi siempre necesitás un backdoor de entorno de test.
+
+### Módulos de Auth Reutilizables
+
+Extraé tu estrategia de auth en un módulo para que cada test pueda referenciarlo sin duplicación:
+
+```json
+// e2e/modules/login.json — Login por UI (universal)
+{
+  "$module": "login",
+  "description": "Iniciar sesión vía formulario de login",
+  "params": {
+    "email": { "required": true, "description": "Email del usuario" },
+    "password": { "required": true, "description": "Contraseña" },
+    "redirectTo": { "default": "/dashboard", "description": "Página destino después del login" }
+  },
+  "actions": [
+    { "type": "goto", "value": "/login" },
+    { "type": "type", "selector": "#email", "value": "{{email}}" },
+    { "type": "type", "selector": "#password", "value": "{{password}}" },
+    { "type": "click", "text": "Iniciar Sesión" },
+    { "type": "wait", "selector": "{{redirectTo}}" }
+  ]
+}
+```
+
+```json
+// e2e/modules/auth-token.json — Inyección JWT (SPAs)
+{
+  "$module": "auth-token",
+  "description": "Inyectar un token de auth en el storage del browser",
+  "params": {
+    "token": { "required": true, "description": "Token JWT o de sesión" },
+    "storageKey": { "default": "accessToken", "description": "Nombre de la clave en storage" },
+    "storage": { "default": "local", "description": "local o session" },
+    "redirectTo": { "default": "/dashboard", "description": "Página a navegar después de la inyección" }
+  },
+  "actions": [
+    { "type": "goto", "value": "/" },
+    { "type": "set_storage", "value": "{{storageKey}}={{token}}", "selector": "{{#storage}}{{storage}}{{/storage}}" },
+    { "type": "goto", "value": "{{redirectTo}}" }
+  ]
+}
+```
+
+Usar en tests:
+
+```json
+// Login por UI
+{ "$use": "login", "params": { "email": "admin@test.com", "password": "secret" } }
+
+// Inyección de token
+{ "$use": "auth-token", "params": { "token": "eyJhbG..." } }
+
+// Token en sessionStorage, redirigir a /settings
+{ "$use": "auth-token", "params": { "token": "eyJhbG...", "storage": "session", "redirectTo": "/settings" } }
+```
+
+### Testing de Diferentes Roles de Usuario
+
+Usá tests separados (o el mismo módulo con diferentes credenciales) para testear acceso basado en roles:
+
+```json
+[
+  {
+    "name": "admin-ve-configuracion",
+    "actions": [
+      { "$use": "login", "params": { "email": "admin@test.com", "password": "admin-pass" } },
+      { "type": "goto", "value": "/settings" },
+      { "type": "assert_visible", "selector": ".admin-panel" }
+    ]
+  },
+  {
+    "name": "viewer-no-puede-acceder-configuracion",
+    "actions": [
+      { "$use": "login", "params": { "email": "viewer@test.com", "password": "viewer-pass" } },
+      { "type": "goto", "value": "/settings" },
+      { "type": "assert_text", "text": "Acceso Denegado" }
+    ]
+  }
+]
+```
+
+### Limpiar Estado de Auth
+
+Cada test se ejecuta en un **contexto de browser nuevo** (nueva conexión al Chrome pool), así que cookies y storage están automáticamente limpios. Si necesitás limpiar estado explícitamente durante un test:
+
+```json
+{ "type": "clear_cookies" }
+```
+
+Esto limpia cookies, localStorage y sessionStorage del origen actual.
+
+### Referencia Rápida
+
+| Tipo de auth | Estrategia | Acciones clave |
+|-------------|----------|-------------|
+| Formulario usuario/contraseña | Login por UI | `goto` + `type` + `click` en `beforeEach` |
+| JWT en localStorage | Inyección de Token | `set_storage` en `beforeEach` |
+| JWT en sessionStorage | Inyección de Token | `set_storage` con `selector: "session"` |
+| Session cookies | Cookie | `evaluate` para setear `document.cookie` |
+| Cookies HttpOnly | Login por UI | Debe pasar por el formulario de login |
+| OAuth / SSO | Bypass de test | Endpoint de login específico para testing |
+| Headers de auth API | Override de Headers | `evaluate` para parchear `fetch` |
+| Token a nivel de config | Config | `authToken` + `authStorageKey` en config |
+
+---
+
 ## Módulos Reutilizables
 
 Extraé flujos comunes en módulos parametrizados:
 
 ```json
-// e2e/modules/auth.json
+// e2e/modules/login.json
 {
-  "$module": "auth-jwt",
-  "description": "Inyectar token JWT en localStorage",
+  "$module": "login",
+  "description": "Iniciar sesión vía formulario de login",
   "params": {
-    "token": { "required": true, "description": "Token JWT" },
-    "storageKey": { "default": "accessToken" }
+    "email": { "required": true, "description": "Email del usuario" },
+    "password": { "required": true, "description": "Contraseña" }
   },
   "actions": [
-    { "type": "evaluate", "value": "localStorage.setItem('{{storageKey}}', '{{token}}')" },
-    { "type": "goto", "value": "/dashboard" }
+    { "type": "goto", "value": "/login" },
+    { "type": "type", "selector": "#email", "value": "{{email}}" },
+    { "type": "type", "selector": "#password", "value": "{{password}}" },
+    { "type": "click", "text": "Iniciar Sesión" },
+    { "type": "wait", "value": "2000" }
   ]
 }
 ```
@@ -274,7 +729,7 @@ Usar en tests:
 {
   "name": "carga-dashboard",
   "actions": [
-    { "$use": "auth-jwt", "params": { "token": "eyJhbG..." } },
+    { "$use": "login", "params": { "email": "user@test.com", "password": "secret" } },
     { "type": "assert_text", "text": "Dashboard" }
   ]
 }

@@ -70,20 +70,40 @@ function buildNdSection(title,contentEl,count,copyText){
   return el('div',{className:'rd-nd-section'},[toggle,contentWrap]);
 }
 
+function gqlOp(n){
+  // 1. Explicit operationName field in POST body
+  if(n.requestBody){
+    try{
+      var b=JSON.parse(n.requestBody);
+      if(b.operationName)return b.operationName;
+      // 2. Parse operation name from query string: "query FooBar(...)" or "mutation FooBar(...)"
+      if(b.query){var m=b.query.match(/^(?:query|mutation|subscription)\s+([A-Za-z_]\w*)/);if(m)return m[1]}
+    }catch(e){}
+  }
+  // 3. URL query param (GET requests or persisted queries)
+  if(n.url){
+    try{var u=new URL(n.url,location.href);var op=u.searchParams.get('operationName');if(op)return op}catch(e){}
+  }
+  return null;
+}
+
 function buildNetRow(n){
   var mCls='rd-net-method '+(n.method||'GET').toLowerCase();
   var sCode=n.status||0;
   var sCls='rd-net-status '+(sCode<300?'s2xx':sCode<400?'s3xx':sCode<500?'s4xx':'s5xx');
   var hasDetail=n.requestBody||n.responseBody||n.requestHeaders||n.responseHeaders;
   var rowCls='rd-net-row'+(sCode>=400?' has-error':'');
-  var row=el('div',{className:rowCls},[
+  var opName=gqlOp(n);
+  var children=[
     el('span',{className:'rd-net-expand'},hasDetail?'\u25B6':''),
     el('span',{className:mCls},n.method||'GET'),
-    el('span',{className:sCls},String(sCode)),
-    el('span',{className:'rd-net-url'},n.url||''),
-    makeCopyBtn(n.url||''),
-    el('span',{className:'rd-net-dur'},dur(n.duration))
-  ]);
+    el('span',{className:sCls},String(sCode))
+  ];
+  if(opName)children.push(el('span',{className:'rd-net-op'},opName));
+  children.push(el('span',{className:'rd-net-url'},n.url||''));
+  children.push(makeCopyBtn(n.url||''));
+  children.push(el('span',{className:'rd-net-dur'},dur(n.duration)));
+  var row=el('div',{className:rowCls},children);
   var detail=null;
   if(hasDetail){
     var sections=[];
