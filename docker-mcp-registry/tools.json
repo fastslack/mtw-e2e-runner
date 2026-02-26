@@ -1,91 +1,54 @@
 [
   {
     "name": "e2e_run",
-    "description": "Run E2E browser tests. Specify \"all\" to run every suite, \"suite\" for a specific suite, or \"file\" for a JSON file path. Returns structured results with pass/fail status, duration, and error details.",
-    "arguments": [
-      {
-        "name": "all",
-        "type": "boolean",
-        "desc": "Run all test suites from the tests directory"
-      },
-      {
-        "name": "suite",
-        "type": "string",
-        "desc": "Suite name to run (e.g. \"auth\", \"01-login\"). Matches with or without numeric prefix."
-      },
-      {
-        "name": "file",
-        "type": "string",
-        "desc": "Absolute or relative path to a JSON test file"
-      },
-      {
-        "name": "concurrency",
-        "type": "number",
-        "desc": "Number of parallel workers (default from config)"
-      },
-      {
-        "name": "baseUrl",
-        "type": "string",
-        "desc": "Override the base URL for this run"
-      },
-      {
-        "name": "retries",
-        "type": "number",
-        "desc": "Number of retries for failed tests"
-      },
-      {
-        "name": "cwd",
-        "type": "string",
-        "desc": "Absolute path to the project root directory"
-      }
-    ]
+    "description": "Run E2E browser tests. Specify \"all\" to run every suite, \"suite\" for a specific suite, or \"file\" for a JSON file path. Returns structured results with pass/fail status, duration, and error details."
   },
   {
     "name": "e2e_list",
-    "description": "List all available E2E test suites with their test names and counts.",
-    "arguments": [
-      {
-        "name": "cwd",
-        "type": "string",
-        "desc": "Absolute path to the project root directory"
-      }
-    ]
+    "description": "List all available E2E test suites with their test names and counts."
   },
   {
     "name": "e2e_create_test",
-    "description": "Create a new E2E test JSON file. Provide the suite name and an array of test objects, each with a name and actions array.",
-    "arguments": [
-      {
-        "name": "name",
-        "type": "string",
-        "desc": "Suite file name without .json extension (e.g. \"login\", \"05-checkout\")"
-      },
-      {
-        "name": "tests",
-        "type": "array",
-        "desc": "Array of test objects with { name, actions }"
-      },
-      {
-        "name": "hooks",
-        "type": "object",
-        "desc": "Optional hooks: beforeAll, afterAll, beforeEach, afterEach (each an array of actions)"
-      },
-      {
-        "name": "cwd",
-        "type": "string",
-        "desc": "Absolute path to the project root directory"
-      }
-    ]
+    "description": "Create a new E2E test JSON file. Provide the suite name and an array of test objects, each with a name and actions array."
+  },
+  {
+    "name": "e2e_create_module",
+    "description": "Create a reusable module for E2E tests. Modules define action sequences that can be referenced from tests via { \"$use\": \"module-name\", \"params\": {...} }."
   },
   {
     "name": "e2e_pool_status",
-    "description": "Get the status of the Chrome pool (browserless/chrome). Shows availability, running sessions, capacity, and queued requests.",
-    "arguments": [
-      {
-        "name": "cwd",
-        "type": "string",
-        "desc": "Absolute path to the project root directory"
-      }
-    ]
+    "description": "Get the status of the Chrome pool (browserless/chrome). Shows availability, running sessions, capacity, and queued requests."
+  },
+  {
+    "name": "e2e_screenshot",
+    "description": "Retrieve a screenshot by its hash (e.g. ss:a3f2b1c9). Returns the image."
+  },
+  {
+    "name": "e2e_capture",
+    "description": "Capture a screenshot of any URL on demand. Connects to the Chrome pool, navigates to the URL, takes a screenshot, and returns the image with its ss:HASH."
+  },
+  {
+    "name": "e2e_dashboard_start",
+    "description": "Start the E2E Runner web dashboard. Provides a real-time UI for running tests, viewing results, screenshots, history, and pool status."
+  },
+  {
+    "name": "e2e_dashboard_stop",
+    "description": "Stop the E2E Runner web dashboard."
+  },
+  {
+    "name": "e2e_issue",
+    "description": "Fetch a GitHub/GitLab issue and prepare E2E test generation. Returns issue details and a prompt for test creation. Use mode \"verify\" to auto-generate and run tests."
+  },
+  {
+    "name": "e2e_network_logs",
+    "description": "Query network request/response logs for a specific test run. Returns filtered logs from SQLite. Use the runDbId from e2e_run results to drill down."
+  },
+  {
+    "name": "e2e_learnings",
+    "description": "Query the E2E learning system for insights about test stability, flaky tests, selector health, page health, API health, error patterns, and trends."
+  },
+  {
+    "name": "e2e_neo4j",
+    "description": "Manage the Neo4j knowledge graph container for E2E learnings. Requires Docker."
   }
 ]
