@@ -131,7 +131,10 @@ Each JSON file is an array of test objects. Each test has a `name` and an `actio
       { "type": "click_icon", "value": "delete", "selector": ".user-card" },
       { "type": "click_menu_item", "text": "Delete" },
       { "type": "click_menu_item", "text": "Export", "selector": ".actions-menu" },
-      { "type": "click_in_context", "text": "John Doe", "selector": "button.edit" }
+      { "type": "click_in_context", "text": "John Doe", "selector": "button.edit" },
+      { "type": "gql", "value": "{ users { id name } }" },
+      { "type": "gql", "value": "query($id: ID) { user(id: $id) { name } }", "text": "{\"id\": \"123\"}" },
+      { "type": "gql", "value": "mutation { deleteUser(id: \"123\") { success } }" }
     ]
   }
 ]
@@ -143,8 +146,8 @@ Suite files can have numeric prefixes for ordering (e.g., `01-auth.json`, `02-da
 
 1. Hardcoded defaults in `src/config.js`
 2. `e2e.config.js` or `e2e.config.json` in cwd
-3. Environment variables: `BASE_URL`, `CHROME_POOL_URL`, `TESTS_DIR`, `SCREENSHOTS_DIR`, `CONCURRENCY`, `DEFAULT_TIMEOUT`, `POOL_PORT`, `MAX_SESSIONS`, `RETRIES`, `RETRY_DELAY`, `TEST_TIMEOUT`, `OUTPUT_FORMAT`, `E2E_ENV`, `FAIL_ON_NETWORK_ERROR`, `VERIFICATION_STRICTNESS`
-4. CLI flags: `--base-url`, `--pool-url`, `--tests-dir`, `--screenshots-dir`, `--concurrency`, `--timeout`, `--pool-port`, `--max-sessions`, `--retries`, `--retry-delay`, `--test-timeout`, `--output`, `--env`, `--fail-on-network-error`, `--verification-strictness`
+3. Environment variables: `BASE_URL`, `CHROME_POOL_URL`, `TESTS_DIR`, `SCREENSHOTS_DIR`, `CONCURRENCY`, `DEFAULT_TIMEOUT`, `POOL_PORT`, `MAX_SESSIONS`, `RETRIES`, `RETRY_DELAY`, `TEST_TIMEOUT`, `OUTPUT_FORMAT`, `E2E_ENV`, `FAIL_ON_NETWORK_ERROR`, `VERIFICATION_STRICTNESS`, `GQL_ENDPOINT`, `GQL_AUTH_HEADER`, `GQL_AUTH_KEY`, `GQL_AUTH_PREFIX`
+4. CLI flags: `--base-url`, `--pool-url`, `--tests-dir`, `--screenshots-dir`, `--concurrency`, `--timeout`, `--pool-port`, `--max-sessions`, `--retries`, `--retry-delay`, `--test-timeout`, `--output`, `--env`, `--fail-on-network-error`, `--verification-strictness`, `--gql-endpoint`, `--gql-auth-header`, `--gql-auth-key`, `--gql-auth-prefix`
 5. Environment profile merge (if `--env` or `E2E_ENV` selects a non-default profile)
 
 ### Excluding Tests from `--all`
@@ -279,6 +282,61 @@ These actions provide direct access to `localStorage` and `sessionStorage` witho
 
 // AFTER: 1 action
 { "type": "assert_storage", "value": "theme=dark", "selector": "session" }
+```
+
+### GraphQL Action
+
+The `gql` action executes GraphQL queries and mutations via browser `fetch`, with automatic auth token injection from `localStorage`. It also installs a `window.__e2eGql(query, vars)` helper for use in subsequent `evaluate` actions (complex multi-step GraphQL operations).
+
+| Action | Fields | Behavior |
+|--------|--------|----------|
+| `gql` | `value` (query string, required), `text` (variables JSON, optional), `selector` (assertion JS expression, optional) | Sends a GraphQL request to the configured endpoint. Reads auth token from localStorage. Throws on GraphQL errors. Returns `{ value: response.data }`. Stores full response on `window.__e2eLastGql`. |
+
+**Config fields:**
+- `gqlEndpoint` — path appended to `location.origin` (default: `/api/graphql`). Env: `GQL_ENDPOINT`. CLI: `--gql-endpoint`
+- `gqlAuthHeader` — header name for auth token (default: `Authorization`). Env: `GQL_AUTH_HEADER`. CLI: `--gql-auth-header`
+- `gqlAuthKey` — localStorage key to read token from (default: `accessToken`). Env: `GQL_AUTH_KEY`. CLI: `--gql-auth-key`
+- `gqlAuthPrefix` — prefix before token value (default: `Bearer `). Env: `GQL_AUTH_PREFIX`. CLI: `--gql-auth-prefix`
+
+**Examples — before and after:**
+
+```json
+// BEFORE: 15+ lines — auth setup + GQL helper + query (repeated per test)
+{ "type": "evaluate", "value": "(() => { localStorage.setItem('accessToken', 'eyJ...'); localStorage.setItem('activeInstitution', '47D...'); const apiBase = location.origin + '/api/graphql'; window.__e2e = { token: localStorage.getItem('accessToken'), apiBase }; window.__e2e.gql = async (q, v) => { const r = await fetch(apiBase, { method: 'POST', headers: { 'Content-Type': 'application/json', 'jwt': window.__e2e.token }, body: JSON.stringify({ query: q, variables: v }) }); return r.json(); }; return 'Auth OK'; })()" }
+{ "type": "evaluate", "value": "(async () => { const r = await window.__e2e.gql('{ users { id name } }'); if (!r.data.users.length) throw new Error('FAIL: no users'); return 'OK'; })()" }
+
+// AFTER: 3 actions — clean, declarative
+{ "type": "set_storage", "value": "accessToken=eyJ..." }
+{ "type": "set_storage", "value": "activeInstitution=47D..." }
+{ "type": "gql", "value": "{ users { id name } }" }
+```
+
+**With variables:**
+```json
+{ "type": "gql", "value": "query($pid: ID, $iid: ID) { encounters(patientId: $pid, institutionId: $iid) { encounterId status } }", "text": "{\"pid\": \"0D75...\", \"iid\": \"47D...\"}" }
+```
+
+**With inline assertion (selector field):**
+```json
+// selector is a JS expression where `r` is the full GraphQL response
+{ "type": "gql", "value": "{ activeServiceRequests(patientId: \"...\") { status } }", "selector": "r.data.activeServiceRequests.some(s => s.status === 'ON_HOLD') ? 'FAIL: ON_HOLD found in active list' : 'OK: all active'" }
+```
+
+**Using the installed helper in evaluate (for complex multi-step operations):**
+```json
+// After any gql action runs, window.__e2eGql(query, vars) is available
+{ "type": "gql", "value": "{ __typename }" }
+{ "type": "evaluate", "value": "(async () => { const r = await window.__e2eGql('query { encounters(status: [IN_PROGRESS]) { encounterId } }'); for (const e of r.data.encounters) await window.__e2eGql('mutation($id: ID, $i: EncounterInput) { updateEncounter(encounterId: $id, input: $i) { encounterId } }', { id: e.encounterId, i: { status: 'FINISHED' } }); return 'Cleaned ' + r.data.encounters.length; })()" }
+```
+
+**Heural-specific config** (in `e2e.config.js`):
+```js
+export default {
+  gqlEndpoint: '/api/graphql',
+  gqlAuthHeader: 'jwt',       // Heural uses 'jwt' header, not 'Authorization'
+  gqlAuthKey: 'accessToken',
+  gqlAuthPrefix: '',           // No 'Bearer ' prefix — raw token
+};
 ```
 
 ### Smart Interaction Actions

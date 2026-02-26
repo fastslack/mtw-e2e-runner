@@ -31,7 +31,7 @@ import { fileURLToPath } from 'url';
 import { loadConfig } from '../src/config.js';
 import { startPool, stopPool, restartPool, getPoolStatus, waitForPool, connectToPool } from '../src/pool.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
-import { generateReport, saveReport, printReport, persistRun } from '../src/reporter.js';
+import { generateReport, saveReport, printReport, persistRun, printInsights } from '../src/reporter.js';
 import { startDashboard } from '../src/dashboard.js';
 import { fetchIssue } from '../src/issues.js';
 import { buildPrompt, generateTests, hasApiKey } from '../src/ai-generate.js';
@@ -84,6 +84,10 @@ function parseCLIConfig() {
   if (getFlag('--auth-token')) cliArgs.authToken = getFlag('--auth-token');
   if (getFlag('--auth-storage-key')) cliArgs.authStorageKey = getFlag('--auth-storage-key');
   if (getFlag('--test-type')) cliArgs.testType = getFlag('--test-type');
+  if (getFlag('--gql-endpoint')) cliArgs.gqlEndpoint = getFlag('--gql-endpoint');
+  if (getFlag('--gql-auth-header')) cliArgs.gqlAuthHeader = getFlag('--gql-auth-header');
+  if (getFlag('--gql-auth-key')) cliArgs.gqlAuthKey = getFlag('--gql-auth-key');
+  if (getFlag('--gql-auth-prefix')) cliArgs.gqlAuthPrefix = getFlag('--gql-auth-prefix');
   if (getFlag('--verification-strictness')) {
     const val = getFlag('--verification-strictness');
     if (['strict', 'moderate', 'lenient'].includes(val)) {
@@ -235,6 +239,7 @@ async function cmdRun() {
   saveReport(report, config.screenshotsDir, config);
   persistRun(report, config, suiteName);
   printReport(report, config.screenshotsDir);
+  printInsights(report, config);
 
   // Wait for the last dashboard broadcast (run:complete) to flush before exiting
   if (_lastBroadcast) await _lastBroadcast;

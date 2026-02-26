@@ -124,7 +124,7 @@ export const TOOLS = [
                   properties: {
                     type: {
                       type: 'string',
-                      description: 'Action type: goto, click, click_regex, click_option, click_chip, type, type_react, focus_autocomplete, wait, assert_text, assert_element_text, assert_attribute, assert_class, assert_visible, assert_not_visible, assert_input_value, assert_matches, assert_url, assert_count, assert_no_network_errors, get_text, screenshot, select, clear, clear_cookies, press, scroll, hover, evaluate, navigate, set_storage, assert_storage, click_icon, click_menu_item, click_in_context',
+                      description: 'Action type: goto, click, click_regex, click_option, click_chip, type, type_react, focus_autocomplete, wait, assert_text, assert_element_text, assert_attribute, assert_class, assert_visible, assert_not_visible, assert_input_value, assert_matches, assert_url, assert_count, assert_no_network_errors, get_text, screenshot, select, clear, clear_cookies, press, scroll, hover, evaluate, navigate, set_storage, assert_storage, click_icon, click_menu_item, click_in_context, gql',
                     },
                     selector: { type: 'string', description: 'CSS selector' },
                     value: { type: 'string', description: 'Value for the action' },

@@ -61,7 +61,9 @@ The test format is:
       { "type": "click_icon", "value": "delete", "selector": ".user-card" },
       { "type": "click_menu_item", "text": "Delete" },
       { "type": "click_menu_item", "text": "Export", "selector": ".actions-menu" },
-      { "type": "click_in_context", "text": "John Doe", "selector": "button.edit" }
+      { "type": "click_in_context", "text": "John Doe", "selector": "button.edit" },
+      { "type": "gql", "value": "{ users { id name } }" },
+      { "type": "gql", "value": "query($id: ID) { user(id: $id) { name } }", "text": "{\"id\": \"123\"}" }
     ]
   }
 ]
@@ -76,6 +78,9 @@ Framework-aware action reference (prefer these over evaluate for React/MUI apps)
 Storage actions:
 - set_storage: set a localStorage key. "value": "key=val". Use "selector": "session" for sessionStorage
 - assert_storage: assert a storage key exists ("value": "key") or has a value ("value": "key=expected"). Use "selector": "session" for sessionStorage
+
+GraphQL action:
+- gql: execute a GraphQL query/mutation via browser fetch. Auth token is read from localStorage automatically (configurable via gqlAuthHeader, gqlAuthKey, gqlAuthPrefix). "value" is the query string. "text" is variables as JSON string. "selector" is an optional JS assertion expression (receives response as "r"). Throws on GraphQL errors automatically. Also installs window.__e2eGql(query, vars) for use in subsequent evaluate actions
 
 Smart interaction actions:
 - click_icon: click an icon by identifier (data-testid fragment, class fragment, aria-label, SVG title). Walks up to nearest clickable parent (button, a, etc.). Optional "selector" scopes the search
@@ -117,6 +122,7 @@ Rules:
   * Use click_icon instead of evaluate with querySelector('svg[data-testid]').closest('button').click() patterns
   * Use click_menu_item instead of evaluate with querySelectorAll('[role="menuitem"]') patterns
   * Use click_in_context instead of evaluate that finds a container by text then clicks a child element
+  * Use gql instead of evaluate with fetch + JSON.stringify + GraphQL queries/mutations
   * Reserve evaluate ONLY for complex logic that cannot be expressed with existing action types
 - "click" with "text" (no selector) finds buttons/links by visible text
 - "goto" values starting with "/" are relative to the app's base URL
@@ -140,9 +146,11 @@ CRITICAL — UI-first testing rules:
 
 const API_RULES = `
 API testing rules:
-- Tests verify backend API behavior directly via evaluate actions
+- Tests verify backend API behavior directly via gql actions (preferred) or evaluate actions
 - Each test should: set up context → call API → assert response shape and values
-- Use evaluate for GraphQL mutations, queries, and REST calls
+- PREFER the gql action for GraphQL queries/mutations — it handles auth and error checking automatically
+- Use gql with "selector" field for inline assertions on the response (JS expression where "r" is the response)
+- Use evaluate with window.__e2eGql() for complex multi-step GraphQL operations (the helper is installed by any gql action)
 - Name tests clearly describing the API operation (e.g. "createUser-returns-new-user")
 - Include error case tests (invalid input, missing fields, auth failures)
 - No need for goto/click/type — this is not UI testing

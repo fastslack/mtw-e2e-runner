@@ -52,6 +52,10 @@ const DEFAULTS = {
   neo4jBoltPort: 7687,
   neo4jHttpPort: 7474,
   verificationStrictness: 'moderate',
+  gqlEndpoint: '/api/graphql',
+  gqlAuthHeader: 'Authorization',
+  gqlAuthKey: 'accessToken',
+  gqlAuthPrefix: 'Bearer ',
 };
 
 function loadEnvVars() {
@@ -87,6 +91,10 @@ function loadEnvVars() {
   if (process.env.NEO4J_PASSWORD) env.neo4jPassword = process.env.NEO4J_PASSWORD;
   if (process.env.NEO4J_BOLT_PORT) env.neo4jBoltPort = parseInt(process.env.NEO4J_BOLT_PORT);
   if (process.env.NEO4J_HTTP_PORT) env.neo4jHttpPort = parseInt(process.env.NEO4J_HTTP_PORT);
+  if (process.env.GQL_ENDPOINT) env.gqlEndpoint = process.env.GQL_ENDPOINT;
+  if (process.env.GQL_AUTH_HEADER) env.gqlAuthHeader = process.env.GQL_AUTH_HEADER;
+  if (process.env.GQL_AUTH_KEY) env.gqlAuthKey = process.env.GQL_AUTH_KEY;
+  if (process.env.GQL_AUTH_PREFIX) env.gqlAuthPrefix = process.env.GQL_AUTH_PREFIX;
   if (process.env.VERIFICATION_STRICTNESS) {
     const val = process.env.VERIFICATION_STRICTNESS.toLowerCase();
     if (['strict', 'moderate', 'lenient'].includes(val)) {

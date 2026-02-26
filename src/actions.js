@@ -614,6 +614,68 @@ export async function executeAction(page, action, config) {
       break;
     }
 
+    case 'gql': {
+      // Execute a GraphQL query/mutation via browser fetch.
+      // Reads auth token from localStorage and sends it as a configurable header.
+      // Installs window.__e2eGql(query, vars) helper for use in subsequent evaluate actions.
+      //
+      // value: GraphQL query/mutation string (required)
+      // text: variables as JSON string (optional)
+      // selector: JS expression assertion — receives response as `r` (optional)
+      const gqlEndpoint = config.gqlEndpoint || '/api/graphql';
+      const gqlAuthHeader = config.gqlAuthHeader || 'Authorization';
+      const gqlAuthKey = config.gqlAuthKey || 'accessToken';
+      const gqlAuthPrefix = config.gqlAuthPrefix ?? 'Bearer ';
+      const gqlVars = text || undefined;
+
+      const gqlResult = await page.evaluate(async (query, varsJson, endpoint, authHdr, authKey, authPfx) => {
+        // Install reusable helper on first call
+        if (!window.__e2eGql) {
+          window.__e2eGqlConfig = { endpoint, authHeader: authHdr, authKey, authPrefix: authPfx };
+          window.__e2eGql = async (q, v) => {
+            const cfg = window.__e2eGqlConfig;
+            const token = localStorage.getItem(cfg.authKey);
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers[cfg.authHeader] = cfg.authPrefix + token;
+            const resp = await fetch(location.origin + cfg.endpoint, {
+              method: 'POST', headers,
+              body: JSON.stringify({ query: q, variables: v }),
+            });
+            return resp.json();
+          };
+        }
+
+        const vars = varsJson ? JSON.parse(varsJson) : undefined;
+        const response = await window.__e2eGql(query, vars);
+        window.__e2eLastGql = response;
+        return response;
+      }, value, gqlVars, gqlEndpoint, gqlAuthHeader, gqlAuthKey, gqlAuthPrefix);
+
+      // Check for GraphQL errors
+      if (gqlResult.errors?.length) {
+        throw new Error(`gql failed: ${gqlResult.errors.map(e => e.message).join('; ')}`);
+      }
+
+      // Optional assertion via selector field (JS expression, `r` = full response)
+      // Intentional: runs JS in browser page context from team-authored JSON test files,
+      // same security model as the 'evaluate' action type.
+      if (selector) {
+        const assertResult = await page.evaluate((code, r) => {
+          const fn = new Function('r', `return (${code})`); // eslint-disable-line no-new-func
+          return fn(r);
+        }, selector, gqlResult);
+
+        if (typeof assertResult === 'string' && /^(FAIL|ERROR|FAILED)[\s:]/i.test(assertResult)) {
+          throw new Error(`gql assertion: ${assertResult}`);
+        }
+        if (assertResult === false) {
+          throw new Error(`gql assertion returned false`);
+        }
+      }
+
+      return { value: gqlResult.data };
+    }
+
     case 'evaluate': {
       // Intentional: runs JS in browser page context (from test JSON files)
       const jsSnippet = value.length > 120 ? value.slice(0, 120) + '...' : value;
