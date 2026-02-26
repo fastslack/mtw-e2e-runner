@@ -2,7 +2,7 @@
 # matware/e2e-runner-mcp — MCP server image (stdio transport)
 #
 # Build:
-#   docker build -t fastslack/e2e-runner-mcp:latest -t fastslack/e2e-runner-mcp:1.0.2 .
+#   docker build -t fastslack/e2e-runner-mcp:latest -t fastslack/e2e-runner-mcp:1.2.1 .
 #
 # Use with Claude Code:
 #   claude mcp add --transport stdio --scope user e2e-runner -- docker run -i --rm fastslack/e2e-runner-mcp
@@ -10,10 +10,13 @@
 
 FROM node:20-alpine AS build
 
+# better-sqlite3 needs build tools for native compilation on Alpine (musl)
+RUN apk add --no-cache python3 make g++
+
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --omit=dev
 
 COPY bin/ bin/
 COPY src/ src/
