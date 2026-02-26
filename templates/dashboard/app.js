@@ -169,8 +169,9 @@ function createTriggerBadge(source){
 /* ══════════════════════════════════════════════════════════════════
    Toast Notifications (Improvement 4)
    ══════════════════════════════════════════════════════════════════ */
-function showToast(message,type){
+function showToast(message,type,timeout){
   type=type||'info';
+  timeout=timeout||5000;
   var container=$('#toastContainer');
   var icons={success:'\u2714',error:'\u2718',info:'\u2139'};
   var t=el('div',{className:'toast '+type},[
@@ -181,7 +182,21 @@ function showToast(message,type){
   setTimeout(function(){
     t.classList.add('fade-out');
     setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t)},300);
-  },5000);
+  },timeout);
+}
+
+function showEnrichedToast(message,type){
+  var container=$('#toastContainer');
+  var icons={success:'\u2714',error:'\u2718',info:'\u2139'};
+  var t=el('div',{className:'toast clickable '+type,onclick:function(){showView('learnings')}},[
+    el('span',null,icons[type]||''),
+    el('span',null,message)
+  ]);
+  container.appendChild(t);
+  setTimeout(function(){
+    t.classList.add('fade-out');
+    setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t)},300);
+  },7000);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -306,8 +321,22 @@ function handleWS(m){
     case 'run:complete':
       var r6=getLiveRun(m);if(r6){r6.on=false;r6.done=true;r6.active=0}
       var summary=m.summary||{};
-      if(summary.failed>0){showToast('Run complete: '+summary.failed+' failed','error')}
-      else{showToast('Run complete: all '+(summary.total||0)+' passed','success')}
+      // Show basic toast immediately, then try to enrich with health data
+      var baseMsg='Run complete: '+(summary.failed>0?summary.failed+' failed':'all '+(summary.total||0)+' passed');
+      var baseType=summary.failed>0?'error':'success';
+      // Fetch health for enrichment
+      var healthUrl=S.project?'/api/db/projects/'+S.project+'/health':'/api/db/health';
+      fetch(healthUrl).then(function(r){return r.json()}).then(function(h){
+        if(h&&h.passRate!==undefined){
+          var extra='. Pass rate: '+h.passRate+'%';
+          if(h.passRateTrend==='declining')extra+=' (declining, '+h.trendDelta+'%)';
+          else if(h.passRateTrend==='improving')extra+=' (improving, +'+h.trendDelta+'%)';
+          if(h.flakyCount>0)extra+='. '+h.flakyCount+' flaky test(s)';
+          showEnrichedToast(baseMsg+extra,baseType);
+        } else {
+          showToast(baseMsg,baseType);
+        }
+      }).catch(function(){showToast(baseMsg,baseType)});
       renderLive();refreshRuns();refreshProjects();break;
     case 'run:error':
       var r7=getLiveRun(m);if(r7){r7.on=false;r7.done=true;r7.tests.__error={status:'failed',error:m.error}}
@@ -523,7 +552,44 @@ function applyRunFilters(){
   });
 }
 
+function renderRunsHealthBanner(){
+  var banner=$('#runsHealthBanner');
+  banner.textContent='';
+  var url=S.project?'/api/db/projects/'+S.project+'/health':'/api/db/health';
+  fetch(url).then(function(r){return r.json()}).then(function(h){
+    if(!h||!h.passRate)return;
+    var rateColor=h.passRate>=90?'green':h.passRate>=70?'amber':'red';
+    var trendIcon=h.passRateTrend==='improving'?'\u25B2':h.passRateTrend==='declining'?'\u25BC':'=';
+    var trendCls=h.passRateTrend==='improving'?'green':h.passRateTrend==='declining'?'red':'dim';
+    var deltaStr=h.trendDelta!==0?(h.trendDelta>0?'+':'')+h.trendDelta+'%':'';
+
+    banner.appendChild(el('div',{className:'hb-item'},[
+      el('div',{className:'hb-val '+rateColor},h.passRate+'%'),
+      el('div',{className:'hb-lbl'},'Pass Rate'),
+      el('div',{className:'hb-trend '+trendCls},trendIcon+' '+h.passRateTrend+(deltaStr?' ('+deltaStr+')':''))
+    ]));
+    if(h.flakyCount>0){
+      banner.appendChild(el('div',{className:'hb-item'},[
+        el('div',{className:'hb-val amber'},String(h.flakyCount)),
+        el('div',{className:'hb-lbl'},'Flaky Tests')
+      ]));
+    }
+    if(h.topErrorPattern){
+      var cat=h.topErrorPattern.category||h.topErrorPattern.pattern||'unknown';
+      var pat=cat.replace(/-/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase()});
+      banner.appendChild(el('div',{className:'hb-item'},[
+        el('div',{className:'hb-val red',style:'font-size:13px'},pat),
+        el('div',{className:'hb-lbl'},'Top Error ('+h.topErrorPattern.count+'x)')
+      ]));
+    }
+    banner.appendChild(el('div',{className:'hb-link',onclick:function(){showView('learnings')}},[
+      el('span',null,'\u2192 View Learnings')
+    ]));
+  }).catch(function(){});
+}
+
 function refreshRuns(){
+  renderRunsHealthBanner();
   var url=S.project?'/api/db/projects/'+S.project+'/runs':'/api/db/runs';
   api(url).then(function(rows){
     var chart=$('#trendChart'),body=$('#runsBody'),empty=$('#runsEmpty'),head=$('#runsHead');
@@ -664,6 +730,40 @@ function loadDetailInline(id,detailTr){
       exportBtn
     ]);
     inner.appendChild(summ);
+
+    // Fetch and render insights (async, non-blocking)
+    var insightsContainer=el('div',{className:'rd-insights'});
+    inner.appendChild(insightsContainer);
+    fetch('/api/db/runs/'+id+'/insights').then(function(r){return r.json()}).then(function(ins){
+      if(!ins||ins.error)return;
+      var items=[];
+      var h=ins.health;
+      if(h){
+        var rateColor=h.passRate>=90?'green':h.passRate>=70?'amber':'red';
+        var trendIcon=h.passRateTrend==='improving'?'\u25B2':h.passRateTrend==='declining'?'\u25BC':'=';
+        var trendCls=h.passRateTrend==='improving'?'green':h.passRateTrend==='declining'?'red':'';
+        items.push(el('div',{className:'rd-ins-health'},[
+          el('span',{className:'rd-ins-rate '+rateColor},h.passRate+'%'),
+          el('span',{className:'rd-ins-trend '+trendCls},trendIcon+' '+h.passRateTrend),
+          h.flakyCount>0?el('span',{className:'rd-ins-tag amber'},h.flakyCount+' flaky'):null,
+          h.unstableSelectorCount>0?el('span',{className:'rd-ins-tag red'},h.unstableSelectorCount+' unstable sel.'):null
+        ]));
+      }
+      var insights=ins.insights||[];
+      insights.forEach(function(i){
+        var icon=i.type==='new-failure'?'\u2718':i.type==='recovered'?'\u2714':i.type==='flaky'?'\u223C':'!';
+        var cls=i.type==='new-failure'?'red':i.type==='recovered'?'green':i.type==='flaky'?'amber':'';
+        items.push(el('div',{className:'rd-ins-item '+cls},[
+          el('span',{className:'rd-ins-icon'},icon),
+          el('span',null,i.message)
+        ]));
+      });
+      if(items.length>0){
+        items.forEach(function(it){insightsContainer.appendChild(it)});
+      } else {
+        insightsContainer.style.display='none';
+      }
+    }).catch(function(){insightsContainer.style.display='none'});
 
     results.forEach(function(r){
       var d2=r.durationMs?dur(r.durationMs):r.endTime&&r.startTime?dur(new Date(r.endTime)-new Date(r.startTime)):'-';
@@ -1008,9 +1108,25 @@ function refreshLearnings(){
     $('#learningsEmpty').style.display='none';
     S.lastLearningsData=data;
     var flakyCount=data.flakyTests?data.flakyTests.length:0;
-    $('#badgeLearnings').textContent=flakyCount>0?flakyCount:'\u2714';
-    if(flakyCount>0){$('#badgeLearnings').style.background='var(--amber-dim)';$('#badgeLearnings').style.color='var(--amber)'}
-    else{$('#badgeLearnings').style.background='';$('#badgeLearnings').style.color=''}
+    var passRate=data.overallPassRate||0;
+    // Semaphore badge: red (< 70%), amber (flaky or declining), green (healthy)
+    var declining=data.recentTrend&&Array.isArray(data.recentTrend.data||data.recentTrend)&&(function(){
+      var td=data.recentTrend.data||data.recentTrend;
+      if(td.length<2)return false;
+      var last=td[td.length-1].pass_rate;
+      var prior=td.slice(0,-1).reduce(function(s,t){return s+t.pass_rate},0)/(td.length-1);
+      return last-prior<-2;
+    })();
+    if(passRate<70){
+      $('#badgeLearnings').textContent='\u26A0';
+      $('#badgeLearnings').style.background='var(--red-dim)';$('#badgeLearnings').style.color='var(--red)';
+    } else if(flakyCount>0||declining){
+      $('#badgeLearnings').textContent=flakyCount>0?flakyCount:(declining?'\u25BC':'\u2714');
+      $('#badgeLearnings').style.background='var(--amber-dim)';$('#badgeLearnings').style.color='var(--amber)';
+    } else {
+      $('#badgeLearnings').textContent='\u2714';
+      $('#badgeLearnings').style.background='var(--green-dim)';$('#badgeLearnings').style.color='var(--green)';
+    }
     renderLearnOverview(data);
     renderLearnTrend(data.recentTrend||[]);
     renderLearnFlaky(data.flakyTests||[]);
@@ -1077,7 +1193,7 @@ function buildLearnTable(title,headers,rows){
       var td=document.createElement('td');
       if(cell.code){var code=document.createElement('code');code.textContent=cell.code;td.appendChild(code)}
       else if(cell.badge){var span=document.createElement('span');span.className='badge '+cell.cls;span.textContent=cell.badge;td.appendChild(span)}
-      else{td.textContent=cell.text!==undefined?cell.text:cell}
+      else{td.textContent=cell.text!==undefined&&cell.text!==null?cell.text:(typeof cell==='object'?'-':cell)}
       tr.appendChild(td);
     });
     tbody.appendChild(tr);

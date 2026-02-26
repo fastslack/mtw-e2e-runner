@@ -296,6 +296,46 @@ export function getRunInsights(projectId, report) {
   return insights;
 }
 
+/**
+ * Compact health snapshot for a project — used by CLI, MCP, and Dashboard.
+ * Returns null if no historical data exists.
+ */
+export function getHealthSnapshot(projectId) {
+  const summary = getLearningsSummary(projectId);
+  if (!summary || summary.totalRuns === 0) return null;
+
+  const flakyCount = summary.flakyTests ? summary.flakyTests.length : 0;
+  const unstableSelectorCount = summary.unstableSelectors ? summary.unstableSelectors.length : 0;
+  const topError = summary.topErrors && summary.topErrors.length > 0
+    ? { pattern: summary.topErrors[0].pattern, count: summary.topErrors[0].occurrence_count, category: summary.topErrors[0].category }
+    : null;
+
+  // Compute trend from recent daily data
+  let passRateTrend = 'stable'; // 'improving', 'declining', 'stable'
+  let trendDelta = 0;
+
+  const trends = getTestTrends(projectId, 7);
+  const trendData = trends?.data || trends || [];
+  if (Array.isArray(trendData) && trendData.length >= 2) {
+    const recent = trendData[trendData.length - 1].pass_rate;
+    const prior = trendData.slice(0, -1).reduce((s, t) => s + t.pass_rate, 0) / (trendData.length - 1);
+    trendDelta = Math.round((recent - prior) * 10) / 10;
+    if (trendDelta > 2) passRateTrend = 'improving';
+    else if (trendDelta < -2) passRateTrend = 'declining';
+  }
+
+  return {
+    passRate: summary.overallPassRate,
+    passRateTrend,
+    trendDelta,
+    flakyCount,
+    unstableSelectorCount,
+    topErrorPattern: topError,
+    totalRuns: summary.totalRuns,
+    totalTests: summary.totalTests,
+  };
+}
+
 /** Drill-down: history for a specific test. */
 export function getTestHistory(projectId, testName, days = 30) {
   const d = getDb();

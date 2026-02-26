@@ -635,6 +635,7 @@ claude mcp add --transport stdio --scope user e2e-runner -- npx -y -p @matware/e
 | `e2e_pool_status` | Get Chrome pool availability, running sessions, capacity |
 | `e2e_screenshot` | Retrieve a screenshot by its hash (e.g. `ss:a3f2b1c9`). Returns the image. |
 | `e2e_capture` | Capture a screenshot of any URL on demand. Connects to pool, navigates, screenshots, returns image + `ss:HASH`. Supports `fullPage`, `selector`, `delay`, `filename`. |
+| `e2e_analyze` | Analyze a page's structure and return all interactive elements (forms, buttons, links, navigation, tables, modals, etc.) with CSS selectors, plus suggested test scaffolds. Supports `scope` (limit to a section), `maxElements`, `includeScreenshot`. One call replaces the screenshot→guess-selectors→retry cycle. |
 | `e2e_dashboard_start` | Start the E2E Runner web dashboard |
 | `e2e_dashboard_stop` | Stop the E2E Runner web dashboard |
 | `e2e_issue` | Fetch a GitHub/GitLab issue and generate E2E tests. `mode: "prompt"` (default) returns issue + prompt for Claude Code. `mode: "verify"` auto-generates tests via Claude API and runs them. `testType: "e2e"` (default) for UI-driven tests, `"api"` for backend API tests. |

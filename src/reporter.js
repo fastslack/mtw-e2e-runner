@@ -9,6 +9,7 @@ import { ensureProject, saveRun as saveRunToDb } from './db.js';
 import { narrateTest } from './narrate.js';
 import { learnFromRun } from './learner.js';
 import { generateLearningsMarkdown } from './learner-markdown.js';
+import { getHealthSnapshot, getRunInsights } from './learner-sqlite.js';
 
 function escapeXml(str) {
   return String(str)
@@ -258,5 +259,73 @@ export function printReport(report, screenshotsDir) {
   if (screenshotsDir) {
     console.log(`\n${C.dim}Report: ${path.join(screenshotsDir, 'report.json')}${C.reset}`);
     console.log(`${C.dim}Screenshots: ${screenshotsDir}${C.reset}\n`);
+  }
+}
+
+/** Prints a compact learnings/health block after the run report. Never throws. */
+export function printInsights(report, config) {
+  try {
+    if (config.learningsEnabled === false) return;
+
+    const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
+    const health = getHealthSnapshot(projectId);
+    const insights = getRunInsights(projectId, report);
+
+    // Nothing to show if no historical data and no insights
+    if (!health && insights.length === 0) return;
+
+    const lines = [];
+    const LINE = `${C.dim}${'─'.repeat(42)}${C.reset}`;
+
+    // Run-specific insights
+    const newFailures = insights.filter(i => i.type === 'new-failure');
+    const flaky = insights.filter(i => i.type === 'flaky');
+    const recovered = insights.filter(i => i.type === 'recovered');
+    const unstable = insights.find(i => i.type === 'unstable-selectors');
+
+    if (newFailures.length > 0) {
+      lines.push(`  ${C.red}!${C.reset}  ${newFailures.length} new failure(s) (previously stable)`);
+      for (const f of newFailures.slice(0, 3)) {
+        lines.push(`     ${C.dim}- ${f.test}${C.reset}`);
+      }
+      if (newFailures.length > 3) lines.push(`     ${C.dim}... and ${newFailures.length - 3} more${C.reset}`);
+    }
+    if (recovered.length > 0) {
+      lines.push(`  ${C.green}+${C.reset}  ${recovered.length} recovered test(s)`);
+    }
+    if (flaky.length > 0) {
+      lines.push(`  ${C.yellow}~${C.reset}  ${flaky.length} known flaky test(s) passed this time`);
+    }
+    if (unstable) {
+      const sels = unstable.selectors.slice(0, 3).join(', ');
+      lines.push(`  ${C.red}!${C.reset}  ${unstable.selectors.length} unstable selector(s): ${C.dim}${sels}${C.reset}`);
+    }
+
+    // Health snapshot
+    if (health) {
+      const rateColor = health.passRate >= 90 ? C.green : health.passRate >= 70 ? C.yellow : C.red;
+      const trendIcon = health.passRateTrend === 'improving' ? `${C.green}^${C.reset}` : health.passRateTrend === 'declining' ? `${C.red}v${C.reset}` : `${C.dim}=${C.reset}`;
+      const deltaStr = health.trendDelta !== 0 ? `, ${health.trendDelta > 0 ? '+' : ''}${health.trendDelta}%` : '';
+      lines.push(`  ${trendIcon}  Pass rate: ${rateColor}${health.passRate}%${C.reset} (${health.passRateTrend}${deltaStr})`);
+
+      if (health.topErrorPattern) {
+        const cat = health.topErrorPattern.category || health.topErrorPattern.pattern || 'unknown';
+        const label = cat.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        lines.push(`  ${C.dim}!${C.reset}  Top error: ${C.dim}${label} (${health.topErrorPattern.count}x)${C.reset}`);
+      }
+    }
+
+    if (lines.length === 0) return;
+
+    console.log('');
+    console.log(`${C.dim}── ${C.reset}${C.bold}Learnings${C.reset} ${LINE}`);
+    for (const line of lines) console.log(line);
+    console.log(`  ${C.dim}Run 'e2e-runner learnings' for full details${C.reset}`);
+    if (config.learningsMarkdown !== false) {
+      console.log(`  ${C.dim}Updated: e2e/learnings.md${C.reset}`);
+    }
+    console.log(LINE);
+  } catch {
+    // Never fail the run
   }
 }

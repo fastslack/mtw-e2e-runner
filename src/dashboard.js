@@ -20,7 +20,7 @@ import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, 
 import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
-import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends } from './learner-sqlite.js';
+import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot } from './learner-sqlite.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -220,6 +220,56 @@ export async function startDashboard(config) {
           if (url.searchParams.get('includeHeaders') === 'true') filters.includeHeaders = true;
           if (url.searchParams.get('includeBodies') === 'true') filters.includeBodies = true;
           jsonResponse(res, dbGetNetworkLogs(runDbId, filters));
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — run insights (health + contextual insights)
+      const runInsightsMatch = pathname.match(/^\/api\/db\/runs\/(\d+)\/insights$/);
+      if (runInsightsMatch) {
+        try {
+          const runDbId = parseInt(runInsightsMatch[1], 10);
+          const detail = dbGetRunDetail(runDbId);
+          if (!detail) { jsonResponse(res, { error: 'Run not found' }, 404); return; }
+
+          const projectId = detail.projectId || null;
+          const health = projectId ? getHealthSnapshot(projectId) : null;
+
+          // Build a minimal report object for getRunInsights
+          const results = (detail.results || []).map(r => ({
+            name: r.name,
+            success: r.success,
+            actions: r.actions || [],
+          }));
+          const insights = projectId ? getRunInsights(projectId, { results }) : [];
+
+          jsonResponse(res, { health, insights });
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — project health snapshot
+      const projectHealthMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/health$/);
+      if (projectHealthMatch) {
+        try {
+          const projectId = parseInt(projectHealthMatch[1], 10);
+          const health = getHealthSnapshot(projectId);
+          jsonResponse(res, health || {});
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — cross-project health snapshot
+      if (pathname === '/api/db/health') {
+        try {
+          const health = getHealthSnapshot(null);
+          jsonResponse(res, health || {});
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
         }
@@ -662,7 +712,7 @@ export async function startDashboard(config) {
   }
 
   return new Promise((resolve, reject) => {
-    const host = config.dashboardHost || '127.0.0.1';
+    const host = config.dashboardHost || process.env.DASHBOARD_HOST || '0.0.0.0';
 
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {

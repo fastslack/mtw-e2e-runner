@@ -335,8 +335,11 @@ function updateLearningSummary(projectId, config) {
   // Unstable selectors
   const unstableSelectors = d.prepare(`
     SELECT selector,
+           MAX(action_type) AS action_type,
            ROUND(AVG(CASE WHEN success = 0 THEN 100.0 ELSE 0.0 END), 1) AS fail_rate,
-           COUNT(*) AS total_uses
+           COUNT(*) AS total_uses,
+           COUNT(DISTINCT test_name) AS used_by_tests,
+           MAX(page_url) AS page_url
     FROM selector_learnings
     WHERE project_id = ? AND created_at >= ${cutoff}
     GROUP BY selector
@@ -349,6 +352,7 @@ function updateLearningSummary(projectId, config) {
   const failingPages = d.prepare(`
     SELECT url_path,
            ROUND(AVG(CASE WHEN success = 0 THEN 100.0 ELSE 0.0 END), 1) AS fail_rate,
+           COUNT(*) AS total_visits,
            SUM(console_errors) AS console_errors,
            SUM(network_errors) AS network_errors
     FROM page_learnings
@@ -364,7 +368,8 @@ function updateLearningSummary(projectId, config) {
     SELECT endpoint,
            ROUND(AVG(CASE WHEN is_error = 1 THEN 100.0 ELSE 0.0 END), 1) AS error_rate,
            ROUND(AVG(duration_ms)) AS avg_duration_ms,
-           COUNT(*) AS total_calls
+           COUNT(*) AS total_calls,
+           GROUP_CONCAT(DISTINCT status) AS status_codes
     FROM api_learnings
     WHERE project_id = ? AND created_at >= ${cutoff}
     GROUP BY endpoint
@@ -375,7 +380,7 @@ function updateLearningSummary(projectId, config) {
 
   // Top errors
   const topErrors = d.prepare(`
-    SELECT pattern, category, occurrence_count, last_seen, example_error
+    SELECT pattern, category, occurrence_count, first_seen, last_seen, example_error AS example_test
     FROM error_patterns
     WHERE project_id = ?
     ORDER BY occurrence_count DESC
