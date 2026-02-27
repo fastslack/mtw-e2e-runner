@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fetchIssue } from './issues.js';
 import { generateTests } from './ai-generate.js';
-import { waitForPool } from './pool.js';
+import { waitForAnyPool, getPoolUrls } from './pool-manager.js';
 import { runTestsParallel } from './runner.js';
 import { generateReport, saveReport, persistRun } from './reporter.js';
 
@@ -50,7 +50,7 @@ export async function verifyIssue(url, config) {
     }
 
     // 5. Wait for pool and run
-    await waitForPool(config.poolUrl);
+    await waitForAnyPool(getPoolUrls(config));
     const results = await runTestsParallel(tests, config, hooks);
     const report = generateReport(results);
     saveReport(report, config.screenshotsDir, config);

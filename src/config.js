@@ -60,12 +60,14 @@ const DEFAULTS = {
   gqlAuthHeader: 'Authorization',
   gqlAuthKey: 'accessToken',
   gqlAuthPrefix: 'Bearer ',
+  poolUrls: null,
 };
 
 function loadEnvVars() {
   const env = {};
   if (process.env.BASE_URL) env.baseUrl = process.env.BASE_URL;
   if (process.env.CHROME_POOL_URL) env.poolUrl = process.env.CHROME_POOL_URL;
+  if (process.env.CHROME_POOL_URLS) env.poolUrls = process.env.CHROME_POOL_URLS.split(',').map(u => u.trim()).filter(Boolean);
   if (process.env.TESTS_DIR) env.testsDir = process.env.TESTS_DIR;
   if (process.env.MODULES_DIR) env.modulesDir = process.env.MODULES_DIR;
   if (process.env.SCREENSHOTS_DIR) env.screenshotsDir = process.env.SCREENSHOTS_DIR;
@@ -193,6 +195,15 @@ export async function loadConfig(cliArgs = {}, cwd = null) {
   if (!config.projectName) {
     config.projectName = path.basename(cwd);
   }
+
+  // Normalize pool URLs: poolUrls array → _poolUrls, keep poolUrl as primary
+  if (config.poolUrls && Array.isArray(config.poolUrls) && config.poolUrls.length > 0) {
+    config._poolUrls = config.poolUrls;
+    config.poolUrl = config.poolUrls[0];
+  } else {
+    config._poolUrls = [config.poolUrl];
+  }
+  delete config.poolUrls;
 
   return config;
 }

@@ -9,6 +9,7 @@
 
 export { loadConfig } from './config.js';
 export { waitForPool, connectToPool, startPool, stopPool, restartPool, getPoolStatus } from './pool.js';
+export { getPoolUrls, getAllPoolStatuses, getAggregatedPoolStatus, waitForAnyPool, selectPool, selectAndConnect } from './pool-manager.js';
 export { executeAction } from './actions.js';
 export { runTest, runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from './runner.js';
 export { generateReport, generateJUnitXML, saveReport, printReport, saveHistory, loadHistory, loadHistoryRun } from './reporter.js';
@@ -24,7 +25,7 @@ export { writeToGraph, queryGraph, closeNeo4j } from './learner-neo4j.js';
 export { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
 
 import { loadConfig } from './config.js';
-import { waitForPool } from './pool.js';
+import { waitForAnyPool, getPoolUrls } from './pool-manager.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites } from './runner.js';
 import { generateReport, saveReport, printReport } from './reporter.js';
 
@@ -41,7 +42,7 @@ export async function createRunner(userConfig = {}) {
 
     /** Runs all test suites from the tests directory */
     async runAll() {
-      await waitForPool(config.poolUrl);
+      await waitForAnyPool(getPoolUrls(config));
       const { tests, hooks } = loadAllSuites(config.testsDir, config.modulesDir, config.exclude);
       const results = await runTestsParallel(tests, config, hooks);
       const report = generateReport(results);
@@ -52,7 +53,7 @@ export async function createRunner(userConfig = {}) {
 
     /** Runs a single suite by name */
     async runSuite(name) {
-      await waitForPool(config.poolUrl);
+      await waitForAnyPool(getPoolUrls(config));
       const { tests, hooks } = loadTestSuite(name, config.testsDir, config.modulesDir);
       const results = await runTestsParallel(tests, config, hooks);
       const report = generateReport(results);
@@ -63,7 +64,7 @@ export async function createRunner(userConfig = {}) {
 
     /** Runs an array of test objects */
     async runTests(tests) {
-      await waitForPool(config.poolUrl);
+      await waitForAnyPool(getPoolUrls(config));
       const results = await runTestsParallel(tests, config);
       const report = generateReport(results);
       saveReport(report, config.screenshotsDir, config);
@@ -73,7 +74,7 @@ export async function createRunner(userConfig = {}) {
 
     /** Runs tests from a JSON file path */
     async runFile(filePath) {
-      await waitForPool(config.poolUrl);
+      await waitForAnyPool(getPoolUrls(config));
       const { tests, hooks } = loadTestFile(filePath, config.modulesDir);
       const results = await runTestsParallel(tests, config, hooks);
       const report = generateReport(results);

@@ -13,7 +13,8 @@ import path from 'path';
 import http from 'http';
 
 import { loadConfig } from './config.js';
-import { waitForPool, getPoolStatus, connectToPool } from './pool.js';
+import { connectToPool } from './pool.js';
+import { waitForAnyPool, getPoolUrls, getAggregatedPoolStatus, selectPool } from './pool-manager.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from './runner.js';
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { narrateTest } from './narrate.js';
@@ -564,7 +565,7 @@ async function handleRun(args) {
   const config = await loadConfig(configOverrides, args.cwd);
   config.triggeredBy = 'mcp';
 
-  await waitForPool(config.poolUrl);
+  await waitForAnyPool(getPoolUrls(config));
 
   let tests, hooks;
 
@@ -814,17 +815,29 @@ async function handleCreateTest(args) {
 
 async function handlePoolStatus(args) {
   const config = await loadConfig({}, args.cwd);
-  const status = await getPoolStatus(config.poolUrl);
+  const poolUrls = getPoolUrls(config);
+  const aggregated = await getAggregatedPoolStatus(poolUrls);
 
-  const lines = [
-    `Available: ${status.available ? 'yes' : 'no'}`,
-    `Running:   ${status.running}/${status.maxConcurrent}`,
-    `Queued:    ${status.queued}`,
-    `Sessions:  ${status.sessions.length}`,
-  ];
+  const lines = [];
 
-  if (status.error) {
-    lines.push(`Error:     ${status.error}`);
+  if (poolUrls.length > 1) {
+    lines.push(`Pools:     ${aggregated.totalPools} (${aggregated.availableCount} available)`);
+    lines.push(`Running:   ${aggregated.totalRunning}/${aggregated.totalMaxConcurrent}`);
+    lines.push(`Queued:    ${aggregated.totalQueued}`);
+    lines.push('');
+    for (const pool of aggregated.pools) {
+      const status = pool.available ? 'available' : pool.error ? `offline (${pool.error})` : 'busy';
+      lines.push(`  ${pool.url}: ${status} (${pool.running}/${pool.maxConcurrent}, ${pool.queued} queued)`);
+    }
+  } else {
+    const pool = aggregated.pools[0];
+    lines.push(`Available: ${pool.available ? 'yes' : 'no'}`);
+    lines.push(`Running:   ${pool.running}/${pool.maxConcurrent}`);
+    lines.push(`Queued:    ${pool.queued}`);
+    lines.push(`Sessions:  ${pool.sessions?.length ?? 0}`);
+    if (pool.error) {
+      lines.push(`Error:     ${pool.error}`);
+    }
   }
 
   return textResult(lines.join('\n'));
@@ -1370,11 +1383,12 @@ async function handleAnalyze(args) {
   if (!args.url) return errorResult('Missing required parameter: url');
 
   const config = await loadConfig({}, args.cwd);
-  await waitForPool(config.poolUrl);
+  const poolUrls = getPoolUrls(config);
+  const chosenPool = await selectPool(poolUrls);
 
   let browser;
   try {
-    browser = await connectToPool(config.poolUrl);
+    browser = await connectToPool(chosenPool);
     const page = await browser.newPage();
     await page.setViewport(config.viewport);
 
@@ -1458,12 +1472,12 @@ async function handleCapture(args) {
   if (!args.url) return errorResult('Missing required parameter: url');
 
   const config = await loadConfig({}, args.cwd);
-
-  await waitForPool(config.poolUrl);
+  const capturePoolUrls = getPoolUrls(config);
+  const capturePool = await selectPool(capturePoolUrls);
 
   let browser;
   try {
-    browser = await connectToPool(config.poolUrl);
+    browser = await connectToPool(capturePool);
     const page = await browser.newPage();
     await page.setViewport(config.viewport);
 

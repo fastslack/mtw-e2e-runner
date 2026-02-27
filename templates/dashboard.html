@@ -51,6 +51,11 @@ a{color:var(--accent);text-decoration:none}
 .pool-info{font-size:11px;color:var(--text2);line-height:1.7}
 .pool-info strong{color:var(--text)}
 .ws-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
+.pool-list{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.pool-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);font-family:var(--mono);padding:2px 0}
+.pool-item .pool-dot{width:6px;height:6px;margin-right:0}
+.pool-item strong{color:var(--text);font-weight:500}
+.pool-item .pool-sessions{margin-left:auto;color:var(--text3);font-size:9px}
 
 /* ── Main ── */
 .main{margin-left:232px;flex:1;min-height:100vh;display:flex;flex-direction:column}
@@ -471,6 +476,15 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
 
 /* ── Serial Badge (NEW) ── */
 .serial-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:var(--amber-dim);color:var(--amber);vertical-align:middle;margin-left:4px}
+.pool-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:rgba(99,102,241,.15);color:#818cf8;vertical-align:middle;margin-left:4px;font-family:var(--mono);letter-spacing:-.3px}
+.pool-badge::before{content:'\1F517';font-size:8px}
+.lt-step.pool-log{background:rgba(99,102,241,.06);border-left:2px solid rgba(99,102,241,.3);padding-left:8px}
+.lt-step.pool-log .step-icon{color:#818cf8}
+.lt-step.pool-log .step-type{color:#818cf8;font-weight:600}
+.pool-dist{display:flex;align-items:stretch;gap:0;border-radius:6px;overflow:hidden;height:22px;margin:8px 0;font-size:10px;font-weight:600;font-family:var(--mono)}
+.pool-dist-seg{display:flex;align-items:center;justify-content:center;gap:4px;padding:0 8px;color:#fff;white-space:nowrap;min-width:40px;transition:flex .3s}
+.pool-dist-legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:4px 0 8px;font-size:10px;font-family:var(--mono);color:var(--text2)}
+.pool-dist-legend span::before{content:'';display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:middle}
 
 /* ── Run Detail Insights ── */
 .rd-insights{margin-bottom:16px;display:flex;flex-direction:column;gap:6px}
@@ -570,6 +584,7 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
       <strong>Pool</strong> <span id="poolLabel">--</span>
     </div>
     <div class="pool-info">Sessions: <strong id="poolSessions">-/-</strong></div>
+    <div class="pool-list" id="poolList" style="display:none"></div>
     <div class="pool-info" style="margin-top:6px">
       <span class="ws-dot" id="wsDot" style="background:var(--red)"></span>
       <span id="wsLabel" style="font-size:10px;color:var(--text3)">ws: connecting</span>
@@ -1028,6 +1043,11 @@ function handleWS(m){
       r2.active=m.activeCount;
       r2.tests[m.name]={status:'running',actions:0,totalActions:0,error:null,actionLog:[],screenshots:[],serial:m.serial||false};
       renderLive();break;
+    case 'test:pool':
+      var rp=getLiveRun(m);if(!rp||!rp.tests[m.name])break;
+      rp.tests[m.name].poolUrl=m.poolUrl||null;
+      rp.tests[m.name].actionLog.unshift({type:'pool',narrative:'\uD83D\uDD17 '+m.name+' \u2192 '+(m.poolUrl||'').replace('ws://','').replace('wss://',''),success:true,duration:null,isPoolLog:true});
+      renderLive();break;
     case 'test:action':
       var r3=getLiveRun(m);if(!r3||!r3.tests[m.name])break;
       var t=r3.tests[m.name];
@@ -1049,6 +1069,7 @@ function handleWS(m){
         if(m.screenshots&&m.screenshots.length)r5.tests[m.name].screenshots=m.screenshots;
         if(m.errorScreenshot)r5.tests[m.name].errorScreenshot=m.errorScreenshot;
         if(m.networkLogs&&m.networkLogs.length)r5.tests[m.name].networkLogs=m.networkLogs;
+        if(m.poolUrl)r5.tests[m.name].poolUrl=m.poolUrl;
       }
       r5.active=Math.max(0,r5.active-1);
       renderLive();break;
@@ -1094,9 +1115,37 @@ function triggerRun(suite,projectId){
 
 function renderPool(d){
   if(!d)return;
-  $('#poolDot').className='pool-dot '+(d.error||!d.available?'off':'on');
-  $('#poolLabel').textContent=d.error?'offline':d.available?'ready':'busy';
-  $('#poolSessions').textContent=(d.running||0)+'/'+(d.maxConcurrent||0);
+  var poolList=$('#poolList');
+  // Aggregated format (multi-pool): { totalRunning, totalMaxConcurrent, pools: [...] }
+  if(d.pools&&d.pools.length>1){
+    var anyAvail=d.availableCount>0;
+    $('#poolDot').className='pool-dot '+(anyAvail?'on':'off');
+    $('#poolLabel').textContent=anyAvail?d.availableCount+'/'+d.totalPools+' ready':'all busy';
+    $('#poolSessions').textContent=(d.totalRunning||0)+'/'+(d.totalMaxConcurrent||0);
+    // Render per-pool detail list
+    poolList.textContent='';poolList.style.display='';
+    d.pools.forEach(function(p){
+      var label=(p.url||'').replace('ws://','').replace('wss://','');
+      var ok=!p.error&&p.available;
+      var dot=el('span',{className:'pool-dot '+(ok?'on':'off')});
+      var name=el('strong',{},label);
+      var status=el('span',{},p.error?'offline':p.available?'ready':'busy');
+      var sess=el('span',{className:'pool-sessions'},(p.running||0)+'/'+(p.maxConcurrent||0));
+      poolList.appendChild(el('div',{className:'pool-item'},[dot,name,status,sess]));
+    });
+  }else if(d.pools&&d.pools.length===1){
+    var p=d.pools[0];
+    $('#poolDot').className='pool-dot '+(p.error||!p.available?'off':'on');
+    $('#poolLabel').textContent=p.error?'offline':p.available?'ready':'busy';
+    $('#poolSessions').textContent=(p.running||0)+'/'+(p.maxConcurrent||0);
+    poolList.style.display='none';
+  }else{
+    // Legacy single-pool format
+    $('#poolDot').className='pool-dot '+(d.error||!d.available?'off':'on');
+    $('#poolLabel').textContent=d.error?'offline':d.available?'ready':'busy';
+    $('#poolSessions').textContent=(d.running||0)+'/'+(d.maxConcurrent||0);
+    poolList.style.display='none';
+  }
 }
 function refreshStatus(){api('/api/status').then(function(d){renderPool(d.pool)}).catch(function(){})}
 
@@ -1538,6 +1587,15 @@ function loadDetailInline(id,detailTr){
       }
     }).catch(function(){insightsContainer.style.display='none'});
 
+    // Pool distribution bar (history)
+    var histPoolTests={};
+    results.forEach(function(r){
+      if(!r.poolUrl)return;
+      histPoolTests[r.name]={poolUrl:r.poolUrl,success:r.success};
+    });
+    var histPoolDist=buildPoolDistribution(histPoolTests);
+    if(histPoolDist)inner.appendChild(histPoolDist);
+
     results.forEach(function(r){
       var d2=r.durationMs?dur(r.durationMs):r.endTime&&r.startTime?dur(new Date(r.endTime)-new Date(r.startTime)):'-';
       var flaky=r.success&&r.attempt>1;
@@ -1547,7 +1605,8 @@ function loadDetailInline(id,detailTr){
       badges.appendChild(el('span',{className:'badge '+(r.success?'pass':'fail')},r.success?'PASS':'FAIL'));
       if(flaky)badges.appendChild(el('span',{className:'badge flaky'},'FLAKY'));
 
-      var head=el('div',{className:'rd-test-head'},[badges,el('div',{className:'rd-test-name'},r.name),el('div',{className:'rd-test-dur'},d2)]);
+      var poolEl=r.poolUrl?el('span',{className:'pool-badge'},r.poolUrl.replace('ws://','').replace('wss://',''))  :null;
+      var head=el('div',{className:'rd-test-head'},[badges,el('div',{className:'rd-test-name'},[document.createTextNode(r.name),poolEl]),el('div',{className:'rd-test-dur'},d2)]);
       var body=el('div',{className:'rd-test-body'});
 
       if(r.maxAttempts>1){body.appendChild(el('div',{className:'rd-retries'},'Attempt '+r.attempt+' of '+r.maxAttempts))}
@@ -1717,6 +1776,40 @@ function searchByHash(){
 $('#ssHashBtn').addEventListener('click',searchByHash);
 $('#ssHashInput').addEventListener('keydown',function(e){if(e.key==='Enter')searchByHash()});
 
+/* ── Pool Distribution Summary ── */
+var POOL_COLORS=['#6366f1','#22d3ee','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#14b8a6'];
+function buildPoolDistribution(tests){
+  var pools={};var total=0;
+  Object.keys(tests).forEach(function(n){
+    if(n==='__error')return;var t=tests[n];
+    if(!t.poolUrl)return;
+    var label=t.poolUrl.replace('ws://','').replace('wss://','');
+    if(!pools[label])pools[label]={count:0,passed:0,failed:0};
+    pools[label].count++;total++;
+    if(t.status==='passed'||t.success)pools[label].passed++;
+    if(t.status==='failed'||t.success===false)pools[label].failed++;
+  });
+  var keys=Object.keys(pools);
+  if(keys.length<2)return null;
+  var bar=el('div',{className:'pool-dist'});
+  var legend=el('div',{className:'pool-dist-legend'});
+  keys.forEach(function(k,i){
+    var pct=Math.round(pools[k].count/total*100);
+    var color=POOL_COLORS[i%POOL_COLORS.length];
+    var seg=el('div',{className:'pool-dist-seg'});
+    seg.style.flex=pools[k].count;seg.style.background=color;
+    seg.textContent=k+' ('+pools[k].count+')';
+    bar.appendChild(seg);
+    var lg=el('span',{},k+': '+pools[k].count+' tests ('+pct+'%)');
+    lg.querySelector||null;
+    lg.style.cssText='display:inline-flex;align-items:center;gap:4px';
+    var dot=el('span',{});dot.style.cssText='width:8px;height:8px;border-radius:2px;background:'+color+';flex-shrink:0';
+    lg.insertBefore(dot,lg.firstChild);
+    legend.appendChild(lg);
+  });
+  return el('div',{style:'padding:4px 12px'},[bar,legend]);
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Live Execution (+ Retry badges, Serial badges)
    ══════════════════════════════════════════════════════════════════ */
@@ -1773,6 +1866,10 @@ function renderLive(){
       dismissBtn
     ]));
 
+    // Pool distribution bar (live)
+    var poolDist=buildPoolDistribution(L.tests);
+    if(poolDist)grid.appendChild(poolDist);
+
     var testGrid=el('div',{className:'lr-test-grid'});
     Object.keys(L.tests).forEach(function(name){
       if(name==='__error')return;
@@ -1791,12 +1888,13 @@ function renderLive(){
           var durText=a.duration!=null?(a.duration<1000?a.duration+'ms':(a.duration/1000).toFixed(1)+'s'):'';
           var retryBadge=null;
           if(a.actionRetries&&a.actionRetries>0){retryBadge=el('span',{className:'badge flaky',style:'font-size:9px;padding:1px 5px;margin-left:4px'},'\u21BB x'+a.actionRetries)}
-          stepsEl.appendChild(el('div',{className:'lt-step'},[
-            el('span',{className:'step-icon '+(a.success?'ok':'fail')},a.success?'\u2714':'\u2718'),
-            el('span',{className:'step-type'},a.type),
-            el('span',{className:'step-detail'},detail),
+          var stepCls='lt-step'+(a.isPoolLog?' pool-log':'');
+          stepsEl.appendChild(el('div',{className:stepCls},[
+            el('span',{className:'step-icon '+(a.isPoolLog?'':a.success?'ok':'fail')},a.isPoolLog?'\uD83D\uDD17':a.success?'\u2714':'\u2718'),
+            el('span',{className:'step-type'},a.isPoolLog?'pool':a.type),
+            el('span',{className:'step-detail'},a.isPoolLog?a.narrative:detail),
             retryBadge,
-            el('span',{className:'step-dur'},durText)
+            a.isPoolLog?null:el('span',{className:'step-dur'},durText)
           ]));
         });
         if(t.status==='running'&&t.actions<t.totalActions){stepsEl.appendChild(el('div',{className:'lt-step'},[el('span',{className:'step-icon run spinner-small'}),el('span',{className:'step-type',style:'opacity:.6'},'waiting...')]))}
@@ -1831,10 +1929,11 @@ function renderLive(){
       }
 
       var serialBadge=t.serial?el('span',{className:'serial-badge'},'Serial'):null;
+      var poolBadge=t.poolUrl?el('span',{className:'pool-badge'},t.poolUrl.replace('ws://','').replace('wss://','')):null;
       var card=el('div',{className:'live-test '+t.status+(isCollapsed?' collapsed':'')},[
         el('div',{className:'lt-name'},[
           t.status==='running'?el('span',{className:'spinner'}):el('span',{className:'lt-icon',style:iconColor},iconText),
-          document.createTextNode(' '+name),serialBadge,summaryEl
+          document.createTextNode(' '+name),serialBadge,poolBadge,summaryEl
         ]),
         el('div',{className:'lt-meta'},meta),stepsEl
       ]);

@@ -14,7 +14,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { createWebSocketServer } from './websocket.js';
-import { getPoolStatus, waitForPool } from './pool.js';
+import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool } from './pool-manager.js';
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
 import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
@@ -105,9 +105,11 @@ export async function startDashboard(config) {
 
       // API: pool status + dashboard state
       if (pathname === '/api/status') {
-        const poolStatus = await getPoolStatus(config.poolUrl);
+        const poolUrls = getPoolUrls(config);
+        const aggregated = await getAggregatedPoolStatus(poolUrls);
         jsonResponse(res, {
-          pool: poolStatus,
+          pool: aggregated,
+          poolUrls,
           dashboard: {
             running: currentRun?.running || false,
             wsClients: wss.clientCount,
@@ -115,6 +117,7 @@ export async function startDashboard(config) {
           config: {
             baseUrl: config.baseUrl,
             poolUrl: config.poolUrl,
+            poolUrls,
             concurrency: config.concurrency,
             testsDir: config.testsDir,
           },
@@ -694,11 +697,12 @@ export async function startDashboard(config) {
     },
   });
 
-  // Pool status polling
+  // Pool status polling (aggregated across all pools)
+  const poolUrls = getPoolUrls(config);
   const pollInterval = setInterval(async () => {
     try {
-      const status = await getPoolStatus(config.poolUrl);
-      wss.broadcast(JSON.stringify({ event: 'pool:status', data: status }));
+      const aggregated = await getAggregatedPoolStatus(poolUrls);
+      wss.broadcast(JSON.stringify({ event: 'pool:status', data: aggregated }));
     } catch { /* */ }
   }, 5000);
 
@@ -725,7 +729,8 @@ export async function startDashboard(config) {
         const projectCwd = dbGetProjectCwd(params.projectId);
         if (!projectCwd) throw new Error('Project not found');
         runConfig = await loadConfig({}, projectCwd);
-        // Inherit pool URL from dashboard config (pool is shared)
+        // Inherit pool URLs from dashboard config (pool is shared)
+        runConfig._poolUrls = getPoolUrls(config);
         runConfig.poolUrl = config.poolUrl;
       } else {
         runConfig = { ...config };
@@ -748,7 +753,7 @@ export async function startDashboard(config) {
         ({ tests, hooks } = loadAllSuites(runConfig.testsDir, runConfig.modulesDir, runConfig.exclude));
       }
 
-      await waitForPool(runConfig.poolUrl);
+      await waitForAnyPool(getPoolUrls(runConfig));
       const results = await runTestsParallel(tests, runConfig, hooks || {});
       const report = generateReport(results);
       const suiteName = params.suite || null;

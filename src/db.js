@@ -248,6 +248,13 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_vars_scope   ON variables(project_id, scope);
   `);
 
+  // Add pool_url column for multi-pool tracking
+  try {
+    db.prepare('SELECT pool_url FROM test_results LIMIT 0').run();
+  } catch {
+    db.exec('ALTER TABLE test_results ADD COLUMN pool_url TEXT');
+  }
+
   // Migrations: add metadata columns to screenshot_hashes
   const ssColumns = db.pragma('table_info(screenshot_hashes)').map(c => c.name);
   if (!ssColumns.includes('test_name')) {
@@ -339,8 +346,8 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
   `);
 
   const insertTest = d.prepare(`
-    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots, network_logs, actions_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots, network_logs, actions_json, pool_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertHash = d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id, test_name, step_index, page_url, screenshot_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -399,6 +406,7 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
         screenshots.length ? JSON.stringify(screenshots) : null,
         r.networkLogs?.length ? JSON.stringify(r.networkLogs) : null,
         actionsCondensed.length ? JSON.stringify(actionsCondensed) : null,
+        r.poolUrl || null,
       );
 
       // Register screenshot hashes with metadata
@@ -507,6 +515,7 @@ export function getRunDetail(runDbId) {
         networkLogs: t.network_logs ? JSON.parse(t.network_logs) : [],
         actions: t.actions_json ? JSON.parse(t.actions_json) : [],
         screenshotHashes,
+        poolUrl: t.pool_url || null,
       };
     }),
   };

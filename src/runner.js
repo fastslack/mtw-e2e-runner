@@ -9,7 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import https from 'https';
-import { connectToPool, waitForPool, getPoolStatus } from './pool.js';
+import { connectToPool } from './pool.js';
+import { getPoolUrls, selectPool, releasePending } from './pool-manager.js';
 import { executeAction } from './actions.js';
 import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
@@ -108,26 +109,6 @@ function normalizeTestData(data) {
   return { tests: data.tests || [], hooks };
 }
 
-/** Waits until the pool has capacity before connecting */
-async function waitForSlot(poolUrl, pollIntervalMs = 2000, maxWaitMs = 60000) {
-  const start = Date.now();
-  while (Date.now() - start < maxWaitMs) {
-    try {
-      const status = await getPoolStatus(poolUrl);
-      if (status.available && status.running < status.maxConcurrent) {
-        return;
-      }
-      log('⏳', `${C.dim}Pool at capacity (${status.running}/${status.maxConcurrent}, ${status.queued} queued), waiting for slot...${C.reset}`);
-    } catch {
-      // Pool unreachable, let connectToPool handle the error
-      return;
-    }
-    await sleep(pollIntervalMs);
-  }
-  // Timeout — proceed anyway and let connectToPool deal with it
-  log('⚠️', `${C.yellow}Waited ${maxWaitMs / 1000}s for pool slot, proceeding anyway${C.reset}`);
-}
-
 /** Extracts a value from an object using a dot-path (e.g. "data.token"). */
 function getByPath(obj, dotPath) {
   return dotPath.split('.').reduce((o, key) => o?.[key], obj);
@@ -188,8 +169,15 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
   const pendingBodies = [];
 
   try {
-    await waitForSlot(config.poolUrl);
-    browser = await connectToPool(config.poolUrl, config.connectRetries, config.connectRetryDelay);
+    const chosenPool = await selectPool(getPoolUrls(config));
+    result.poolUrl = chosenPool;
+    const poolLabel = chosenPool.replace('ws://', '').replace('wss://', '');
+    const isMultiPool = getPoolUrls(config).length > 1;
+    if (isMultiPool) {
+      log('🔗', `${C.cyan}${test.name}${C.reset} ${C.dim}→ ${poolLabel}${C.reset}`);
+    }
+    progressFn({ event: 'test:pool', name: test.name, poolUrl: chosenPool });
+    browser = await connectToPool(chosenPool, config.connectRetries, config.connectRetryDelay);
     // Use incognito context for cookie isolation between concurrent tests
     context = await browser.createBrowserContext();
     page = await context.newPage();
@@ -377,6 +365,10 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     if (browser) {
       try { browser.disconnect(); } catch { /* */ }
     }
+    // Release local pending counter so selectPool() knows this slot is free
+    if (result.poolUrl) {
+      releasePending(result.poolUrl);
+    }
   }
 
   return result;
@@ -397,7 +389,8 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     log('🪝', `${C.dim}Running beforeAll hook...${C.reset}`);
     let browser = null;
     try {
-      browser = await connectToPool(config.poolUrl, config.connectRetries, config.connectRetryDelay);
+      const hookPool = await selectPool(getPoolUrls(config));
+      browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
       const page = await browser.newPage();
       await page.setViewport(config.viewport);
       await executeHookActions(page, hooks.beforeAll, config);
@@ -493,7 +486,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       activeCount--;
 
       const screenshots = result.actions.filter(a => a.result?.screenshot).map(a => a.result.screenshot);
-      _progress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, networkLogs: result.networkLogs, errorScreenshot: result.errorScreenshot, screenshots });
+      _progress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, networkLogs: result.networkLogs, errorScreenshot: result.errorScreenshot, screenshots, poolUrl: result.poolUrl || null });
 
       if (result.success) {
         const flaky = result.attempt > 1 ? ` ${C.yellow}(flaky, passed on attempt ${result.attempt}/${result.maxAttempts})${C.reset}` : '';
@@ -531,7 +524,8 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     log('🪝', `${C.dim}Running afterAll hook...${C.reset}`);
     let browser = null;
     try {
-      browser = await connectToPool(config.poolUrl, config.connectRetries, config.connectRetryDelay);
+      const hookPool = await selectPool(getPoolUrls(config));
+      browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
       const page = await browser.newPage();
       await page.setViewport(config.viewport);
       await executeHookActions(page, hooks.afterAll, config);

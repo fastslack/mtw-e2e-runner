@@ -29,7 +29,8 @@ import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../src/config.js';
-import { startPool, stopPool, restartPool, getPoolStatus, waitForPool, connectToPool } from '../src/pool.js';
+import { startPool, stopPool, restartPool, connectToPool } from '../src/pool.js';
+import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool, selectPool } from '../src/pool-manager.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
 import { generateReport, saveReport, printReport, persistRun, printInsights } from '../src/reporter.js';
 import { startDashboard } from '../src/dashboard.js';
@@ -63,6 +64,7 @@ function parseCLIConfig() {
   const cliArgs = {};
   if (getFlag('--base-url')) cliArgs.baseUrl = getFlag('--base-url');
   if (getFlag('--pool-url')) cliArgs.poolUrl = getFlag('--pool-url');
+  if (getFlag('--pool-urls')) cliArgs.poolUrls = getFlag('--pool-urls').split(',').map(u => u.trim()).filter(Boolean);
   if (getFlag('--tests-dir')) cliArgs.testsDir = getFlag('--tests-dir');
   if (getFlag('--modules-dir')) cliArgs.modulesDir = getFlag('--modules-dir');
   if (getFlag('--screenshots-dir')) cliArgs.screenshotsDir = getFlag('--screenshots-dir');
@@ -145,6 +147,7 @@ ${C.bold}Usage:${C.reset}
 ${C.bold}Options:${C.reset}
   --base-url <url>         App base URL (default: http://host.docker.internal:3000)
   --pool-url <ws-url>      Chrome Pool URL (default: ws://localhost:3333)
+  --pool-urls <urls>       Multiple Chrome Pool URLs, comma-separated (distributes tests)
   --tests-dir <dir>        Tests directory (default: e2e/tests)
   --modules-dir <dir>      Reusable modules directory (default: e2e/modules)
   --screenshots-dir <dir>  Screenshots directory (default: e2e/screenshots)
@@ -177,8 +180,10 @@ async function cmdRun() {
   let tests = [];
   let hooks = {};
 
+  const poolUrls = getPoolUrls(config);
   console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
-  console.log(`${C.dim}Pool: ${config.poolUrl} | Base: ${config.baseUrl} | Concurrency: ${config.concurrency}${C.reset}\n`);
+  const poolDisplay = poolUrls.length > 1 ? `${poolUrls.length} pools` : config.poolUrl;
+  console.log(`${C.dim}Pool: ${poolDisplay} | Base: ${config.baseUrl} | Concurrency: ${config.concurrency}${C.reset}\n`);
 
   if (hasFlag('--all')) {
     const loaded = loadAllSuites(config.testsDir, config.modulesDir, config.exclude);
@@ -215,8 +220,8 @@ async function cmdRun() {
   }
 
   // Verify pool connectivity
-  log('🔌', 'Checking Chrome Pool...');
-  const pressure = await waitForPool(config.poolUrl);
+  log('🔌', `Checking Chrome Pool${poolUrls.length > 1 ? 's' : ''}...`);
+  const pressure = await waitForAnyPool(poolUrls);
   log('✅', `Pool ready (${pressure.running}/${pressure.maxConcurrent} sessions, queued: ${pressure.queued})`);
 
   // Wire up live progress to dashboard if running
@@ -298,15 +303,32 @@ async function cmdPool() {
       break;
 
     case 'status': {
-      const status = await getPoolStatus(config.poolUrl);
+      const statusPoolUrls = getPoolUrls(config);
+      const aggregated = await getAggregatedPoolStatus(statusPoolUrls);
       console.log(`\n${C.bold}Chrome Pool Status:${C.reset}\n`);
-      if (status.error) {
-        console.log(`  ${C.red}Offline${C.reset}: ${status.error}`);
+
+      if (statusPoolUrls.length > 1) {
+        console.log(`  Pools:      ${aggregated.totalPools} (${aggregated.availableCount} available)`);
+        console.log(`  Running:    ${aggregated.totalRunning}/${aggregated.totalMaxConcurrent}`);
+        console.log(`  Queued:     ${aggregated.totalQueued}`);
+        console.log('');
+        for (const pool of aggregated.pools) {
+          const label = pool.available ? `${C.green}Available${C.reset}` : pool.error ? `${C.red}Offline${C.reset}` : `${C.red}Busy${C.reset}`;
+          console.log(`  ${C.cyan}${pool.url}${C.reset}`);
+          console.log(`    Status:   ${label}${pool.error ? ` (${pool.error})` : ''}`);
+          console.log(`    Running:  ${pool.running}/${pool.maxConcurrent}`);
+          console.log(`    Queued:   ${pool.queued}`);
+        }
       } else {
-        console.log(`  Status:     ${status.available ? `${C.green}Available${C.reset}` : `${C.red}Busy${C.reset}`}`);
-        console.log(`  Running:    ${status.running}/${status.maxConcurrent}`);
-        console.log(`  Queued:     ${status.queued}`);
-        console.log(`  Sessions:   ${status.sessions.length}`);
+        const pool = aggregated.pools[0];
+        if (pool.error) {
+          console.log(`  ${C.red}Offline${C.reset}: ${pool.error}`);
+        } else {
+          console.log(`  Status:     ${pool.available ? `${C.green}Available${C.reset}` : `${C.red}Busy${C.reset}`}`);
+          console.log(`  Running:    ${pool.running}/${pool.maxConcurrent}`);
+          console.log(`  Queued:     ${pool.queued}`);
+          console.log(`  Sessions:   ${pool.sessions?.length ?? 0}`);
+        }
       }
       console.log('');
       break;
@@ -423,12 +445,14 @@ async function cmdCapture() {
 
   console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
 
+  const capturePoolUrls = getPoolUrls(config);
   log('🔌', 'Checking Chrome Pool...');
-  await waitForPool(config.poolUrl);
+  await waitForAnyPool(capturePoolUrls);
 
   let browser;
   try {
-    browser = await connectToPool(config.poolUrl);
+    const capturePool = await selectPool(capturePoolUrls);
+    browser = await connectToPool(capturePool);
     const page = await browser.newPage();
     await page.setViewport(config.viewport);
 
