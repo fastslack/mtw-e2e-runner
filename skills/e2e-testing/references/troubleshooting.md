@@ -148,8 +148,8 @@ Or use `assert_no_network_errors` at specific points:
 Use network log drill-down:
 ```
 e2e_network_logs(runDbId, errorsOnly: true)                    → see all failed requests
-e2e_network_logs(runDbId, urlPattern: "/api/patients")          → filter by URL
-e2e_network_logs(runDbId, testName: "create-patient", includeBodies: true) → full request/response
+e2e_network_logs(runDbId, urlPattern: "/api/users")             → filter by URL
+e2e_network_logs(runDbId, testName: "create-user", includeBodies: true) → full request/response
 ```
 
 ## Common Mistakes
@@ -180,3 +180,45 @@ When checking paths, use path-only format (starts with `/`):
 { "type": "assert_url", "value": "/dashboard" }
 ```
 This compares against the pathname only, ignoring the `host.docker.internal` origin.
+
+## Action Type Pre-Validation
+
+All action types are validated at **load time** (before any browser connections). If a test file contains an unknown action type (e.g., a typo like `"clik"`), loading throws immediately with the location:
+
+```
+Unknown action type(s) in auth.json: "clik" in test "login-test"
+```
+
+The `KNOWN_ACTION_TYPES` Set in `src/actions.js` is the single source of truth. Unknown actions also throw at runtime as a safety net.
+
+## Screenshot Hashes
+
+Every screenshot captured during a run is assigned a short hash (`ss:a3f2b1c9`) — the first 8 hex chars of the SHA-256 of its file path. Hashes are deterministic and computed identically on the server (Node `crypto`) and in the browser (Web Crypto API).
+
+**Flow**: screenshot saved on disk → `saveRun()` registers hash in SQLite `screenshot_hashes` table → dashboard shows `[ss:XXXXXXXX]` badge (click to copy) → user pastes hash in Claude Code → `e2e_screenshot` MCP tool looks up hash, reads file, returns the image.
+
+- Hashes are registered inside the `saveRun()` transaction (covers action, error, verification, and baseline screenshots)
+- The `ss:` prefix is optional when calling `e2e_screenshot` — stripped during lookup
+- Dashboard computes hashes client-side (Web Crypto) for the Live view (before `persistRun()` writes to DB)
+- Run detail API (`/api/db/runs/:id`) includes `screenshotHashes` map per test result
+- Dashboard endpoint `/api/screenshot-hash/:hash` serves the image by hash
+- Dashboard Screenshots view has a **search bar** — type a hash to find and display the screenshot
+
+## Web Dashboard
+
+**`src/dashboard.js`** — HTTP server, REST API, WebSocket broadcast, pool polling.
+**`templates/dashboard.html`** — SPA, dark theme, vanilla JS, safe DOM (textContent + createEl helper).
+
+**Features:**
+- Live test execution with WebSocket updates
+- Run history with inline detail expansion
+- Screenshots gallery with hash badges and hash search
+- Network request logs with clickable expandable rows (full request/response detail)
+- Pool status monitoring
+- Multi-project support via project selector
+- Variables tab with masked values, inline edit, add, and delete
+
+**CLI:** `e2e-runner dashboard [--port 8484]`
+**MCP tools:** `e2e_dashboard_start`, `e2e_dashboard_stop`
+
+Config defaults: `dashboardPort: 8484`, `maxHistoryRuns: 100`

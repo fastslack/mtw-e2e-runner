@@ -85,7 +85,7 @@ Add an `expect` field to any test for AI-powered visual verification:
 ```json
 {
   "name": "dashboard-loads",
-  "expect": "Should show patient list with at least 3 rows and no error messages",
+  "expect": "Should show data table with at least 3 rows and no error messages",
   "actions": [...]
 }
 ```
@@ -162,5 +162,12 @@ Start/stop the web dashboard with `e2e_dashboard_start` / `e2e_dashboard_stop` f
 ## References
 
 - [Action Types Reference](references/action-types.md) — Complete catalog of 28+ action types with fields and examples
-- [Test JSON Format](references/test-json-format.md) — JSON structure, hooks, serial, retries, modules, exclude patterns, environment profiles
-- [Troubleshooting](references/troubleshooting.md) — Common problems and solutions
+- [Test JSON Format](references/test-json-format.md) — JSON structure, hooks, serial, retries, modules, exclude patterns, environment profiles, CI output
+- [GraphQL Action](references/graphql.md) — GQL action config, variables, inline assertions, __e2eGql helper
+- [Authentication Strategies](references/auth-strategies.md) — 6 auth methods + auto-login + reusable auth modules
+- [Network Debugging](references/network-debugging.md) — Error handling, request logging, drill-down pattern
+- [Visual Verification](references/visual-verification.md) — Expect field, double screenshots, strictness levels, verdict format
+- [Multi-Pool Support](references/multi-pool.md) — Config, selection algorithm, failover, pool-aware queue
+- [Variables](references/variables.md) — SQLite-backed variables, syntax, MCP tool, dashboard UI, REST API
+- [Issue Verification](references/issue-verification.md) — GitHub/GitLab, AI modes, test categories, GitLab limitations
+- [Troubleshooting](references/troubleshooting.md) — Common problems, pre-validation, screenshot hashes, dashboard

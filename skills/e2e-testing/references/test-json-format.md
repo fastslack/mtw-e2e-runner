@@ -150,6 +150,10 @@ export default {
 
 Activate with `--env staging` or `E2E_ENV=staging`. Profile values override all other config.
 
+## CI Output Formats
+
+Use `--output <format>` to control report output: `json` (default), `junit` (JUnit XML), or `both`. JUnit XML is generated without external dependencies and saved to `{screenshotsDir}/junit.xml`. The `generateJUnitXML()` function is also exported from the programmatic API.
+
 ## Config Priority (ascending)
 
 1. Hardcoded defaults

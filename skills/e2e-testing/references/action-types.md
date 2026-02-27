@@ -76,8 +76,20 @@ Complete catalog of all action types supported by @matware/e2e-runner.
 | `get_text` | `selector` | Returns `{ value: textContent.trim() }`. Non-assertion — never fails. |
 | `screenshot` | `value` (filename, optional) | Captures screenshot. Filename gets timestamp suffix for uniqueness. |
 | `wait` | `selector` OR `text` OR `value` (ms) | Wait for selector, text on page, or fixed delay. |
-| `evaluate` | `value` (JS code) | Run JavaScript in browser context. **Strict**: returns starting with `FAIL:`/`ERROR:` → test fails. Returns `false` → test fails. |
+| `wait_network_idle` | `value` (idle ms, default 500), `timeout` (max wait ms, default 30000) | Waits for all network requests to complete. Uses Puppeteer's `page.waitForNetworkIdle()`. Useful after SPA page transitions or data loading. |
+| `evaluate` | `value` (JS code) | Run JavaScript in browser context. See **Strict Evaluate** below. |
 | `clear_cookies` | `value` (origin, optional) | Clears cookies, localStorage, sessionStorage for origin. |
+
+### Strict Evaluate Semantics
+
+The `evaluate` action checks the return value:
+
+- If the JS returns a string starting with `FAIL:`, `ERROR:`, or `FAILED:` → the test **fails** with that message.
+- If the JS returns `false` → the test **fails** (`evaluate returned false`).
+- If the JS returns any other non-null value → stored as `{ value: result }` for visibility.
+- If the JS throws → the test **fails** (standard Puppeteer error).
+
+This prevents false PASSes where evaluate actions return error strings that were previously silently ignored.
 
 ## Action-Level Retry
 
@@ -94,14 +106,14 @@ Delay between retries: `actionRetryDelay` config (default 500ms).
 
 ### React input + autocomplete flow
 ```json
-{ "type": "focus_autocomplete", "text": "Diagnosis" },
-{ "type": "type_react", "selector": "#diagnosis-input", "value": "Cefalea" },
-{ "type": "click_option", "text": "Cefalea tensional" }
+{ "type": "focus_autocomplete", "text": "Category" },
+{ "type": "type_react", "selector": "#category-input", "value": "Electr" },
+{ "type": "click_option", "text": "Electronics" }
 ```
 
 ### Regex click (last match)
 ```json
-{ "type": "click_regex", "text": "start encounter", "selector": "button", "value": "last" }
+{ "type": "click_regex", "text": "add to cart", "selector": "button", "value": "last" }
 ```
 
 ### Form validation assertions
