@@ -1,0 +1,53 @@
+/* ── Watch View: Project Cards ── */
+.watch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:24px}
+.watch-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;transition:border-color .2s,box-shadow .2s}
+.watch-card:hover{border-color:var(--border-hi);box-shadow:0 2px 12px rgba(0,0,0,.25)}
+.watch-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.watch-card-name{font-family:var(--sans);font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.watch-card-icons{display:flex;gap:6px;flex-shrink:0;margin-left:8px}
+.watch-card-icons .btn{padding:3px 8px;font-size:10px}
+
+/* ── Sparkline ── */
+.watch-sparkline{height:40px;margin-bottom:10px}
+.watch-sparkline svg{width:100%;height:100%;display:block}
+
+/* ── Card Footer ── */
+.watch-card-footer{display:flex;align-items:center;justify-content:space-between;font-size:11px}
+.watch-card-status{display:flex;align-items:center;gap:6px}
+.watch-card-status .status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.watch-card-status .status-dot.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+.watch-card-status .status-dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+.watch-card-status .status-dot.amber{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.watch-card-status .status-dot.dim{background:var(--text3)}
+.watch-card-rate{font-weight:600}
+.watch-card-rate.green{color:var(--green)}
+.watch-card-rate.amber{color:var(--amber)}
+.watch-card-rate.red{color:var(--red)}
+
+.watch-card-meta{display:flex;flex-direction:column;gap:4px;margin-top:10px;font-size:10px;color:var(--text3)}
+.watch-card-meta span{display:flex;align-items:center;gap:6px}
+.watch-card-countdown{color:var(--accent);font-weight:500;font-variant-numeric:tabular-nums}
+.watch-card-commit{font-family:var(--mono);color:var(--text3)}
+
+/* ── Event Log ── */
+.watch-event-log{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.watch-event-log-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface2)}
+.watch-event-log-header .title{font-family:var(--sans);font-size:13px;font-weight:600}
+.watch-event-log-body{max-height:400px;overflow-y:auto}
+.watch-event-row{display:grid;grid-template-columns:120px 130px minmax(80px,1fr) 46px 74px 40px 52px 60px;align-items:center;gap:0;padding:7px 16px;border-bottom:1px solid var(--border);font-size:11px;transition:background .1s}
+.watch-event-row:last-child{border-bottom:none}
+.watch-event-row:hover{background:var(--surface2)}
+.watch-event-row.we-header{font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;padding:6px 16px;background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1}
+.watch-event-row.we-header:hover{background:var(--surface2)}
+.watch-event-time{color:var(--text3);font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.watch-event-project{color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+.watch-event-suite{color:var(--accent);font-family:var(--mono);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+.watch-event-result{justify-self:center}
+.watch-event-counts{font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap;text-align:center}
+.watch-event-counts .we-counts-ok{color:var(--green)}
+.watch-event-rate{font-weight:600;color:var(--text2);font-variant-numeric:tabular-nums;text-align:right}
+.watch-event-duration{color:var(--text3);font-family:var(--mono);font-size:10px;text-align:right}
+.we-trigger{color:var(--text3);font-size:9px;padding:1px 6px;border-radius:8px;background:var(--surface3);white-space:nowrap;text-align:center;justify-self:end}
+
+/* ── Watch Table (legacy) ── */
+.watch-jobs-table{width:100%;border-collapse:collapse;font-size:11px}

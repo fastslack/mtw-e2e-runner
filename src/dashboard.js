@@ -17,10 +17,12 @@ import { createWebSocketServer } from './websocket.js';
 import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool } from './pool-manager.js';
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
-import { listProjects as dbListProjects, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
+import { listProjects as dbListProjects, listProjectsWithSparklines as dbListProjectsWithSparklines, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot } from './learner-sqlite.js';
+import { handleSyncRoutes } from './sync/hub-routes.js';
+import { migrateSyncSchema } from './sync/schema.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -38,6 +40,12 @@ export async function startDashboard(config) {
   const port = config.dashboardPort || 8484;
   const MAX_BODY = 1024 * 1024; // 1MB limit for POST bodies
   const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', 'templates', 'dashboard.html'), 'utf-8');
+  
+  // Migrate sync schema if in hub mode
+  if (config.sync?.mode === 'hub') {
+    migrateSyncSchema();
+    log(`${C.cyan}[sync]${C.reset} Hub mode enabled`);
+  }
 
   let currentRun = null; // { running: true, runId, report } or null
   let latestReport = null;
@@ -96,6 +104,12 @@ export async function startDashboard(config) {
     }
 
     try {
+      // Handle sync routes if in hub mode
+      if (config.sync?.mode === 'hub' && pathname.startsWith('/api/sync')) {
+        const handled = await handleSyncRoutes(req, res, config, pathname);
+        if (handled) return;
+      }
+      
       // Serve dashboard HTML
       if (pathname === '/' || pathname === '/index.html') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -120,6 +134,7 @@ export async function startDashboard(config) {
             poolUrls,
             concurrency: config.concurrency,
             testsDir: config.testsDir,
+            sync: config.sync || { mode: 'standalone' },
           },
         });
         return;
@@ -159,6 +174,17 @@ export async function startDashboard(config) {
       if (pathname === '/api/db/projects') {
         try {
           jsonResponse(res, dbListProjects());
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: DB — projects overview with sparklines (Watch view)
+      if (pathname === '/api/db/projects/overview') {
+        try {
+          const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+          jsonResponse(res, dbListProjectsWithSparklines(limit));
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
         }
@@ -758,7 +784,7 @@ export async function startDashboard(config) {
       const report = generateReport(results);
       const suiteName = params.suite || null;
       saveReport(report, runConfig.screenshotsDir, runConfig);
-      persistRun(report, runConfig, suiteName);
+      await persistRun(report, runConfig, suiteName);
       latestReport = report;
       currentRun = { running: false };
     } catch (error) {

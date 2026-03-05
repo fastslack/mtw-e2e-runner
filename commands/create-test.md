@@ -37,8 +37,13 @@ Help the user create a new E2E test file by exploring the application and design
    - Add `wait` actions before assertions on dynamic content
    - Add `assert_no_network_errors` after critical page loads
    - Consider adding an `expect` field for visual verification
+   - **DRY**: If auth/setup is repeated across tests, use `beforeEach` hook (object format) instead of repeating per test
+   - **DRY**: If 3+ tests repeat the same action pattern, create a module with `e2e_create_module` first
 
-7. **Create the test** — Call `e2e_create_test` with the designed test structure. Consider creating reusable modules with `e2e_create_module` for repeated sequences (auth, navigation).
+7. **Create the test** — Call `e2e_create_test` with the designed test structure.
+   - Check existing modules (`e2e/modules/`) — reuse them via `$use` instead of duplicating actions
+   - Create new modules with `e2e_create_module` for repeated sequences (auth, navigation, screenshot patterns)
+   - Use object format `{ "beforeEach": [...], "tests": [...] }` when hooks are needed
 
 8. **Validate** — Run the newly created test with `e2e_run` using the `suite` parameter. Analyze results and iterate if needed.
 

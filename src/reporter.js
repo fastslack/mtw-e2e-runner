@@ -10,6 +10,7 @@ import { narrateTest } from './narrate.js';
 import { learnFromRun } from './learner.js';
 import { generateLearningsMarkdown } from './learner-markdown.js';
 import { getHealthSnapshot, getRunInsights } from './learner-sqlite.js';
+import { pushRun as syncPushRun } from './sync/client.js';
 
 function escapeXml(str) {
   return String(str)
@@ -151,7 +152,7 @@ export function loadHistoryRun(screenshotsDir, runId) {
 }
 
 /** Persists a run to both filesystem history and SQLite (never throws). */
-export function persistRun(report, config, suiteName) {
+export async function persistRun(report, config, suiteName) {
   const runId = saveHistory(report, config.screenshotsDir, config.maxHistoryRuns);
   let runDbId = null;
 
@@ -174,6 +175,17 @@ export function persistRun(report, config, suiteName) {
         } catch (mdErr) {
           process.stderr.write(`[e2e-runner] Learnings markdown failed: ${mdErr.message}\n`);
         }
+      }
+    }
+    
+    // Sync push if in agent mode with autoSync enabled
+    if (config.sync?.mode === 'agent' && config.sync?.agent?.autoSync !== false) {
+      try {
+        const project = { name: config.projectName, slug: config.projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-') };
+        const enrichedReport = { ...report, runId, suiteName, triggeredBy: config.triggeredBy };
+        await syncPushRun(config, project, enrichedReport);
+      } catch (syncErr) {
+        process.stderr.write(`[e2e-runner] Sync push failed: ${syncErr.message}\n`);
       }
     }
   } catch (err) {

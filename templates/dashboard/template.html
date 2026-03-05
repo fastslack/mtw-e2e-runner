@@ -28,20 +28,17 @@
   <div class="sidebar-section">
     <div class="sidebar-section-label">Navigation</div>
   </div>
-  <div class="nav-item" data-view="live" id="navLive" style="display:none">
-    <i class="icon"><span class="live-nav-dot"></span></i><span>Live</span><span class="badge" id="liveBadge" style="background:var(--purple-dim);color:var(--purple)">0</span>
+  <div class="nav-item active" data-view="watch">
+    <i class="icon">&#9202;</i><span>Watch</span>
   </div>
-  <div class="nav-item active" data-view="suites">
-    <i class="icon">&#9655;</i><span>Suites</span><span class="badge" id="badgeSuites">-</span>
+  <div class="nav-item" data-view="tests">
+    <i class="icon">&#9655;</i><span>Tests</span><span class="badge" id="badgeSuites">-</span>
   </div>
   <div class="nav-item" data-view="runs">
     <i class="icon">&#9776;</i><span>Runs</span><span class="badge" id="badgeRuns">-</span>
   </div>
-  <div class="nav-item" data-view="screenshots">
-    <i class="icon">&#9635;</i><span>Screenshots</span><span class="badge" id="badgeScreenshots">-</span>
-  </div>
-  <div class="nav-item" data-view="learnings">
-    <i class="icon">&#9733;</i><span>Learnings</span><span class="badge" id="badgeLearnings">-</span>
+  <div class="nav-item" data-view="live" id="navLive" style="display:none">
+    <i class="icon"><span class="live-nav-dot"></span></i><span>Live</span><span class="badge" id="liveBadge" style="background:var(--purple-dim);color:var(--purple)">0</span>
   </div>
 
   <div class="pool-status" id="poolStatus">
@@ -50,6 +47,7 @@
       <strong>Pool</strong> <span id="poolLabel">--</span>
     </div>
     <div class="pool-info">Sessions: <strong id="poolSessions">-/-</strong></div>
+    <div class="pool-list" id="poolList" style="display:none"></div>
     <div class="pool-info" style="margin-top:6px">
       <span class="ws-dot" id="wsDot" style="background:var(--red)"></span>
       <span id="wsLabel" style="font-size:10px;color:var(--text3)">ws: connecting</span>
@@ -59,7 +57,145 @@
 
 <div class="main">
 
-  <!-- Live View -->
+  <!-- ════════════════ Watch View (default) ════════════════ -->
+  <div class="view active" id="view-watch">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Watch</div>
+    </div>
+    <div class="watch-grid" id="watchCards"></div>
+    <div class="watch-event-log">
+      <div class="watch-event-log-header">
+        <span class="title">Recent Runs</span>
+      </div>
+      <div class="watch-event-log-body" id="watchEventLog"></div>
+    </div>
+    <div class="empty" id="watchEmpty" style="display:none">
+      <div class="empty-icon">&#9202;</div>
+      <p>No projects registered yet. Run some tests to see project cards here.</p>
+    </div>
+  </div>
+
+  <!-- ════════════════ Tests View (inner tabs: Suites / Modules / Variables) ════════════════ -->
+  <div class="view" id="view-tests">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Tests</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn sm primary" id="btnRunAll">&#9655; Run All</button>
+      </div>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="testsTabSuites">Suites</button>
+      <button class="tab-btn" data-tab="testsTabModules">Modules</button>
+      <button class="tab-btn" data-tab="testsTabVariables">Variables</button>
+    </div>
+    <!-- Suites tab -->
+    <div class="tab-pane active" id="testsTabSuites">
+      <div id="suiteAccordionContainer"></div>
+      <div class="suite-grid" id="suiteGrid"></div>
+      <div class="empty" id="suitesEmpty" style="display:none">
+        <div class="empty-icon">&#9655;</div>
+        <p>No test suites found.</p>
+      </div>
+    </div>
+    <!-- Modules tab -->
+    <div class="tab-pane" id="testsTabModules">
+      <div id="moduleSection"></div>
+    </div>
+    <!-- Variables tab -->
+    <div class="tab-pane" id="testsTabVariables">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:var(--sans);font-size:14px;font-weight:600;color:var(--text2)">Variables</div>
+        <button class="btn sm primary" id="btnAddVar">+ Add Variable</button>
+      </div>
+      <div id="varAddForm" style="display:none"></div>
+      <div id="variablesContainer"></div>
+      <div class="empty" id="variablesEmpty" style="display:none">
+        <div class="empty-icon">&#9881;</div>
+        <p>No variables set. Add variables to use <code>{{var.KEY}}</code> in your tests.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════ Runs View (inner tabs: History / Screenshots / Learnings) ════════════════ -->
+  <div class="view" id="view-runs">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Runs</div>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="runsTabHistory">History</button>
+      <button class="tab-btn" data-tab="runsTabScreenshots">Screenshots<span class="badge" id="badgeScreenshots" style="margin-left:6px">-</span></button>
+      <button class="tab-btn" data-tab="runsTabLearnings" id="runsTabLearnings">Learnings<span class="badge" id="badgeLearnings" style="margin-left:6px">-</span></button>
+    </div>
+    <!-- History tab -->
+    <div class="tab-pane active" id="runsTabHistory">
+      <div class="health-banner" id="runsHealthBanner"></div>
+      <div class="card">
+        <div class="card-label">Pass Rate Trend</div>
+        <div class="chart" id="trendChart"></div>
+      </div>
+      <div class="filter-bar" id="filterBar">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="pass">Pass</button>
+        <button class="filter-btn" data-filter="fail">Fail</button>
+        <button class="filter-btn" data-filter="mixed">Mixed</button>
+        <input type="text" id="runSearchInput" placeholder="Search suite..." spellcheck="false">
+      </div>
+      <div class="card" style="padding:0">
+        <div class="tbl-wrap">
+          <table>
+            <thead id="runsHead"><tr></tr></thead>
+            <tbody id="runsBody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="empty" id="runsEmpty" style="display:none">
+        <div class="empty-icon">&#9776;</div>
+        <p>No runs recorded yet.</p>
+      </div>
+    </div>
+    <!-- Screenshots tab -->
+    <div class="tab-pane" id="runsTabScreenshots">
+      <div class="ss-search">
+        <input type="text" id="ssHashInput" placeholder="Search by hash (e.g. ss:a3f2b1c9)" spellcheck="false">
+        <button id="ssHashBtn">Search</button>
+      </div>
+      <div id="ssSearchResult"></div>
+      <div class="gallery" id="screenshotGallery"></div>
+      <div class="empty" id="screenshotsEmpty" style="display:none">
+        <div class="empty-icon">&#9635;</div>
+        <p>Select a project to view screenshots.</p>
+      </div>
+    </div>
+    <!-- Learnings tab -->
+    <div class="tab-pane" id="runsTabLearnings">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-family:var(--sans);font-size:14px;font-weight:600;color:var(--text2)">Learnings</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="learningsDays" style="padding:5px 8px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:11px">
+            <option value="7">7 days</option>
+            <option value="14">14 days</option>
+            <option value="30" selected>30 days</option>
+            <option value="90">90 days</option>
+          </select>
+          <button class="btn sm" id="btnExportLearnings">Export MD</button>
+          <button class="btn sm" id="btnRefreshLearnings">Refresh</button>
+        </div>
+      </div>
+      <div id="learningsOverview"></div>
+      <div id="learningsTrend"></div>
+      <div id="learningsFlaky"></div>
+      <div id="learningsSelectors"></div>
+      <div id="learningsPages"></div>
+      <div id="learningsApis"></div>
+      <div id="learningsErrors"></div>
+      <div class="empty" id="learningsEmpty" style="display:none">
+        <div class="empty-icon">&#9733;</div>
+        <p>No learnings data yet. Run some tests to start building knowledge.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════ Live View ════════════════ -->
   <div class="view" id="view-live">
     <div class="live-panel active" id="livePanel">
       <div class="live-header">
@@ -82,110 +218,40 @@
     </div>
     <div class="empty" id="liveEmpty">
       <div class="empty-icon" style="font-size:48px;opacity:.3">&#9679;</div>
-      <p>No tests running. Start a test from the Suites view or another console.</p>
+      <p>No tests running. Start a test from the Tests view or another console.</p>
       <p style="margin-top:8px;font-size:11px;color:var(--text3)">This view activates automatically when tests are detected.</p>
-    </div>
-  </div>
-
-  <!-- Suites View -->
-  <div class="view active" id="view-suites">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Test Suites</div>
-      <button class="btn primary" id="btnRunAll">Run All Tests</button>
-    </div>
-    <div class="suite-grid" id="suiteGrid"></div>
-    <div id="moduleSection"></div>
-    <div class="empty" id="suitesEmpty" style="display:none">
-      <div class="empty-icon">&#9655;</div>
-      <p>No test suites found.</p>
-    </div>
-  </div>
-
-  <!-- Runs View -->
-  <div class="view" id="view-runs">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Run History</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Pass Rate Trend</div>
-      <div class="chart" id="trendChart"></div>
-    </div>
-    <div class="filter-bar" id="filterBar">
-      <button class="filter-btn active" data-filter="all">All</button>
-      <button class="filter-btn" data-filter="pass">Pass</button>
-      <button class="filter-btn" data-filter="fail">Fail</button>
-      <button class="filter-btn" data-filter="mixed">Mixed</button>
-      <input type="text" id="runSearchInput" placeholder="Search suite..." spellcheck="false">
-    </div>
-    <div class="card" style="padding:0">
-      <div class="tbl-wrap">
-        <table>
-          <thead id="runsHead"><tr></tr></thead>
-          <tbody id="runsBody"></tbody>
-        </table>
-      </div>
-    </div>
-    <div class="empty" id="runsEmpty" style="display:none">
-      <div class="empty-icon">&#9776;</div>
-      <p>No runs recorded yet.</p>
-    </div>
-  </div>
-
-  <!-- Learnings View -->
-  <div class="view" id="view-learnings">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Learnings</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <select id="learningsDays" style="padding:5px 8px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:11px">
-          <option value="7">7 days</option>
-          <option value="14">14 days</option>
-          <option value="30" selected>30 days</option>
-          <option value="90">90 days</option>
-        </select>
-        <button class="btn sm" id="btnExportLearnings">Export MD</button>
-        <button class="btn sm" id="btnRefreshLearnings">Refresh</button>
-      </div>
-    </div>
-    <div id="learningsOverview"></div>
-    <div id="learningsTrend"></div>
-    <div id="learningsFlaky"></div>
-    <div id="learningsSelectors"></div>
-    <div id="learningsPages"></div>
-    <div id="learningsApis"></div>
-    <div id="learningsErrors"></div>
-    <div class="empty" id="learningsEmpty" style="display:none">
-      <div class="empty-icon">&#9733;</div>
-      <p>No learnings data yet. Run some tests to start building knowledge.</p>
-    </div>
-  </div>
-
-  <!-- Screenshots View -->
-  <div class="view" id="view-screenshots">
-    <div style="font-family:var(--sans);font-size:16px;font-weight:600;margin-bottom:20px">Screenshots</div>
-    <div class="ss-search">
-      <input type="text" id="ssHashInput" placeholder="Search by hash (e.g. ss:a3f2b1c9)" spellcheck="false">
-      <button id="ssHashBtn">Search</button>
-    </div>
-    <div id="ssSearchResult"></div>
-    <div class="gallery" id="screenshotGallery"></div>
-    <div class="empty" id="screenshotsEmpty" style="display:none">
-      <div class="empty-icon">&#9635;</div>
-      <p>Select a project to view screenshots.</p>
     </div>
   </div>
 
 </div>
 
+<div class="suite-modal-overlay" id="suiteModalOverlay">
+  <div class="suite-modal" id="suiteModal">
+    <div class="suite-modal-header">
+      <div class="suite-card-icon">&#9655;</div>
+      <div class="suite-modal-title">
+        <h2 id="suiteModalName"></h2>
+        <span id="suiteModalFile"></span>
+      </div>
+      <div class="suite-modal-actions">
+        <button class="btn sm primary" id="suiteModalRun">&#9655; Run</button>
+        <button class="suite-modal-close" id="suiteModalClose">&times;</button>
+      </div>
+    </div>
+    <div class="suite-modal-body" id="suiteModalBody">
+      <div class="suite-modal-loading">Loading...</div>
+    </div>
+  </div>
+</div>
 <div class="modal" id="modal"><img id="modalImg" src="" alt=""></div>
 <div class="toast-container" id="toastContainer"></div>
 <div class="kb-modal" id="kbModal">
   <div class="kb-modal-content">
     <h2>Keyboard Shortcuts</h2>
-    <div class="kb-row"><span class="kb-key">1</span><span class="kb-desc">Suites view</span></div>
-    <div class="kb-row"><span class="kb-key">2</span><span class="kb-desc">Runs view</span></div>
-    <div class="kb-row"><span class="kb-key">3</span><span class="kb-desc">Screenshots view</span></div>
-    <div class="kb-row"><span class="kb-key">4</span><span class="kb-desc">Learnings view</span></div>
-    <div class="kb-row"><span class="kb-key">5</span><span class="kb-desc">Live view</span></div>
+    <div class="kb-row"><span class="kb-key">1</span><span class="kb-desc">Watch view</span></div>
+    <div class="kb-row"><span class="kb-key">2</span><span class="kb-desc">Tests view</span></div>
+    <div class="kb-row"><span class="kb-key">3</span><span class="kb-desc">Runs view</span></div>
+    <div class="kb-row"><span class="kb-key">4</span><span class="kb-desc">Live view</span></div>
     <div class="kb-row"><span class="kb-key">j / k</span><span class="kb-desc">Navigate runs (next / previous)</span></div>
     <div class="kb-row"><span class="kb-key">Enter</span><span class="kb-desc">Expand / collapse selected run</span></div>
     <div class="kb-row"><span class="kb-key">Esc</span><span class="kb-desc">Close modal / collapse run</span></div>

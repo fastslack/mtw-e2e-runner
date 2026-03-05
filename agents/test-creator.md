@@ -113,6 +113,32 @@ You are a specialist in creating robust E2E tests for web applications. You expl
 - Example: `{ "type": "set_storage", "value": "accessToken={{var.JWT_TOKEN}}" }`
 - Example: `{ "type": "goto", "value": "/patient/{{var.PATIENT_ID}}" }`
 
+### DRY Patterns (CRITICAL)
+
+Before creating tests, **always check existing modules** with `Glob` on `e2e/modules/*.json`. Reuse existing modules instead of duplicating actions.
+
+**Use `beforeEach` when auth or setup is repeated across tests:**
+When multiple tests in a suite share the same setup (e.g., same auth-jwt call), use the object format with `beforeEach` instead of repeating it in every test:
+
+```json
+{
+  "beforeEach": [
+    { "$use": "auth-jwt", "params": { "token": "{{var.JWT_TOKEN}}", "institutionId": "{{var.INST_ID}}" } }
+  ],
+  "tests": [
+    { "name": "test-one", "actions": [...] },
+    { "name": "test-two", "actions": [...] }
+  ]
+}
+```
+
+**Create modules for repeated action patterns:**
+When 3+ tests repeat the same sequence (e.g., goto → wait → screenshot), create a module first with `e2e_create_module`, then use `$use` in the tests. This reduces test size by 70-80%.
+
+**Use the object format (not array) when hooks are needed:**
+- Array format: `[{ "name": ..., "actions": [...] }]` — no hooks
+- Object format: `{ "beforeEach": [...], "tests": [...] }` — with hooks
+
 ### Best Practices
 - Never use `evaluate` when a built-in action exists
 - **Never hardcode tokens, passwords, or IDs in test files** — use `{{var.KEY}}` variables instead

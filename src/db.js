@@ -433,6 +433,33 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
   return tx();
 }
 
+/** Save a run from sync (remote instance). Returns the run's DB id. */
+export function persistRunFromSync({ projectId, runId, total, passed, failed, passRate, duration, generatedAt, suiteName, triggeredBy, syncInstanceId, syncOrigin }) {
+  const d = getDb();
+  
+  const stmt = d.prepare(`
+    INSERT INTO runs (project_id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name, triggered_by, sync_instance_id, sync_origin, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `);
+  
+  const result = stmt.run(
+    projectId,
+    runId,
+    total,
+    passed,
+    failed,
+    passRate,
+    duration,
+    generatedAt,
+    suiteName || null,
+    triggeredBy || null,
+    syncInstanceId || null,
+    syncOrigin || 'remote'
+  );
+  
+  return result.lastInsertRowid;
+}
+
 /** List all projects with aggregated stats. */
 export function listProjects() {
   const d = getDb();
@@ -643,6 +670,37 @@ export function listVariables(projectId) {
 }
 
 /** Close the database connection. */
+/** Projects with sparkline data (last N run pass rates, oldest→newest). */
+export function listProjectsWithSparklines(sparklineSize = 20) {
+  const d = getDb();
+  const projects = d.prepare(`
+    SELECT
+      p.id, p.cwd, p.name, p.screenshots_dir, p.tests_dir, p.created_at, p.updated_at,
+      COUNT(r.id)          AS runCount,
+      MAX(r.generated_at)  AS lastRunAt,
+      (SELECT r2.pass_rate FROM runs r2 WHERE r2.project_id = p.id ORDER BY r2.generated_at DESC LIMIT 1) AS lastPassRate
+    FROM projects p
+    LEFT JOIN runs r ON r.project_id = p.id
+    GROUP BY p.id
+    ORDER BY p.updated_at DESC
+  `).all();
+
+  const sparkStmt = d.prepare(`
+    SELECT CAST(pass_rate AS REAL) AS rate
+    FROM runs
+    WHERE project_id = ?
+    ORDER BY generated_at DESC
+    LIMIT ?
+  `);
+
+  return projects.map(p => {
+    const rawRates = sparkStmt.all(p.id, sparklineSize).map(r => r.rate);
+    // Reverse to oldest→newest
+    rawRates.reverse();
+    return { ...p, sparkline: rawRates };
+  });
+}
+
 export function closeDb() {
   if (db) {
     db.close();

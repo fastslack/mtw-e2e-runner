@@ -1,0 +1,69 @@
+/* ── Reset & Variables ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#090a10;--surface:#11131b;--surface2:#181b26;--surface3:#1f2333;
+  --border:#232738;--border-hi:#2d3248;
+  --text:#dfe1e8;--text2:#7c8198;--text3:#464b62;
+  --accent:#3b82f6;--accent-dim:rgba(59,130,246,.12);
+  --green:#10b981;--green-dim:rgba(16,185,129,.10);
+  --red:#ef4444;--red-dim:rgba(239,68,68,.10);
+  --amber:#f59e0b;--amber-dim:rgba(245,158,11,.10);
+  --purple:#8b5cf6;--purple-dim:rgba(139,92,246,.12);
+  --mono:'JetBrains Mono','SF Mono','Fira Code',monospace;
+  --sans:'Outfit','Inter',-apple-system,sans-serif;
+  --r:6px;
+}
+html{font-size:13px}
+body{font-family:var(--mono);background:var(--bg);color:var(--text);min-height:100vh;display:flex}
+a{color:var(--accent);text-decoration:none}
+::selection{background:var(--accent);color:#fff}
+
+/* ── Sidebar ── */
+.sidebar{width:232px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:50;overflow-y:auto}
+.sidebar-logo{padding:20px 16px 16px;border-bottom:1px solid var(--border)}
+.sidebar-logo h1{font-family:var(--sans);font-size:15px;font-weight:700;letter-spacing:-.02em}
+.sidebar-logo h1 span{color:var(--accent)}
+.sidebar-logo .ver{font-size:10px;color:var(--text3);margin-top:2px}
+
+.sidebar-section{padding:12px 16px 8px}
+.sidebar-section-label{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px}
+.sidebar select{width:100%;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:12px;appearance:auto;cursor:pointer}
+.sidebar select:focus{outline:none;border-color:var(--accent)}
+
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:12px;color:var(--text2);cursor:pointer;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-dim)}
+.nav-item .icon{width:16px;text-align:center;font-style:normal}
+.nav-item .badge{margin-left:auto;background:var(--surface3);color:var(--text2);font-size:10px;padding:1px 6px;border-radius:10px}
+
+.pool-status{margin-top:auto;padding:16px;border-top:1px solid var(--border)}
+.pool-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px}
+.pool-dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+.pool-dot.off{background:var(--red);box-shadow:0 0 8px var(--red)}
+.pool-info{font-size:11px;color:var(--text2);line-height:1.7}
+.pool-info strong{color:var(--text)}
+.ws-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:4px}
+.pool-list{margin-top:6px;display:flex;flex-direction:column;gap:3px}
+.pool-item{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);font-family:var(--mono);padding:2px 0}
+.pool-item .pool-dot{width:6px;height:6px;margin-right:0}
+.pool-item strong{color:var(--text);font-weight:500}
+.pool-item .pool-sessions{margin-left:auto;color:var(--text3);font-size:9px}
+
+/* ── Main ── */
+.main{margin-left:232px;flex:1;min-height:100vh;display:flex;flex-direction:column}
+.main-header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--surface);position:sticky;top:0;z-index:40}
+.main-header .title{font-family:var(--sans);font-size:16px;font-weight:600}
+.main-header .actions{margin-left:auto;display:flex;gap:8px}
+.view{display:none;padding:24px}
+.view.active{display:block}
+#view-live.active{display:flex;flex-direction:column;flex:1;min-height:calc(100vh - 0px);padding:16px}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .sidebar{width:60px}.sidebar-logo h1,.sidebar-section-label,.nav-item span:not(.icon):not(.badge),.pool-info,.sidebar select,.sidebar-logo .ver{display:none}
+  .nav-item{justify-content:center;padding:12px}.nav-item .icon{width:auto}
+  .main{margin-left:60px}
+  .suite-grid,.gallery,.module-grid{grid-template-columns:1fr}
+  .lr-test-grid{grid-template-columns:1fr}
+  .toast-container{right:12px;bottom:12px}
+}

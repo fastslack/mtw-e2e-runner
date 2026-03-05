@@ -14,6 +14,8 @@
  *   e2e-runner pool status                Show pool status
  *   e2e-runner pool restart               Restart the pool
  *   e2e-runner dashboard                   Start the web dashboard
+ *   e2e-runner watch --interval 15m       Watch mode: scheduled test runs
+ *   e2e-runner watch --git                Watch mode: run on git changes
  *   e2e-runner capture <url>              Capture a screenshot of any URL
  *   e2e-runner issue <url>                Fetch issue and show details
  *   e2e-runner issue <url> --generate     Generate test file via Claude API
@@ -34,6 +36,7 @@ import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool, selectPool } from
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
 import { generateReport, saveReport, printReport, persistRun, printInsights } from '../src/reporter.js';
 import { startDashboard } from '../src/dashboard.js';
+import { startWatch } from '../src/watch.js';
 import { fetchIssue } from '../src/issues.js';
 import { buildPrompt, generateTests, hasApiKey } from '../src/ai-generate.js';
 import { verifyIssue } from '../src/verify.js';
@@ -42,6 +45,22 @@ import { log, colors as C } from '../src/logger.js';
 import { listModules } from '../src/module-resolver.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends } from '../src/learner-sqlite.js';
 import { startNeo4j, stopNeo4j, getNeo4jStatus } from '../src/neo4j-pool.js';
+import { 
+  generateApiKey, 
+  generateTotpSecret, 
+  generateTotpUri, 
+  generateMasterKey,
+  hashApiKey,
+  migrateSyncSchema,
+  createInstance,
+  getInstance,
+  listInstances,
+  updateInstanceStatus,
+  getHubConnection,
+  getQueueStats,
+  getSyncClient,
+  pullRuns,
+} from '../src/sync/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -118,6 +137,12 @@ ${C.bold}Usage:${C.reset}
   e2e-runner dashboard                  Start the web dashboard
   e2e-runner dashboard --port <port>    Custom port (default: 8484)
 
+  e2e-runner watch --interval 15m       Watch mode: run tests on schedule
+  e2e-runner watch --git                Watch mode: run on git changes
+  e2e-runner watch --interval 15m --git Both triggers
+  e2e-runner watch --webhook <url>      Notify on failure/recovery
+  e2e-runner watch --projects <file>    Multi-project watch
+
   e2e-runner capture <url>               Capture a screenshot of any URL
   e2e-runner capture <url> --full-page  Capture full scrollable page
   e2e-runner capture <url> --selector <sel>  Wait for selector before capture
@@ -141,6 +166,14 @@ ${C.bold}Usage:${C.reset}
   e2e-runner neo4j start                Start the Neo4j knowledge graph
   e2e-runner neo4j stop                 Stop the Neo4j container
   e2e-runner neo4j status               Show Neo4j status
+
+  e2e-runner sync status                Show sync connection status
+  e2e-runner sync add-instance          Register new agent (hub mode)
+  e2e-runner sync list-instances        List registered agents (hub mode)
+  e2e-runner sync approve <id>          Approve pending agent (hub mode)
+  e2e-runner sync revoke <id>           Suspend an agent (hub mode)
+  e2e-runner sync push                  Process sync queue (agent mode)
+  e2e-runner sync pull                  Pull runs from hub (agent mode)
 
   e2e-runner init                       Scaffold e2e/ in the current project
 
@@ -166,6 +199,16 @@ ${C.bold}Options:${C.reset}
   --auth-login-endpoint <url>  Auto-login: POST credentials to this URL to get auth token
   --auth-token-path <path>     Dot-path to token in auth response (default: token)
   --verification-strictness <level>  Visual verification: strict, moderate (default), lenient
+
+${C.bold}Watch Options:${C.reset}
+  --interval <time>          Run interval: 15m, 1h, 30s (required for schedule mode)
+  --git                      Poll git for new commits
+  --git-branch <branch>      Branch to watch (default: HEAD)
+  --git-interval <time>      Git poll frequency (default: 30s)
+  --webhook <url>            Webhook URL for notifications
+  --webhook-events <events>  When to notify: failure (default), recovery, always
+  --projects <file.json>     Multi-project config file
+  --no-run-on-start          Skip initial run on startup
 
 ${C.bold}Config:${C.reset}
   Looks for e2e.config.js or e2e.config.json in the current directory.
@@ -244,11 +287,15 @@ async function cmdRun() {
 
   // Execute tests
   console.log('');
-  const suiteName = getFlag('--suite') || (hasFlag('--all') ? null : null);
+  // Derive suite name: --suite flag > --tests file basename > null (for --all/--inline)
+  let suiteName = getFlag('--suite') || null;
+  if (!suiteName && getFlag('--tests')) {
+    suiteName = path.basename(getFlag('--tests'), '.json');
+  }
   const results = await runTestsParallel(tests, config, hooks);
   const report = generateReport(results);
   saveReport(report, config.screenshotsDir, config);
-  persistRun(report, config, suiteName);
+  await persistRun(report, config, suiteName);
   printReport(report, config.screenshotsDir);
   printInsights(report, config);
 
@@ -589,6 +636,46 @@ async function cmdIssue() {
   console.log('');
 }
 
+async function cmdWatch() {
+  const cliArgs = parseCLIConfig();
+
+  // Parse watch-specific flags
+  if (getFlag('--interval')) cliArgs.watchInterval = getFlag('--interval');
+  if (getFlag('--webhook')) cliArgs.watchWebhookUrl = getFlag('--webhook');
+  if (getFlag('--webhook-events')) cliArgs.watchWebhookEvents = getFlag('--webhook-events');
+  if (hasFlag('--git')) cliArgs.watchGitPoll = true;
+  if (getFlag('--git-branch')) cliArgs.watchGitBranch = getFlag('--git-branch');
+  if (getFlag('--git-interval')) cliArgs.watchGitInterval = getFlag('--git-interval');
+  if (hasFlag('--no-run-on-start')) cliArgs.watchRunOnStart = false;
+
+  // Multi-project file
+  const projectsFile = getFlag('--projects');
+  if (projectsFile) {
+    const resolved = path.resolve(projectsFile);
+    if (!fs.existsSync(resolved)) {
+      console.error(`${C.red}Projects file not found: ${resolved}${C.reset}`);
+      process.exit(1);
+    }
+    cliArgs.watchProjects = JSON.parse(fs.readFileSync(resolved, 'utf-8'));
+  }
+
+  const config = await loadConfig(cliArgs);
+
+  console.log(`\n${C.bold}${C.cyan}@matware/e2e-runner${C.reset} v${pkg.version}`);
+  console.log(`${C.dim}Watch mode — dashboard on port ${config.dashboardPort}${C.reset}\n`);
+
+  const handle = await startWatch(config);
+
+  // Graceful shutdown
+  const shutdown = () => {
+    console.log(`\n${C.dim}Stopping watch...${C.reset}`);
+    handle.stop();
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
 async function cmdLearnings() {
   const cliArgs = parseCLIConfig();
   const config = await loadConfig(cliArgs);
@@ -738,6 +825,261 @@ async function cmdNeo4j() {
   }
 }
 
+// ==================== Sync ====================
+
+async function cmdSync() {
+  const subCmd = args[1];
+  const cliArgs = parseCLIConfig();
+  const config = await loadConfig(cliArgs);
+  
+  // Ensure schema is migrated
+  migrateSyncSchema();
+
+  switch (subCmd) {
+    case 'status': {
+      const mode = config.sync?.mode || 'standalone';
+      console.log(`\n${C.bold}Sync Status:${C.reset}\n`);
+      console.log(`  Mode:     ${C.cyan}${mode}${C.reset}`);
+      
+      if (mode === 'hub') {
+        const instances = listInstances();
+        const active = instances.filter(i => i.status === 'active').length;
+        const online = instances.filter(i => {
+          if (!i.last_seen) return false;
+          const lastSeen = new Date(i.last_seen + 'Z').getTime();
+          return Date.now() - lastSeen < 5 * 60 * 1000;
+        }).length;
+        console.log(`  Instances: ${instances.length} total, ${active} active, ${online} online`);
+      } else if (mode === 'agent') {
+        const conn = getHubConnection();
+        if (conn) {
+          console.log(`  Hub URL:   ${C.cyan}${conn.hub_url}${C.reset}`);
+          console.log(`  Instance:  ${conn.instance_id}`);
+          console.log(`  Status:    ${conn.status === 'connected' ? C.green : C.red}${conn.status}${C.reset}`);
+          console.log(`  Last push: ${conn.last_push || 'never'}`);
+          console.log(`  Last pull: ${conn.last_pull || 'never'}`);
+        } else {
+          console.log(`  ${C.dim}Not connected to any hub${C.reset}`);
+        }
+        
+        const queueStats = getQueueStats();
+        if (queueStats.length > 0) {
+          const pending = queueStats.find(s => s.status === 'pending')?.count || 0;
+          if (pending > 0) {
+            console.log(`  Queue:     ${C.yellow}${pending} pending${C.reset}`);
+          }
+        }
+      }
+      console.log('');
+      break;
+    }
+    
+    case 'add-instance': {
+      if (config.sync?.mode !== 'hub') {
+        console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
+        process.exit(1);
+      }
+      
+      const instanceId = getFlag('--id') || `instance-${Date.now().toString(36)}`;
+      const displayName = getFlag('--name') || instanceId;
+      const role = getFlag('--role') || 'member';
+      const environment = getFlag('--env') || 'development';
+      
+      // Check if already exists
+      if (getInstance(instanceId)) {
+        console.error(`${C.red}Error: Instance '${instanceId}' already exists${C.reset}`);
+        process.exit(1);
+      }
+      
+      // Generate credentials
+      const apiKey = generateApiKey();
+      const totpSecret = generateTotpSecret();
+      
+      // Create instance
+      createInstance({
+        instanceId,
+        displayName,
+        hostname: null,
+        environment,
+        apiKeyHash: hashApiKey(apiKey),
+        totpSecret,
+        role,
+        status: config.sync?.hub?.requireApproval ? 'pending' : 'active',
+      });
+      
+      console.log(`\n${C.green}${C.bold}Instance created successfully!${C.reset}\n`);
+      console.log(`${C.bold}Instance ID:${C.reset}    ${instanceId}`);
+      console.log(`${C.bold}Display Name:${C.reset}   ${displayName}`);
+      console.log(`${C.bold}Role:${C.reset}           ${role}`);
+      console.log(`${C.bold}Status:${C.reset}         ${config.sync?.hub?.requireApproval ? 'pending' : 'active'}`);
+      console.log('');
+      console.log(`${C.bold}${C.yellow}SAVE THESE CREDENTIALS (shown only once):${C.reset}`);
+      console.log(`${C.bold}API Key:${C.reset}        ${apiKey}`);
+      console.log(`${C.bold}TOTP Secret:${C.reset}    ${totpSecret}`);
+      console.log(`${C.bold}TOTP URI:${C.reset}       ${generateTotpUri(totpSecret, instanceId)}`);
+      console.log('');
+      console.log(`${C.dim}Configure the agent with:${C.reset}`);
+      console.log(`  export E2E_SYNC_API_KEY="${apiKey}"`);
+      console.log(`  export E2E_SYNC_TOTP="${totpSecret}"`);
+      console.log('');
+      break;
+    }
+    
+    case 'list-instances': {
+      if (config.sync?.mode !== 'hub') {
+        console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
+        process.exit(1);
+      }
+      
+      const status = getFlag('--status');
+      const instances = listInstances(status);
+      
+      console.log(`\n${C.bold}Registered Instances:${C.reset}\n`);
+      
+      if (instances.length === 0) {
+        console.log(`  ${C.dim}No instances registered${C.reset}`);
+      } else {
+        for (const inst of instances) {
+          const isOnline = inst.last_seen && (Date.now() - new Date(inst.last_seen + 'Z').getTime() < 5 * 60 * 1000);
+          const statusColor = inst.status === 'active' ? C.green : inst.status === 'pending' ? C.yellow : C.red;
+          const onlineIndicator = isOnline ? `${C.green}*${C.reset}` : ' ';
+          
+          console.log(`  ${onlineIndicator} ${C.bold}${inst.instance_id}${C.reset}`);
+          console.log(`      Name:   ${inst.display_name}`);
+          console.log(`      Status: ${statusColor}${inst.status}${C.reset}`);
+          console.log(`      Role:   ${inst.role}`);
+          console.log(`      Seen:   ${inst.last_seen || 'never'}`);
+          console.log('');
+        }
+      }
+      break;
+    }
+    
+    case 'approve': {
+      if (config.sync?.mode !== 'hub') {
+        console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
+        process.exit(1);
+      }
+      
+      const instanceId = args[2];
+      if (!instanceId) {
+        console.error(`${C.red}Error: Instance ID required${C.reset}`);
+        process.exit(1);
+      }
+      
+      const instance = getInstance(instanceId);
+      if (!instance) {
+        console.error(`${C.red}Error: Instance '${instanceId}' not found${C.reset}`);
+        process.exit(1);
+      }
+      
+      updateInstanceStatus(instanceId, 'active');
+      console.log(`${C.green}Instance '${instanceId}' approved and activated${C.reset}`);
+      break;
+    }
+    
+    case 'revoke': {
+      if (config.sync?.mode !== 'hub') {
+        console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
+        process.exit(1);
+      }
+      
+      const instanceId = args[2];
+      if (!instanceId) {
+        console.error(`${C.red}Error: Instance ID required${C.reset}`);
+        process.exit(1);
+      }
+      
+      updateInstanceStatus(instanceId, 'suspended');
+      console.log(`${C.yellow}Instance '${instanceId}' suspended${C.reset}`);
+      break;
+    }
+    
+    case 'push': {
+      if (config.sync?.mode !== 'agent') {
+        console.error(`${C.red}Error: This command only works in agent mode${C.reset}`);
+        process.exit(1);
+      }
+      
+      const client = await getSyncClient(config);
+      if (!client.isConfigured()) {
+        console.error(`${C.red}Error: Sync credentials not configured${C.reset}`);
+        console.log(`${C.dim}Set E2E_SYNC_API_KEY and E2E_SYNC_TOTP environment variables${C.reset}`);
+        process.exit(1);
+      }
+      
+      console.log('Processing sync queue...');
+      await client.processQueue();
+      console.log(`${C.green}Queue processed${C.reset}`);
+      break;
+    }
+    
+    case 'pull': {
+      if (config.sync?.mode !== 'agent') {
+        console.error(`${C.red}Error: This command only works in agent mode${C.reset}`);
+        process.exit(1);
+      }
+      
+      const since = getFlag('--since');
+      const project = getFlag('--project');
+      const limit = getFlag('--limit') ? parseInt(getFlag('--limit')) : 50;
+      
+      console.log('Pulling runs from hub...');
+      const result = await pullRuns(config, { since, project, limit });
+      
+      if (result) {
+        console.log(`${C.green}Pulled ${result.runs?.length || 0} runs${C.reset}`);
+        
+        if (result.runs?.length > 0) {
+          console.log('');
+          for (const run of result.runs.slice(0, 10)) {
+            const status = run.failed > 0 ? C.red + 'FAIL' : C.green + 'PASS';
+            console.log(`  ${status}${C.reset} ${run.project_name} - ${run.suite_name || 'default'} (${run.passed}/${run.total})`);
+          }
+          if (result.runs.length > 10) {
+            console.log(`  ${C.dim}... and ${result.runs.length - 10} more${C.reset}`);
+          }
+        }
+      } else {
+        console.log(`${C.yellow}No runs pulled (check configuration)${C.reset}`);
+      }
+      break;
+    }
+    
+    case 'generate-master-key': {
+      const key = generateMasterKey();
+      console.log(`\n${C.bold}Generated Master Key:${C.reset}\n`);
+      console.log(`  ${key}`);
+      console.log('');
+      console.log(`${C.dim}Set this in your hub environment:${C.reset}`);
+      console.log(`  export E2E_SYNC_MASTER_KEY="${key}"`);
+      console.log('');
+      break;
+    }
+    
+    default:
+      console.log(`\n${C.bold}Sync Commands:${C.reset}\n`);
+      console.log('  status              Show sync status');
+      console.log('  add-instance        Register a new agent (hub mode)');
+      console.log('  list-instances      List registered agents (hub mode)');
+      console.log('  approve <id>        Approve pending agent (hub mode)');
+      console.log('  revoke <id>         Suspend an agent (hub mode)');
+      console.log('  push                Process sync queue (agent mode)');
+      console.log('  pull                Pull runs from hub (agent mode)');
+      console.log('  generate-master-key Generate encryption master key');
+      console.log('');
+      console.log(`${C.bold}Options:${C.reset}`);
+      console.log('  --id <id>           Instance ID for add-instance');
+      console.log('  --name <name>       Display name for add-instance');
+      console.log('  --role <role>       Role: admin, member, readonly');
+      console.log('  --status <status>   Filter by status: pending, active, suspended');
+      console.log('  --since <datetime>  Pull runs since timestamp');
+      console.log('  --project <slug>    Filter by project');
+      console.log('  --limit <n>         Limit number of runs to pull');
+      console.log('');
+  }
+}
+
 // ==================== Main ====================
 
 async function main() {
@@ -770,6 +1112,10 @@ async function main() {
       await cmdDashboard();
       break;
 
+    case 'watch':
+      await cmdWatch();
+      break;
+
     case 'capture':
       await cmdCapture();
       break;
@@ -784,6 +1130,10 @@ async function main() {
 
     case 'neo4j':
       await cmdNeo4j();
+      break;
+
+    case 'sync':
+      await cmdSync();
       break;
 
     case 'init':

@@ -598,7 +598,12 @@ async function handleRun(args) {
 
   const report = generateReport(results);
   saveReport(report, config.screenshotsDir, config);
-  const { runDbId } = persistRun(report, config, args.suite || null);
+  // Derive suite name: explicit suite > file basename > null (for "all")
+  let suiteName = args.suite || null;
+  if (!suiteName && args.file) {
+    suiteName = path.basename(args.file, '.json');
+  }
+  const { runDbId } = await persistRun(report, config, suiteName);
 
   const failures = report.results
     .filter(r => !r.success)

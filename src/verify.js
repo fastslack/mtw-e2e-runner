@@ -25,7 +25,8 @@ export async function verifyIssue(url, config) {
   const issue = fetchIssue(url);
 
   // 2. Generate tests via Claude API
-  const { tests, suiteName } = await generateTests(issue, config, config.testType || 'e2e');
+  const generated = await generateTests(issue, config, config.testType || 'e2e');
+  const { tests, suiteName } = generated;
 
   // 3. Save tests to a temp file (underscore prefix for cleanup identification)
   const testFile = path.join(config.testsDir, `_verify-${suiteName}.json`);
@@ -35,18 +36,20 @@ export async function verifyIssue(url, config) {
   fs.writeFileSync(testFile, JSON.stringify(tests, null, 2));
 
   try {
-    // 4. Build hooks (inject auth if provided)
-    const hooks = {};
+    // 4. Build hooks — merge AI-generated hooks with auth injection if provided
+    const hooks = generated.hooks ? { ...generated.hooks } : {};
     if (config.authToken) {
       const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const storageKey = esc(config.authStorageKey || 'accessToken');
       const token = esc(config.authToken);
-      hooks.beforeEach = [
+      const authActions = [
         { type: 'goto', value: '/' },
         { type: 'evaluate', value: `localStorage.setItem('${storageKey}', '${token}')` },
         { type: 'goto', value: '/' },
         { type: 'wait', value: '1000' },
       ];
+      // Prepend auth actions to any existing AI-generated beforeEach
+      hooks.beforeEach = [...authActions, ...(hooks.beforeEach || [])];
     }
 
     // 5. Wait for pool and run
@@ -54,7 +57,7 @@ export async function verifyIssue(url, config) {
     const results = await runTestsParallel(tests, config, hooks);
     const report = generateReport(results);
     saveReport(report, config.screenshotsDir, config);
-    persistRun(report, config, suiteName);
+    await persistRun(report, config, suiteName);
 
     // 6. Interpret results
     const bugConfirmed = report.summary.failed > 0;

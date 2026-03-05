@@ -103,8 +103,15 @@ Reusable modules:
 - Tests can reference shared action sequences: { "$use": "module-name", "params": { "key": "value" } }
 - Use modules for repeated flows like login, navigation, or setup
 
+Hooks and DRY patterns:
+- When multiple tests share the same setup (e.g. authentication), use beforeEach instead of repeating it per test
+- Object format with hooks: { "beforeEach": [...], "tests": [{ "name": "...", "actions": [...] }] }
+- Array format (no hooks): [{ "name": "...", "actions": [...] }]
+- If 3+ tests repeat the same action sequence (e.g. goto + wait + screenshot), extract it into a module
+- NEVER repeat the same $use call with identical params across all tests — move it to beforeEach
+
 Rules:
-- Output a JSON array of test objects
+- Output valid JSON: either a plain array of test objects, or an object with "beforeEach"/"tests" keys when hooks are needed
 - NEVER use evaluate with inline JS for assertions that can be done with native action types:
   * Use assert_element_text instead of evaluate to check element textContent
   * Use assert_attribute instead of evaluate to check HTML attributes
@@ -278,7 +285,7 @@ Test Category: ${testType}
 ${categoryRules}
 Base URL: ${config.baseUrl}
 
-Output a JSON array of test objects. Nothing else.`;
+Output ONLY valid JSON. Either a plain array of test objects, or an object with "beforeEach" and "tests" keys if hooks are needed. Nothing else.`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -319,9 +326,21 @@ Output a JSON array of test objects. Nothing else.`;
     throw new Error(`Failed to parse generated tests as JSON: ${err.message}\n\nRaw output:\n${text}`);
   }
 
-  if (!Array.isArray(tests)) {
-    throw new Error('Generated tests must be a JSON array');
+  // Accept both array format and object format with hooks
+  let hooks;
+  if (Array.isArray(tests)) {
+    // Plain array: [{ name, actions }]
+  } else if (tests && Array.isArray(tests.tests)) {
+    // Object with hooks: { beforeEach: [...], tests: [...] }
+    hooks = {};
+    for (const key of ['beforeAll', 'afterAll', 'beforeEach', 'afterEach']) {
+      if (Array.isArray(tests[key])) hooks[key] = tests[key];
+    }
+    if (Object.keys(hooks).length === 0) hooks = undefined;
+    tests = tests.tests;
+  } else {
+    throw new Error('Generated tests must be a JSON array or an object with a "tests" array');
   }
 
-  return { tests, suiteName };
+  return { tests, hooks, suiteName };
 }

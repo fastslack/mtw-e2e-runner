@@ -12,6 +12,22 @@ import fs from 'fs';
 import path from 'path';
 import { pathToFileURL } from 'url';
 
+/** Deep merge utility for nested config objects */
+function deepMerge(...objects) {
+  const result = {};
+  for (const obj of objects) {
+    if (!obj || typeof obj !== 'object') continue;
+    for (const key of Object.keys(obj)) {
+      if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+        result[key] = deepMerge(result[key] || {}, obj[key]);
+      } else if (obj[key] !== undefined) {
+        result[key] = obj[key];
+      }
+    }
+  }
+  return result;
+}
+
 const DEFAULTS = {
   baseUrl: 'http://host.docker.internal:3000',
   poolUrl: 'ws://localhost:3333',
@@ -61,6 +77,48 @@ const DEFAULTS = {
   gqlAuthKey: 'accessToken',
   gqlAuthPrefix: 'Bearer ',
   poolUrls: null,
+  watchInterval: null,
+  watchRunOnStart: true,
+  watchGitPoll: false,
+  watchGitBranch: null,
+  watchGitInterval: '30s',
+  watchWebhookUrl: null,
+  watchWebhookEvents: 'failure',
+  watchProjects: null,
+  
+  // Sync configuration
+  sync: {
+    mode: 'standalone',  // 'standalone' | 'hub' | 'agent'
+    hub: {
+      port: null,        // null = use dashboardPort
+      tls: {
+        enabled: false,
+        certPath: null,
+        keyPath: null,
+        mtls: false,
+        caPath: null,
+      },
+      allowRegistration: true,
+      requireApproval: false,
+      masterKeyEnv: 'E2E_SYNC_MASTER_KEY',
+    },
+    agent: {
+      hubUrl: null,
+      instanceId: null,
+      displayName: null,
+      apiKeyEnv: 'E2E_SYNC_API_KEY',
+      totpSecretEnv: 'E2E_SYNC_TOTP',
+      tls: {
+        certPath: null,
+        keyPath: null,
+        caPath: null,
+      },
+      autoSync: true,
+      pullOnDashboard: true,
+      offlineQueue: true,
+      queueRetryInterval: 60,
+    },
+  },
 };
 
 function loadEnvVars() {
@@ -104,12 +162,54 @@ function loadEnvVars() {
   if (process.env.GQL_AUTH_HEADER) env.gqlAuthHeader = process.env.GQL_AUTH_HEADER;
   if (process.env.GQL_AUTH_KEY) env.gqlAuthKey = process.env.GQL_AUTH_KEY;
   if (process.env.GQL_AUTH_PREFIX) env.gqlAuthPrefix = process.env.GQL_AUTH_PREFIX;
+  if (process.env.WATCH_INTERVAL) env.watchInterval = process.env.WATCH_INTERVAL;
+  if (process.env.WATCH_WEBHOOK_URL) env.watchWebhookUrl = process.env.WATCH_WEBHOOK_URL;
+  if (process.env.WATCH_WEBHOOK_EVENTS) env.watchWebhookEvents = process.env.WATCH_WEBHOOK_EVENTS;
+  if (process.env.WATCH_GIT_POLL) env.watchGitPoll = process.env.WATCH_GIT_POLL === 'true' || process.env.WATCH_GIT_POLL === '1';
+  if (process.env.WATCH_GIT_BRANCH) env.watchGitBranch = process.env.WATCH_GIT_BRANCH;
+  if (process.env.WATCH_GIT_INTERVAL) env.watchGitInterval = process.env.WATCH_GIT_INTERVAL;
   if (process.env.VERIFICATION_STRICTNESS) {
     const val = process.env.VERIFICATION_STRICTNESS.toLowerCase();
     if (['strict', 'moderate', 'lenient'].includes(val)) {
       env.verificationStrictness = val;
     }
   }
+  
+  // Sync configuration from env vars
+  if (process.env.E2E_SYNC_MODE) {
+    const mode = process.env.E2E_SYNC_MODE.toLowerCase();
+    if (['standalone', 'hub', 'agent'].includes(mode)) {
+      env.sync = env.sync || {};
+      env.sync.mode = mode;
+    }
+  }
+  if (process.env.E2E_SYNC_HUB_URL) {
+    env.sync = env.sync || {};
+    env.sync.agent = env.sync.agent || {};
+    env.sync.agent.hubUrl = process.env.E2E_SYNC_HUB_URL;
+  }
+  if (process.env.E2E_SYNC_INSTANCE_ID) {
+    env.sync = env.sync || {};
+    env.sync.agent = env.sync.agent || {};
+    env.sync.agent.instanceId = process.env.E2E_SYNC_INSTANCE_ID;
+  }
+  if (process.env.E2E_SYNC_DISPLAY_NAME) {
+    env.sync = env.sync || {};
+    env.sync.agent = env.sync.agent || {};
+    env.sync.agent.displayName = process.env.E2E_SYNC_DISPLAY_NAME;
+  }
+  if (process.env.E2E_SYNC_HUB_PORT) {
+    env.sync = env.sync || {};
+    env.sync.hub = env.sync.hub || {};
+    env.sync.hub.port = parseInt(process.env.E2E_SYNC_HUB_PORT);
+  }
+  if (process.env.E2E_SYNC_TLS_ENABLED) {
+    env.sync = env.sync || {};
+    env.sync.hub = env.sync.hub || {};
+    env.sync.hub.tls = env.sync.hub.tls || {};
+    env.sync.hub.tls.enabled = process.env.E2E_SYNC_TLS_ENABLED === 'true' || process.env.E2E_SYNC_TLS_ENABLED === '1';
+  }
+  
   return env;
 }
 
@@ -166,6 +266,16 @@ export async function loadConfig(cliArgs = {}, cwd = null) {
     ...envConfig,
     ...cliArgs,
   };
+  
+  // Deep merge sync config (nested objects need special handling)
+  if (fileConfig.sync || envConfig.sync || cliArgs.sync) {
+    config.sync = deepMerge(
+      DEFAULTS.sync,
+      fileConfig.sync || {},
+      envConfig.sync || {},
+      cliArgs.sync || {}
+    );
+  }
 
   // Apply environment profile overrides
   if (config.env && config.env !== 'default' && config.environments?.[config.env]) {

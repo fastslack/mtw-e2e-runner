@@ -1,0 +1,4 @@
+# Ignore all certificate files - these contain secrets
+*
+!.gitignore
+!README.md
