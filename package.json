@@ -20,7 +20,11 @@
     ".mcp.json",
     "skills/",
     "commands/",
-    "agents/"
+    "agents/",
+    ".opencode/",
+    "opencode.json",
+    "OPENCODE.md",
+    "scripts/setup-opencode.sh"
   ],
   "keywords": [
     "e2e",
@@ -31,6 +35,7 @@
     "parallel",
     "mcp",
     "claude-code",
+    "opencode",
     "github-issues",
     "ai-testing"
   ],

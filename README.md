@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/npm/l/@matware/e2e-runner" alt="license" />
   <img src="https://img.shields.io/badge/MCP-compatible-green" alt="MCP compatible" />
   <img src="https://img.shields.io/badge/AI--native-Claude%20Code-blueviolet" alt="AI native" />
+  <img src="https://img.shields.io/badge/AI--native-OpenCode-orange" alt="OpenCode compatible" />
 </p>
 
 <p align="center">
@@ -974,6 +975,69 @@ claude mcp add --transport stdio --scope user e2e-runner \
 > "Capture a screenshot of /dashboard with auth"
 > "Fetch issue #42 and create tests for it"
 > "What's the API error rate for the last 7 days?"
+
+---
+
+## OpenCode Integration
+
+The package also supports [OpenCode](https://github.com/anomalyco/opencode) with native MCP server configuration, skills, and commands.
+
+### Quick Setup
+
+```bash
+# 1. Install the package
+npm install --save-dev @matware/e2e-runner
+
+# 2. Copy OpenCode config to your project
+cp node_modules/@matware/e2e-runner/opencode.json ./
+
+# 3. Copy skills and commands (optional)
+mkdir -p .opencode
+cp -r node_modules/@matware/e2e-runner/.opencode/* .opencode/
+
+# 4. Start the Chrome pool
+npx e2e-runner pool start
+```
+
+### What's Included
+
+| Component | Description |
+|-----------|-------------|
+| **15 MCP tools** | Same tools as Claude Code — run tests, create files, screenshots, network logs, learnings, etc. |
+| **Skill** | `e2e-testing` — full workflow guidance with references |
+| **3 Commands** | `/run`, `/create-test`, `/verify-issue` |
+
+### MCP Configuration
+
+The `opencode.json` configures the MCP server as a local process:
+
+```json
+{
+  "mcp": {
+    "e2e-runner": {
+      "type": "local",
+      "command": "node",
+      "args": ["node_modules/@matware/e2e-runner/bin/mcp-server.js"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
+For global installation, use the binary directly:
+
+```json
+{
+  "mcp": {
+    "e2e-runner": {
+      "type": "local",
+      "command": "e2e-runner-mcp"
+    }
+  }
+}
+```
+
+See [OPENCODE.md](OPENCODE.md) for full documentation on OpenCode integration.
 
 ---
 

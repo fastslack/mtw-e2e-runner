@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/schemas/opencode.json",
+  "mcp": {
+    "e2e-runner": {
+      "type": "local",
+      "command": "node",
+      "args": ["bin/mcp-server.js"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
