@@ -20,6 +20,7 @@ export const KNOWN_ACTION_TYPES = new Set([
   'navigate', 'evaluate',
   'type_react', 'click_regex', 'click_option', 'focus_autocomplete', 'click_chip',
   'set_storage', 'click_icon', 'click_menu_item', 'click_in_context',
+  'assert_text_in', 'assert_no_text',
   'gql', 'wait_network_idle',
 ]);
 
@@ -111,6 +112,16 @@ export async function executeAction(page, action, config) {
       const bodyText = await page.evaluate(() => document.body.innerText);
       if (!bodyText.includes(text)) {
         throw new Error(`assert_text failed: "${text}" not found`);
+      }
+      break;
+    }
+
+    case 'assert_no_text': {
+      // Assert that text does NOT appear anywhere on the page.
+      // text: substring to check for absence (required)
+      const bodyTextNo = await page.evaluate(() => document.body.innerText);
+      if (bodyTextNo.includes(text)) {
+        throw new Error(`assert_no_text failed: "${text}" was found on the page but should not be present`);
       }
       break;
     }
@@ -249,6 +260,30 @@ export async function executeAction(page, action, config) {
       const matchText = await page.$eval(selector, el => el.textContent);
       if (!new RegExp(value).test(matchText)) {
         throw new Error(`assert_matches failed: "${selector}" text "${matchText.trim()}" does not match pattern /${value}/`);
+      }
+      break;
+    }
+
+    case 'assert_text_in': {
+      // Assert that text exists inside a scoped container element.
+      // selector: CSS selector for the container (required)
+      // text: substring or regex pattern to match against container's textContent (required)
+      // value: "i" for case-insensitive regex (default), "exact" for case-sensitive substring
+      if (!selector) throw new Error('assert_text_in requires "selector"');
+      if (!text) throw new Error('assert_text_in requires "text"');
+      await page.waitForSelector(selector, { timeout });
+      const containerText = await page.$$eval(selector, els => els.map(el => el.textContent).join(' '));
+      const flags = value === 'exact' ? '' : 'i';
+      if (value === 'exact') {
+        if (!containerText.includes(text)) {
+          const preview = containerText.length > 200 ? containerText.slice(0, 200) + '...' : containerText;
+          throw new Error(`assert_text_in failed: "${text}" not found in "${selector}"\n  Content: ${preview}`);
+        }
+      } else {
+        if (!new RegExp(text, flags).test(containerText)) {
+          const preview = containerText.length > 200 ? containerText.slice(0, 200) + '...' : containerText;
+          throw new Error(`assert_text_in failed: /${text}/${flags} not found in "${selector}"\n  Content: ${preview}`);
+        }
       }
       break;
     }

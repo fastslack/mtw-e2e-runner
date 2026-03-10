@@ -24,7 +24,7 @@ import { fetchIssue, checkCliAuth, detectProvider } from './issues.js';
 import { buildPrompt, hasApiKey } from './ai-generate.js';
 import { verifyIssue } from './verify.js';
 import { listModules } from './module-resolver.js';
-import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getTestHistory, getPageHistory, getSelectorHistory, getHealthSnapshot } from './learner-sqlite.js';
+import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getTestHistory, getPageHistory, getSelectorHistory, getHealthSnapshot, getTestCreationContext, generateImprovements } from './learner-sqlite.js';
 import { queryGraph } from './learner-neo4j.js';
 import { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
 
@@ -95,21 +95,74 @@ export const TOOLS = [
   {
     name: 'e2e_create_test',
     description:
-      'Create a new E2E test JSON file. Provide the suite name and an array of test objects, each with a name and actions array. Actions can include { "$use": "module-name", "params": {...} } to reference reusable modules.',
+      `Create a new E2E test JSON file. IMPORTANT: prefer built-in actions over evaluate blocks.
+
+## Action selection guide (use instead of evaluate)
+
+**Clicking elements by text** — DON'T write evaluate to find+click elements:
+  click:           { type: "click", text: "Submit" }              — searches button, a, [role=tab], span, etc.
+  click_regex:     { type: "click_regex", text: "save|guardar" }  — regex match, case-insensitive
+  click_menu_item: { type: "click_menu_item", text: "Delete" }    — [role=menuitem], .MenuItem, etc.
+  click_option:    { type: "click_option", text: "Option A" }     — [role=option] in dropdowns
+  click_chip:      { type: "click_chip", text: "Active" }         — MUI Chip / tag elements
+  click_icon:      { type: "click_icon", value: "edit" }          — SVG/icon by data-testid, aria-label, class
+  click_in_context:{ type: "click_in_context", text: "Row text", selector: "button" } — child within container
+
+**Asserting text presence/absence** — DON'T write evaluate with body.includes():
+  assert_text:     { type: "assert_text", text: "Welcome" }      — text IS on page (case-sensitive). Uses: text
+  assert_no_text:  { type: "assert_no_text", text: "Error" }     — text is NOT on page. Uses: text
+  assert_text_in:  { type: "assert_text_in", selector: "[class*='Drawer']", text: "profesional|doctor" }
+                   — scoped regex in container (case-insensitive default). Uses: selector + text (+ value:"exact")
+
+**Asserting elements** — DON'T write evaluate to count or check visibility:
+  assert_visible:      { type: "assert_visible", selector: ".modal" }           — Uses: selector (NOT text)
+  assert_not_visible:  { type: "assert_not_visible", selector: ".loader" }      — Uses: selector (NOT text)
+  assert_count:        { type: "assert_count", selector: "input", value: ">= 2" } — Uses: selector + value
+  assert_element_text: { type: "assert_element_text", selector: "h1", text: "Dashboard" } — Uses: selector + text
+  assert_matches:      { type: "assert_matches", selector: ".date", value: "\\\\d{2}/\\\\d{2}" } — Uses: selector + value (regex)
+  assert_attribute:    { type: "assert_attribute", selector: "button", value: "disabled" } — Uses: selector + value
+  assert_url:          { type: "assert_url", value: "/dashboard" }              — Uses: value
+  assert_input_value:  { type: "assert_input_value", selector: "#email", value: "@" } — Uses: selector + value
+
+IMPORTANT field rules:
+  - assert_text / assert_no_text: use "text" field only (checks full page body)
+  - assert_visible / assert_not_visible: use "selector" field only (CSS selector, NOT text)
+  - To verify text absence: use assert_no_text (NOT assert_not_visible with text)
+
+**Navigation & waiting** — DON'T write evaluate with setTimeout polling:
+  goto:            { type: "goto", value: "/login" }              — full page navigation
+  navigate:        { type: "navigate", value: "/settings" }       — SPA-friendly (won't fail if no page load)
+  wait:            { type: "wait", text: "Loading complete" }     — wait for text to appear in body
+  wait:            { type: "wait", selector: ".results" }         — wait for element to appear
+  wait:            { type: "wait", value: "2000" }                — fixed delay (avoid when possible)
+  wait_network_idle: { type: "wait_network_idle", value: "500" }  — wait until no network for N ms
+
+**Form interaction** — DON'T write evaluate with native value setters (unless React):
+  type:            { type: "type", selector: "#email", value: "a@b.com" } — clears + types
+  type_react:      { type: "type_react", selector: "#email", value: "a@b.com" } — for React controlled inputs
+  select:          { type: "select", selector: "select#country", value: "US" }
+  clear:           { type: "clear", selector: "#search" }
+  press:           { type: "press", value: "Enter" }
+  focus_autocomplete: { type: "focus_autocomplete", text: "City" } — focus MUI Autocomplete by label
+
+**When evaluate IS appropriate**: computed styles, complex conditional logic, GraphQL via window.__e2eGql, math calculations, reading window/app state.
+
+## Modules
+Use { "$use": "module-name", "params": {...} } to reference reusable modules from e2e/modules/. Modules compose — a module can $use other modules. Check e2e_list to see available modules for the project.`,
     inputSchema: {
       type: 'object',
       properties: {
         name: {
           type: 'string',
-          description: 'Suite file name without .json extension (e.g. "login", "05-checkout")',
+          description: 'Suite file name without .json extension (e.g. "login-flow", "issue-1743-sidebar")',
         },
         tests: {
           type: 'array',
-          description: 'Array of test objects with { name, actions }',
+          description: 'Array of test objects with { name, actions, expect }',
           items: {
             type: 'object',
             properties: {
-              name: { type: 'string', description: 'Test name' },
+              name: { type: 'string', description: 'Test name — descriptive of what is being verified' },
               expect: {
                 oneOf: [
                   { type: 'string', description: 'Single description of expected visual outcome.' },
@@ -119,17 +172,17 @@ export const TOOLS = [
               },
               actions: {
                 type: 'array',
-                description: 'Sequential browser actions',
+                description: 'Sequential browser actions. Prefer built-in action types over evaluate — see tool description for the full guide.',
                 items: {
                   type: 'object',
                   properties: {
                     type: {
                       type: 'string',
-                      description: 'Action type: goto, click, click_regex, click_option, click_chip, type, type_react, focus_autocomplete, wait, assert_text, assert_element_text, assert_attribute, assert_class, assert_visible, assert_not_visible, assert_input_value, assert_matches, assert_url, assert_count, assert_no_network_errors, get_text, screenshot, select, clear, clear_cookies, press, scroll, hover, evaluate, navigate, set_storage, assert_storage, click_icon, click_menu_item, click_in_context, gql',
+                      description: 'Action type. Prefer declarative actions (assert_text, assert_no_text, click, assert_visible, assert_count, assert_text_in, click_menu_item, etc.) over evaluate.',
                     },
-                    selector: { type: 'string', description: 'CSS selector' },
-                    value: { type: 'string', description: 'Value for the action' },
-                    text: { type: 'string', description: 'Text content to match' },
+                    selector: { type: 'string', description: 'CSS selector (supports compound selectors like "[class*=\'Drawer\'], [role=\'presentation\']")' },
+                    value: { type: 'string', description: 'Value — varies by action type (URL for goto, ms for wait, regex for assert_matches, ">= N" for assert_count)' },
+                    text: { type: 'string', description: 'Text to match — used by click (substring), assert_text/assert_no_text (substring on body), assert_text_in (regex), click_regex (regex). NOT used by assert_visible/assert_not_visible (use selector instead).' },
                   },
                   required: ['type'],
                 },
@@ -140,7 +193,7 @@ export const TOOLS = [
         },
         hooks: {
           type: 'object',
-          description: 'Optional hooks: beforeAll, afterAll, beforeEach, afterEach (each an array of actions)',
+          description: 'Optional hooks: beforeAll, afterAll, beforeEach, afterEach (each an array of actions). Note: beforeAll runs on a SEPARATE page that is closed before tests — use beforeEach for auth/setup.',
           properties: {
             beforeAll: { type: 'array', items: { type: 'object' } },
             afterAll: { type: 'array', items: { type: 'object' } },
@@ -342,7 +395,9 @@ export const TOOLS = [
   {
     name: 'e2e_create_module',
     description:
-      'Create a reusable module for E2E tests. Modules define action sequences that can be referenced from tests via { "$use": "module-name", "params": {...} }. Useful for auth setup, navigation patterns, and other repeated sequences.',
+      `Create a reusable module for E2E tests. Modules encapsulate repeated action sequences referenced via { "$use": "module-name", "params": {...} }.
+
+Good module candidates: auth setup, page navigation, tab clicking, opening sidebars/drawers, form fill sequences, cleanup routines. Modules can compose — a module can $use other modules. Params use {{paramName}} mustache syntax in action fields. Extract a module when you see the same 2+ action sequence in multiple tests.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -735,6 +790,12 @@ async function handleRun(args) {
             : null,
         };
       }
+
+      // Actionable improvements from cross-referencing this run with historical data
+      const improvements = generateImprovements(projectId, report);
+      if (improvements.length > 0) {
+        summary.improvements = improvements;
+      }
     } catch { /* never fail the run response */ }
   }
 
@@ -801,21 +862,271 @@ async function handleCreateTest(args) {
 
   fs.writeFileSync(filePath, JSON.stringify(content, null, 2) + '\n');
 
-  // Warn about beforeAll pitfall
-  let warning = '';
+  // ── Collect all actions (tests + hooks) for analysis ──
+  const allActions = [];
+  for (const test of args.tests) {
+    if (test.actions) allActions.push(...test.actions);
+  }
+  if (args.hooks) {
+    for (const hookActions of Object.values(args.hooks)) {
+      if (Array.isArray(hookActions)) allActions.push(...hookActions);
+    }
+  }
+
+  const warnings = [];
+
+  // ── Warn about beforeAll pitfall ──
   const beforeAll = args.hooks?.beforeAll;
   if (beforeAll?.length) {
     const stateActions = beforeAll.filter(a =>
       ['evaluate', 'goto', 'navigate', 'clear_cookies', 'type', 'click', 'select'].includes(a.type)
     );
     if (stateActions.length > 0) {
-      warning = '\n\n⚠️ Warning: beforeAll runs on a separate browser page that is closed before tests start. ' +
-        'Actions that set browser state (evaluate, goto, cookies, etc.) will NOT carry over to individual tests. ' +
-        'Use beforeEach instead if tests need this setup.';
+      warnings.push('⚠️ beforeAll runs on a separate browser page that is closed before tests start. ' +
+        'Actions that set browser state (evaluate, goto, cookies, etc.) will NOT carry over. ' +
+        'Use beforeEach instead if tests need this setup.');
     }
   }
 
-  return textResult(`Created test file: ${filePath}\n\n${args.tests.length} test(s) defined.${warning}`);
+  // ── Detect evaluate blocks that could use built-in actions ──
+  const suggestions = analyzeEvaluateUsage(allActions);
+  if (suggestions.length > 0) {
+    warnings.push(`💡 ${suggestions.length} evaluate action(s) could potentially use built-in actions instead:\n` +
+      suggestions.map(s => `   • ${s}`).join('\n'));
+  }
+
+  // ── Detect suite-level issues: fixed waits, cross-test dependencies ──
+  const actionWarnings = analyzeActionPatterns(args.tests);
+  if (actionWarnings.length > 0) {
+    warnings.push(...actionWarnings);
+  }
+
+  // ── List available modules ──
+  let modulesInfo = '';
+  try {
+    const modules = listModules(config.modulesDir);
+    if (modules.length > 0) {
+      modulesInfo = '\n\n📦 Available modules: ' + modules.map(m => {
+        const params = m.params.filter(p => p.required).map(p => p.name);
+        return m.name + (params.length ? `(${params.join(', ')})` : '');
+      }).join(', ');
+    }
+  } catch { /* modules dir may not exist */ }
+
+  const warningBlock = warnings.length > 0 ? '\n\n' + warnings.join('\n\n') : '';
+
+  // Enrich with learnings context for smarter test authoring
+  let learningsBlock = '';
+  try {
+    const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
+    const ctx = getTestCreationContext(projectId);
+    if (ctx) {
+      const lines = ['\n\n⚠ LEARNINGS FROM PREVIOUS RUNS:'];
+
+      if (ctx.unstableSelectors?.length) {
+        lines.push('  Unstable selectors (avoid these):');
+        for (const s of ctx.unstableSelectors) {
+          lines.push(`    - ${s.selector} (${s.failRate}% fail rate) → ${s.suggestion}`);
+        }
+      }
+
+      if (ctx.errorPatterns?.length) {
+        lines.push('  Common errors:');
+        for (const e of ctx.errorPatterns) {
+          lines.push(`    - ${e.category || 'unknown'} (${e.count}x) — ${e.pattern}`);
+        }
+      }
+
+      if (ctx.slowPages?.length) {
+        lines.push('  Slow pages (add extra waits):');
+        for (const p of ctx.slowPages) {
+          lines.push(`    - ${p.page} (avg ${(p.avgLoadMs / 1000).toFixed(1)}s load)`);
+        }
+      }
+
+      if (ctx.stableSelectors?.length) {
+        lines.push('  Reliable selectors (safe to use):');
+        for (const s of ctx.stableSelectors) {
+          lines.push(`    - ${s.selector} (100% success, ${s.uses} uses)`);
+        }
+      }
+
+      if (ctx.flakyTests?.length) {
+        lines.push('  Flaky tests (consider retries):');
+        for (const f of ctx.flakyTests) {
+          lines.push(`    - ${f.name} (${f.flakyCount} flaky runs out of ${f.totalRuns})`);
+        }
+      }
+
+      if (ctx.apiIssues?.length) {
+        lines.push('  Unreliable API endpoints:');
+        for (const a of ctx.apiIssues) {
+          lines.push(`    - ${a.endpoint} (${a.errorRate}% error rate)`);
+        }
+      }
+
+      if (ctx.passRate !== undefined) {
+        lines.push(`  Overall project pass rate: ${ctx.passRate}%`);
+      }
+
+      learningsBlock = lines.join('\n');
+    }
+  } catch { /* never fail test creation */ }
+
+  return textResult(`Created test file: ${filePath}\n\n${args.tests.length} test(s) defined.${warningBlock}${modulesInfo}${learningsBlock}`);
+}
+
+/**
+ * Analyze evaluate actions and suggest built-in replacements.
+ * Returns an array of human-readable suggestion strings.
+ */
+function analyzeEvaluateUsage(actions) {
+  const suggestions = [];
+
+  for (const action of actions) {
+    if (action.type !== 'evaluate' || !action.value) continue;
+    const code = action.value;
+
+    // Pattern: clicking elements by text — .click() after finding by textContent
+    if (/\.textContent[^]*\.click\(\)/s.test(code) || /\.find\([^)]*textContent[^)]*\)[^]*\.click/s.test(code)) {
+      if (/tab/i.test(code)) {
+        suggestions.push('Tab click via evaluate → use { type: "click", text: "Tab Name" } (click searches [role="tab"] natively)');
+      } else if (/menu/i.test(code)) {
+        suggestions.push('Menu item click via evaluate → use { type: "click_menu_item", text: "Item Name" }');
+      } else {
+        suggestions.push('Element click via evaluate → use { type: "click", text: "..." } or click_regex/click_in_context');
+      }
+    }
+
+    // Pattern: body.innerText.includes() for text presence
+    if (/document\.body\.innerText[^]*\.includes\(/s.test(code) || /body\.includes\(/s.test(code)) {
+      // Detect negation patterns (!includes) that should use assert_no_text
+      const hasNegation = /!\s*body\.includes\(|!\s*\w+\.includes\(|!body\.includes\(/s.test(code)
+        || /=\s*!.*\.includes\(/s.test(code);
+      const includeCount = (code.match(/\.includes\(/g) || []).length;
+
+      if (hasNegation) {
+        suggestions.push(`🚨 Text negation check (!includes) → use { type: "assert_no_text", text: "..." } for absent text, and { type: "assert_text", text: "..." } for present text`);
+      } else if (includeCount <= 3) {
+        suggestions.push(`Text presence check (${includeCount} includes) → use ${includeCount}x { type: "assert_text", text: "..." }`);
+      } else {
+        suggestions.push(`Text presence check (${includeCount} includes) → use assert_text for each, or assert_text_in with regex: { type: "assert_text_in", selector: "body", text: "word1|word2" }`);
+      }
+    }
+
+    // Pattern: querySelectorAll(...).length checks
+    if (/querySelectorAll\([^)]+\)\.length/s.test(code) && !/getComputedStyle/.test(code)) {
+      suggestions.push('Element counting via evaluate → use { type: "assert_count", selector: "...", value: ">= N" }');
+    }
+
+    // Pattern: checking element visibility/existence without computed styles
+    if (/querySelector\([^)]+\)\s*;?\s*(if\s*\(!\s*\w+\)|===?\s*null)/s.test(code) && !/getComputedStyle/.test(code)) {
+      suggestions.push('Element existence check via evaluate → use { type: "assert_visible", selector: "..." }');
+    }
+
+    // Pattern: return JSON.stringify for debug info (no throw/Error)
+    if (/return\s+JSON\.stringify/s.test(code) && !/throw\s+new\s+Error/s.test(code) && !/FAIL/s.test(code)) {
+      suggestions.push('Informational evaluate (returns JSON, never throws) → remove or replace with specific assertions');
+    }
+
+    // Pattern: setTimeout polling loop
+    if (/setTimeout|setInterval/s.test(code) && /while|Date\.now/s.test(code)) {
+      suggestions.push('Polling loop in evaluate → use { type: "wait", text: "..." } or { type: "wait", selector: "..." } with timeout');
+    }
+
+    // Pattern: return static string with no checks
+    if (/^\(\(\)\s*=>\s*\{\s*return\s+['"`][^]*['"`];\s*\}\)\(\)$/.test(code.trim())) {
+      suggestions.push('No-op evaluate (returns static string) → remove entirely');
+    }
+
+    // 🚨 Pattern: evaluate returns template string interpolating booleans but never throws/fails
+    // e.g. return `Foo: ${hasFoo}, Bar: ${hasBar}` — always truthy, never fails
+    if (!(/throw\s+new\s+Error/s.test(code) || /\bFAIL[:\s]/s.test(code) || /\bERROR[:\s]/s.test(code)
+      || /return\s+false\b/s.test(code) || /return\s+'FAIL/s.test(code) || /return\s+`FAIL/s.test(code))) {
+      // Check for template returns with ${var} interpolation (informational, never fails)
+      if (/return\s+`[^`]*\$\{[^}]+\}[^`]*`/s.test(code)) {
+        // Heuristic: does the template interpolate boolean-like variables?
+        const hasConditionInterpolation = /\$\{(has\w+|is\w+|no\w+|found|exists|present|visible|loaded)\}/i.test(code);
+        const hasComparisonInterpolation = /\$\{[^}]*(===|!==|>|<|&&|\|\|)[^}]*\}/s.test(code);
+        if (hasConditionInterpolation || hasComparisonInterpolation) {
+          suggestions.push(
+            '🚨 Evaluate returns informational template string with boolean/condition values but NEVER throws or returns false — ' +
+            'this test will ALWAYS PASS. Either throw new Error("FAIL: ...") when conditions are not met, or replace with built-in assert actions'
+          );
+        }
+      }
+    }
+
+    // 🚨 Pattern: sets window.__e2e_* globals for cross-test state sharing
+    if (/window\.__e2e_\w+\s*=/.test(code) && !/window\.__e2e\./.test(code.replace(/window\.__e2e_\w+\s*=/g, ''))) {
+      suggestions.push(
+        '⚠️ Cross-test state via window.__e2e_* — if test retries are enabled, retried tests get a fresh page and lose this state. ' +
+        'Make each test self-contained by re-querying data, or disable retries for this suite'
+      );
+    }
+  }
+
+  return suggestions;
+}
+
+/**
+ * Analyze all actions in a suite for non-evaluate issues:
+ * fixed numeric waits, cross-test dependencies, etc.
+ */
+function analyzeActionPatterns(tests) {
+  const warnings = [];
+
+  // Detect fixed numeric waits (could be text/selector-based)
+  for (const test of tests) {
+    if (!test.actions) continue;
+    for (const action of test.actions) {
+      if (action.type === 'wait' && /^\d+$/.test(String(action.value))) {
+        const ms = parseInt(action.value, 10);
+        if (ms >= 3000) {
+          warnings.push(
+            `⏱️ Fixed ${ms}ms wait in "${test.name}" — prefer { type: "wait", text: "..." } or { type: "wait", selector: "..." } ` +
+            `which retries until the condition is met. Fixed waits are either too short (flaky) or too long (slow).`
+          );
+          break; // one warning per test is enough
+        }
+      }
+    }
+  }
+
+  // Detect cross-test state: test N writes window.__e2e_*, test M reads it
+  const writers = new Map(); // varName → test name
+  const readers = new Map(); // varName → [test names]
+  for (const test of tests) {
+    if (!test.actions) continue;
+    for (const action of test.actions) {
+      if (action.type !== 'evaluate' || !action.value) continue;
+      const code = action.value;
+      // Find writes: window.__e2e_foo = ...
+      const writeMatches = code.matchAll(/window\.(__e2e_\w+)\s*=/g);
+      for (const m of writeMatches) {
+        if (!writers.has(m[1])) writers.set(m[1], test.name);
+      }
+      // Find reads: window.__e2e_foo (not followed by =)
+      const readMatches = code.matchAll(/window\.(__e2e_\w+)(?!\s*=)/g);
+      for (const m of readMatches) {
+        if (!readers.has(m[1])) readers.set(m[1], []);
+        if (!readers.get(m[1]).includes(test.name)) readers.get(m[1]).push(test.name);
+      }
+    }
+  }
+
+  for (const [varName, writerTest] of writers) {
+    const readerTests = (readers.get(varName) || []).filter(t => t !== writerTest);
+    if (readerTests.length > 0) {
+      warnings.push(
+        `🔗 Cross-test dependency: "${writerTest}" sets ${varName}, read by: ${readerTests.map(t => `"${t}"`).join(', ')}. ` +
+        `If "${writerTest}" fails, dependent tests will cascade-fail with confusing errors. ` +
+        `Consider re-querying data in each test or combining them into a single test.`
+      );
+    }
+  }
+
+  return warnings;
 }
 
 async function handlePoolStatus(args) {

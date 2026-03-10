@@ -19,7 +19,7 @@ export { buildPrompt, generateTests, hasApiKey } from './ai-generate.js';
 export { verifyIssue } from './verify.js';
 export { resolveTestData, loadModuleRegistry, listModules } from './module-resolver.js';
 export { learnFromRun, categorizeError } from './learner.js';
-export { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights } from './learner-sqlite.js';
+export { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getTestCreationContext, generateImprovements } from './learner-sqlite.js';
 export { generateLearningsMarkdown } from './learner-markdown.js';
 export { writeToGraph, queryGraph, closeNeo4j } from './learner-neo4j.js';
 export { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';

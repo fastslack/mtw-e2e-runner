@@ -85,7 +85,10 @@ templates/          Scaffolding templates for init command + dashboard SPA
 - The `baseUrl` default is `http://host.docker.internal:3000` because Chrome runs inside Docker and must reach the host machine
 - `click` with `text` (no selector) searches across `button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6, dd, dt` for text content match
 - `type`/`fill` actions triple-click + Backspace to clear before typing
-- `evaluate` is strict — returns starting with `FAIL:`/`ERROR:` or returning `false` will fail the test
+- `assert_no_text` verifies text is NOT present on the page: `{ type: "assert_no_text", text: "Error message" }`. Opposite of `assert_text`.
+- `assert_text_in` checks text inside a scoped container: `selector` (CSS), `text` (regex, case-insensitive), `value: "exact"` for case-sensitive substring. Joins textContent from all matching elements.
+- `assert_visible` / `assert_not_visible` require **`selector`** (CSS selector), NOT `text`. To check text absence, use `assert_no_text`.
+- `evaluate` is strict — returns starting with `FAIL:`/`ERROR:` or returning `false` will fail the test. Prefer built-in actions (assert_text, assert_no_text, assert_visible, assert_count, click, click_menu_item, etc.) over evaluate when possible.
 - Failed tests auto-capture an error screenshot to `screenshotsDir`
 - Report JSON is saved to `{screenshotsDir}/report.json`
 - Process exits with code 1 if any test fails

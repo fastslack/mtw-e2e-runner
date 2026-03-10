@@ -392,3 +392,267 @@ export function getSelectorHistory(projectId, selector, days = 30) {
     ORDER BY created_at DESC
   `).all(projectId, selector, days);
 }
+
+/**
+ * Aggregated context for test authoring — curates the most actionable learnings
+ * into a compact object that AI agents can use to write better tests.
+ */
+export function getTestCreationContext(projectId) {
+  const d = getDb();
+  const ctx = {};
+
+  // Top 5 unstable selectors (>20% fail rate)
+  const unstable = d.prepare(`
+    SELECT
+      selector,
+      ROUND(AVG(CASE WHEN success = 0 THEN 100.0 ELSE 0.0 END), 1) AS fail_rate,
+      MAX(CASE WHEN success = 0 THEN error END) AS last_error,
+      COUNT(*) AS total_uses
+    FROM selector_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY selector
+    HAVING fail_rate > 20
+    ORDER BY fail_rate DESC
+    LIMIT 5
+  `).all(projectId);
+
+  if (unstable.length > 0) {
+    ctx.unstableSelectors = unstable.map(s => ({
+      selector: s.selector,
+      failRate: s.fail_rate,
+      lastError: s.last_error,
+      suggestion: suggestSelectorFix(s.selector),
+    }));
+  }
+
+  // Top 10 stable selectors (0% fail rate, >5 uses)
+  const stable = d.prepare(`
+    SELECT
+      selector,
+      COUNT(*) AS total_uses,
+      COUNT(DISTINCT test_name) AS used_by_tests
+    FROM selector_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY selector
+    HAVING total_uses > 5 AND SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) = 0
+    ORDER BY total_uses DESC
+    LIMIT 10
+  `).all(projectId);
+
+  if (stable.length > 0) {
+    ctx.stableSelectors = stable.map(s => ({
+      selector: s.selector,
+      uses: s.total_uses,
+      tests: s.used_by_tests,
+    }));
+  }
+
+  // Top 5 error patterns
+  const errors = d.prepare(`
+    SELECT pattern, category, occurrence_count
+    FROM error_patterns
+    WHERE project_id = ?
+    ORDER BY occurrence_count DESC
+    LIMIT 5
+  `).all(projectId);
+
+  if (errors.length > 0) {
+    ctx.errorPatterns = errors.map(e => ({
+      pattern: e.pattern,
+      category: e.category,
+      count: e.occurrence_count,
+    }));
+  }
+
+  // Slow pages (avg load > 3s)
+  const slowPages = d.prepare(`
+    SELECT
+      url_path,
+      ROUND(AVG(load_time_ms)) AS avg_load_ms
+    FROM page_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY url_path
+    HAVING avg_load_ms > 3000
+    ORDER BY avg_load_ms DESC
+    LIMIT 5
+  `).all(projectId);
+
+  if (slowPages.length > 0) {
+    ctx.slowPages = slowPages.map(p => ({
+      page: p.url_path,
+      avgLoadMs: p.avg_load_ms,
+    }));
+  }
+
+  // Flaky tests
+  const flaky = d.prepare(`
+    SELECT test_name, SUM(flaky) AS flaky_count, COUNT(*) AS total_runs
+    FROM test_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY test_name
+    HAVING flaky_count > 0
+    ORDER BY flaky_count DESC
+    LIMIT 5
+  `).all(projectId);
+
+  if (flaky.length > 0) {
+    ctx.flakyTests = flaky.map(f => ({
+      name: f.test_name,
+      flakyCount: f.flaky_count,
+      totalRuns: f.total_runs,
+    }));
+  }
+
+  // API endpoints with >10% error rate
+  const apiIssues = d.prepare(`
+    SELECT
+      endpoint,
+      ROUND(AVG(CASE WHEN is_error = 1 THEN 100.0 ELSE 0.0 END), 1) AS error_rate,
+      COUNT(*) AS total_calls
+    FROM api_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY endpoint
+    HAVING error_rate > 10
+    ORDER BY error_rate DESC
+    LIMIT 5
+  `).all(projectId);
+
+  if (apiIssues.length > 0) {
+    ctx.apiIssues = apiIssues.map(a => ({
+      endpoint: a.endpoint,
+      errorRate: a.error_rate,
+      totalCalls: a.total_calls,
+    }));
+  }
+
+  // Overall pass rate
+  const stats = d.prepare(`
+    SELECT
+      COUNT(*) AS total_tests,
+      ROUND(AVG(CASE WHEN success = 1 THEN 100.0 ELSE 0.0 END), 1) AS pass_rate
+    FROM test_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+  `).get(projectId);
+
+  if (stats && stats.total_tests > 0) {
+    ctx.passRate = stats.pass_rate;
+  }
+
+  return Object.keys(ctx).length > 0 ? ctx : null;
+}
+
+/** Suggest a fix for an unstable selector based on its pattern. */
+function suggestSelectorFix(selector) {
+  if (/^\.Mui|^\.css-|^\.sc-/.test(selector)) return 'Prefer [data-testid] or click by text — generated class names are brittle';
+  if (/\s>\s/.test(selector) && selector.split('>').length > 3) return 'Deeply nested selector — simplify or use [data-testid]';
+  if (/nth-child|nth-of-type/.test(selector)) return 'Positional selector — prefer [data-testid] or text-based selection';
+  return 'Consider using [data-testid] or a more stable selector';
+}
+
+/**
+ * Cross-reference a run report with historical learnings to produce actionable
+ * improvement suggestions for the AI agent.
+ */
+export function generateImprovements(projectId, report) {
+  const d = getDb();
+  const improvements = [];
+
+  if (!report?.results) return improvements;
+
+  // Build a map of stable alternatives for unstable selectors
+  const stableAlts = d.prepare(`
+    SELECT selector, COUNT(*) AS uses
+    FROM selector_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY selector
+    HAVING uses > 3 AND SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) = 0
+    ORDER BY uses DESC
+  `).all(projectId);
+
+  const stableSet = new Set(stableAlts.map(s => s.selector));
+
+  // Unstable selectors with their fail rates
+  const unstableMap = new Map();
+  const unstableRows = d.prepare(`
+    SELECT
+      selector,
+      ROUND(AVG(CASE WHEN success = 0 THEN 100.0 ELSE 0.0 END), 1) AS fail_rate
+    FROM selector_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY selector
+    HAVING fail_rate > 20
+  `).all(projectId);
+  for (const row of unstableRows) unstableMap.set(row.selector, row.fail_rate);
+
+  // Flaky test counts
+  const flakyMap = new Map();
+  const flakyRows = d.prepare(`
+    SELECT test_name, SUM(flaky) AS flaky_count
+    FROM test_learnings
+    WHERE project_id = ? AND created_at >= datetime('now', '-30 days')
+    GROUP BY test_name
+    HAVING flaky_count > 0
+  `).all(projectId);
+  for (const row of flakyRows) flakyMap.set(row.test_name, row.flaky_count);
+
+  for (const result of report.results) {
+    // Failed selector suggestions — find stable alternatives on the same page
+    if (!result.success && result.error) {
+      const selectorMatch = result.error.match(/selector ["']([^"']+)["']/i)
+        || result.error.match(/waiting for selector (.+)/i);
+      if (selectorMatch) {
+        const failedSelector = selectorMatch[1];
+        const failRate = unstableMap.get(failedSelector);
+        if (failRate) {
+          improvements.push({
+            type: 'unstable-selector',
+            test: result.name,
+            message: `Selector \`${failedSelector}\` failed (${failRate}% historical fail rate) → ${suggestSelectorFix(failedSelector)}`,
+          });
+        }
+      }
+
+      // Timeout suggestions
+      if (/timeout|timed?\s*out/i.test(result.error)) {
+        improvements.push({
+          type: 'timeout',
+          test: result.name,
+          message: `Test "${result.name}" timed out → add explicit { type: "wait", text: "..." } or increase timeout`,
+        });
+      }
+    }
+
+    // Check for tests using known unstable selectors (even if they passed this time)
+    if (result.actions) {
+      for (const action of result.actions) {
+        if (action.selector && unstableMap.has(action.selector)) {
+          const failRate = unstableMap.get(action.selector);
+          improvements.push({
+            type: 'at-risk-selector',
+            test: result.name,
+            message: `Selector \`${action.selector}\` has ${failRate}% fail rate → ${suggestSelectorFix(action.selector)}`,
+          });
+        }
+      }
+    }
+
+    // Flaky test suggestions
+    const flakyCount = flakyMap.get(result.name);
+    if (flakyCount && flakyCount >= 2) {
+      improvements.push({
+        type: 'flaky',
+        test: result.name,
+        message: `Test "${result.name}" is flaky (${flakyCount} flaky runs) → add { retries: 2 } to the test config`,
+      });
+    }
+  }
+
+  // Deduplicate by type+test (keep first occurrence)
+  const seen = new Set();
+  return improvements.filter(imp => {
+    const key = `${imp.type}:${imp.test}:${imp.message.slice(0, 60)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
