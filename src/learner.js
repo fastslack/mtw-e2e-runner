@@ -17,8 +17,12 @@ const ERROR_CATEGORIES = [
   { pattern: /waitForSelector/i, category: 'selector-not-found' },
   { pattern: /not visible/i, category: 'selector-not-found' },
   { pattern: /navigation/i, category: 'navigation-error' },
-  { pattern: /net::ERR_/i, category: 'connection-refused' },
+  { pattern: /ERR_NAME_NOT_RESOLVED/i, category: 'dns-resolution' },
   { pattern: /ERR_CONNECTION_REFUSED/i, category: 'connection-refused' },
+  { pattern: /ECONNREFUSED/i, category: 'connection-refused' },
+  { pattern: /Chrome Pool unavailable/i, category: 'pool-unavailable' },
+  { pattern: /Failed to connect to pool/i, category: 'pool-connect-failed' },
+  { pattern: /net::ERR_/i, category: 'network-error' },
   { pattern: /assert_text/i, category: 'assert-text-failed' },
   { pattern: /assert_url/i, category: 'assert-url-failed' },
   { pattern: /assert_visible/i, category: 'assert-visible-failed' },
@@ -34,6 +38,18 @@ const ERROR_CATEGORIES = [
   { pattern: /evaluate.*FAIL/i, category: 'evaluate-error' },
   { pattern: /evaluate.*ERROR/i, category: 'evaluate-error' },
 ];
+
+/** Categories that indicate infrastructure failures — not test/app issues. */
+export const INFRA_CATEGORIES = new Set([
+  'connection-refused', 'dns-resolution', 'pool-unavailable', 'pool-connect-failed', 'network-error',
+]);
+
+/** Returns true if the error is an infrastructure issue (pool down, DNS, connection refused). */
+export function isInfraError(errorMsg) {
+  if (!errorMsg) return false;
+  const { category } = categorizeError(errorMsg);
+  return INFRA_CATEGORIES.has(category);
+}
 
 export function categorizeError(errorMsg) {
   if (!errorMsg) return { category: 'unknown', pattern: 'unknown' };
@@ -204,6 +220,11 @@ export function learnFromRun(projectId, runDbId, report, config, suiteName) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  const insertActionHealth = d.prepare(`
+    INSERT INTO action_health (project_id, run_id, test_name, action_index, action_type, selector, success, duration_ms, console_errors_after, network_errors_after, page_url)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
   const upsertErrorPattern = d.prepare(`
     INSERT INTO error_patterns (project_id, pattern, category, occurrence_count, first_seen, last_seen, example_error, example_test)
     VALUES (?, ?, ?, 1, datetime('now'), datetime('now'), ?, ?)
@@ -214,21 +235,38 @@ export function learnFromRun(projectId, runDbId, report, config, suiteName) {
       example_test = excluded.example_test
   `);
 
+  let infraCount = 0;
+
   const tx = d.transaction(() => {
     for (const result of results) {
       const durationMs = (result.endTime && result.startTime)
         ? new Date(result.endTime) - new Date(result.startTime)
         : null;
-      const isFlaky = result.success && (result.attempt || 1) > 1 ? 1 : 0;
+      const isFlaky = result.flaky ? 1 : (result.success && (result.attempt || 1) > 1 ? 1 : 0);
 
       // Categorize error
       let errorPattern = null;
+      let infraFailure = false;
       if (result.error) {
         const { category, pattern } = categorizeError(result.error);
         errorPattern = category;
+        infraFailure = INFRA_CATEGORIES.has(category);
 
-        // Track error pattern
+        // Always track error patterns (even infra) for awareness
         upsertErrorPattern.run(projectId, pattern, category, result.error, result.name);
+      }
+
+      if (infraFailure) {
+        infraCount++;
+        // Still write test_learnings so run counts are accurate,
+        // but skip selector/page/api learnings to avoid polluting metrics
+        insertTestLearning.run(
+          projectId, runDbId, result.name,
+          result.success ? 1 : 0, durationMs, isFlaky,
+          result.attempt || 1, result.maxAttempts || 1,
+          errorPattern
+        );
+        continue;
       }
 
       // Test-level learning
@@ -275,6 +313,33 @@ export function learnFromRun(projectId, runDbId, report, config, suiteName) {
           api.isError, result.name
         );
       }
+
+      // Action health — per-action metrics with collateral error estimation
+      if (result.actions?.length) {
+        const totalConsoleErrors = (result.consoleLogs || []).filter(l => l.type === 'error').length;
+        const totalNetworkErrors = (result.networkErrors || []).length;
+        const actionCount = result.actions.length;
+        let currentPage = '/';
+
+        for (let i = 0; i < actionCount; i++) {
+          const action = result.actions[i];
+          if (action.type === 'goto' || action.type === 'navigate') {
+            try { currentPage = new URL(action.value, 'http://placeholder').pathname; } catch { currentPage = action.value || '/'; }
+          }
+          // Estimate collateral errors: later actions inherit more errors (weighted distribution)
+          const weight = (i + 1) / actionCount;
+          const consoleAfter = action.success === false ? Math.round(totalConsoleErrors * weight) : 0;
+          const networkAfter = action.success === false ? Math.round(totalNetworkErrors * weight) : 0;
+
+          insertActionHealth.run(
+            projectId, runDbId, result.name, i,
+            action.type || 'unknown', action.selector || null,
+            action.success === false ? 0 : 1,
+            action.duration || null,
+            consoleAfter, networkAfter, currentPage
+          );
+        }
+      }
     }
   });
 
@@ -287,6 +352,8 @@ export function learnFromRun(projectId, runDbId, report, config, suiteName) {
   if (config?.learningsNeo4j) {
     writeToGraph(projectId, runDbId, report, config, suiteName).catch(() => {});
   }
+
+  return { infraCount };
 }
 
 // ── Summary cache ─────────────────────────────────────────────────────────────

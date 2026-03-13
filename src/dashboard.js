@@ -20,7 +20,7 @@ import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, 
 import { listProjects as dbListProjects, listProjectsWithSparklines as dbListProjectsWithSparklines, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
-import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot } from './learner-sqlite.js';
+import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot, getActionHealthScores } from './learner-sqlite.js';
 import { handleSyncRoutes } from './sync/hub-routes.js';
 import { migrateSyncSchema } from './sync/schema.js';
 
@@ -305,6 +305,38 @@ export async function startDashboard(config) {
         return;
       }
 
+      // API: DB — project config warnings (Docker hostname detection)
+      const configWarningsMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/config-warnings$/);
+      if (configWarningsMatch) {
+        try {
+          const projectId = parseInt(configWarningsMatch[1], 10);
+          const projectCwd = dbGetProjectCwd(projectId);
+          if (!projectCwd) { jsonResponse(res, { warnings: [] }); return; }
+          const cfg = await loadConfig({}, projectCwd);
+          const warnings = [];
+          const checkDockerHostname = (url, label) => {
+            try {
+              const parsed = new URL(url);
+              if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost' && parsed.hostname !== '127') {
+                warnings.push({
+                  type: 'docker-hostname',
+                  field: label,
+                  hostname: parsed.hostname,
+                  url,
+                  message: `"${parsed.hostname}" looks like a Docker-internal hostname. The runner will auto-fallback to localhost for auth, but baseUrl requests go through Chrome in Docker (which can resolve it). If tests fail with ENOTFOUND, ensure Chrome pool is on the same Docker network.`,
+                });
+              }
+            } catch {}
+          };
+          if (cfg.baseUrl) checkDockerHostname(cfg.baseUrl, 'baseUrl');
+          if (cfg.authLoginEndpoint) checkDockerHostname(cfg.authLoginEndpoint, 'authLoginEndpoint');
+          jsonResponse(res, { warnings });
+        } catch (error) {
+          jsonResponse(res, { warnings: [], error: error.message });
+        }
+        return;
+      }
+
       // API: DB — project screenshots list
       const projectScreenshotsMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/screenshots$/);
       if (projectScreenshotsMatch) {
@@ -498,6 +530,9 @@ export async function startDashboard(config) {
             case 'trends':
               data = getTestTrends(projectId, days);
               break;
+            case 'actions':
+              data = getActionHealthScores(projectId, days);
+              break;
             default:
               jsonResponse(res, { error: `Unknown learnings category: ${category}` }, 400);
               return;
@@ -663,7 +698,9 @@ export async function startDashboard(config) {
           if (oversize) { jsonResponse(res, { error: 'Payload too large' }, 413); return; }
           try {
             const data = JSON.parse(body);
-            bufferLiveEvent(data);
+            if (data.event !== 'test:frame') {
+              bufferLiveEvent(data);
+            }
             wss.broadcast(JSON.stringify(data));
           } catch { /* */ }
           jsonResponse(res, { ok: true });
@@ -711,8 +748,9 @@ export async function startDashboard(config) {
     }
   }, 30000);
 
+  const devOrigins = process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173'];
   const wss = createWebSocketServer(server, {
-    allowedOrigins: [`http://localhost:${port}`, `http://127.0.0.1:${port}`],
+    allowedOrigins: [`http://localhost:${port}`, `http://127.0.0.1:${port}`, ...devOrigins],
     onConnect(socket) {
       // Replay live state for new/reconnected clients
       for (const rid of Object.keys(liveEventBuffers)) {
@@ -765,16 +803,20 @@ export async function startDashboard(config) {
       runConfig.triggeredBy = 'dashboard';
       if (params.concurrency) runConfig.concurrency = params.concurrency;
       if (params.baseUrl) runConfig.baseUrl = params.baseUrl;
+      if (params.screencast !== undefined) runConfig.screencast = params.screencast;
 
       // Wire up onProgress to broadcast WS events
       runConfig.onProgress = (data) => {
-        bufferLiveEvent(data);
+        // Don't buffer screencast frames — they're ephemeral and high volume
+        if (data.event !== 'test:frame') {
+          bufferLiveEvent(data);
+        }
         wss.broadcast(JSON.stringify(data));
       };
 
       let tests, hooks;
       if (params.suite) {
-        ({ tests, hooks } = loadTestSuite(params.suite, runConfig.testsDir));
+        ({ tests, hooks } = loadTestSuite(params.suite, runConfig.testsDir, runConfig.modulesDir));
       } else {
         ({ tests, hooks } = loadAllSuites(runConfig.testsDir, runConfig.modulesDir, runConfig.exclude));
       }

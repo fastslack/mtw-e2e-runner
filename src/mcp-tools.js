@@ -15,18 +15,47 @@ import http from 'http';
 import { loadConfig } from './config.js';
 import { connectToPool } from './pool.js';
 import { waitForAnyPool, getPoolUrls, getAggregatedPoolStatus, selectPool } from './pool-manager.js';
-import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from './runner.js';
+import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites, fetchAuthToken } from './runner.js';
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { narrateTest } from './narrate.js';
 import { startDashboard, stopDashboard } from './dashboard.js';
 import { lookupScreenshotHash, ensureProject, computeScreenshotHash, registerScreenshotHash, getNetworkLogs, setVariable, getVariables, deleteVariable, listVariables } from './db.js';
 import { fetchIssue, checkCliAuth, detectProvider } from './issues.js';
-import { buildPrompt, hasApiKey } from './ai-generate.js';
+import { buildPrompt, hasApiKey, generateHindsightHint } from './ai-generate.js';
 import { verifyIssue } from './verify.js';
 import { listModules } from './module-resolver.js';
-import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getTestHistory, getPageHistory, getSelectorHistory, getHealthSnapshot, getTestCreationContext, generateImprovements } from './learner-sqlite.js';
+import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getTestHistory, getPageHistory, getSelectorHistory, getHealthSnapshot, getTestCreationContext, generateImprovements, getActionHealthScores } from './learner-sqlite.js';
 import { queryGraph } from './learner-neo4j.js';
 import { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
+
+/**
+ * Resolves auth token from config: uses static authToken if set,
+ * otherwise auto-logs in via authLoginEndpoint + authCredentials.
+ * If the endpoint is a Docker-internal hostname (e.g. "nginx", "api")
+ * and fails with ENOTFOUND, retries with localhost.
+ * Returns the token string or null if no auth is configured.
+ */
+async function resolveAuthToken(config) {
+  if (config.authToken) return config.authToken;
+  if (config.authLoginEndpoint && config.authCredentials) {
+    const tokenPath = config.authTokenPath || 'token';
+    try {
+      return await fetchAuthToken(config.authLoginEndpoint, config.authCredentials, tokenPath);
+    } catch (err) {
+      // Docker-internal hostname? Retry with localhost from host machine
+      if (err.message && err.message.includes('ENOTFOUND')) {
+        const url = new URL(config.authLoginEndpoint);
+        if (!url.hostname.includes('.')) {
+          // Simple hostname (nginx, api, etc.) → likely Docker service name
+          const localhostUrl = `http://localhost${url.port && url.port !== '80' ? ':' + url.port : ''}${url.pathname}${url.search}`;
+          return await fetchAuthToken(localhostUrl, config.authCredentials, tokenPath);
+        }
+      }
+      throw err;
+    }
+  }
+  return null;
+}
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -265,6 +294,24 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
     },
   },
   {
+    name: 'e2e_dashboard_restart',
+    description:
+      'Restart the E2E Runner web dashboard. Stops the current instance and starts a new one, optionally with a new cwd or port. Useful when switching projects or when the dashboard was started from another session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        port: {
+          type: 'number',
+          description: 'Dashboard port (default: same port or 8484)',
+        },
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
+      },
+    },
+  },
+  {
     name: 'e2e_issue',
     description:
       'Fetch a GitHub/GitLab issue and prepare E2E test generation. Returns issue details and a prompt for test creation. Use mode "verify" to auto-generate and run tests (requires ANTHROPIC_API_KEY).',
@@ -337,6 +384,11 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
           type: 'string',
           description: 'localStorage key name for the auth token (default: "accessToken")',
         },
+        waitUntil: {
+          type: 'string',
+          enum: ['networkidle2', 'domcontentloaded', 'load', 'auto'],
+          description: 'Navigation wait strategy. "auto" (default) tries networkidle2 first with a short timeout, then falls back to domcontentloaded + delay for SPA/WebSocket apps. Use "domcontentloaded" for apps with persistent connections (WebSocket, SSE).',
+        },
         cwd: {
           type: 'string',
           description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
@@ -383,6 +435,11 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         authStorageKey: {
           type: 'string',
           description: 'localStorage key name for the auth token (default: "accessToken")',
+        },
+        waitUntil: {
+          type: 'string',
+          enum: ['networkidle2', 'domcontentloaded', 'load', 'auto'],
+          description: 'Navigation wait strategy. "auto" (default) tries networkidle2 first with a short timeout, then falls back to domcontentloaded + delay for SPA/WebSocket apps. Use "domcontentloaded" for apps with persistent connections (WebSocket, SSE).',
         },
         cwd: {
           type: 'string',
@@ -568,9 +625,9 @@ Good module candidates: auth setup, page navigation, tab clicking, opening sideb
   },
 ];
 
-/** Tools exposed on the dashboard — excludes dashboard start/stop (already running). */
+/** Tools exposed on the dashboard — excludes dashboard start/stop/restart (already running). */
 export const DASHBOARD_TOOLS = TOOLS.filter(
-  t => t.name !== 'e2e_dashboard_start' && t.name !== 'e2e_dashboard_stop'
+  t => t.name !== 'e2e_dashboard_start' && t.name !== 'e2e_dashboard_stop' && t.name !== 'e2e_dashboard_restart'
 );
 
 // ── Dashboard broadcast helper ────────────────────────────────────────────────
@@ -669,8 +726,13 @@ async function handleRun(args) {
     }));
 
   const flaky = report.results
-    .filter(r => r.success && r.attempt > 1)
-    .map(r => ({ name: r.name, attempts: r.attempt }));
+    .filter(r => r.success && (r.attempt > 1 || r.flaky))
+    .map(r => {
+      const entry = { name: r.name };
+      if (r.voting) entry.voting = r.voting;
+      else entry.attempts = r.attempt;
+      return entry;
+    });
 
   const summary = {
     ...report.summary,
@@ -795,6 +857,19 @@ async function handleRun(args) {
       const improvements = generateImprovements(projectId, report);
       if (improvements.length > 0) {
         summary.improvements = improvements;
+      }
+    } catch { /* never fail the run response */ }
+  }
+
+  // Hindsight hints — LLM-powered fix suggestions for failures (async, never blocks)
+  if (hasApiKey(config) && failures.length > 0) {
+    try {
+      const maxHints = config.hintsMaxFailures ?? 3;
+      const hintTargets = failures.slice(0, maxHints);
+      const failedResults = hintTargets.map(f => report.results.find(r => r.name === f.name)).filter(Boolean);
+      const hints = (await Promise.all(failedResults.map(r => generateHindsightHint(r, config)))).filter(Boolean);
+      if (hints.length > 0) {
+        summary.hindsightHints = hints;
       }
     } catch { /* never fail the run response */ }
   }
@@ -1039,22 +1114,44 @@ function analyzeEvaluateUsage(actions) {
       suggestions.push('No-op evaluate (returns static string) → remove entirely');
     }
 
-    // 🚨 Pattern: evaluate returns template string interpolating booleans but never throws/fails
-    // e.g. return `Foo: ${hasFoo}, Bar: ${hasBar}` — always truthy, never fails
-    if (!(/throw\s+new\s+Error/s.test(code) || /\bFAIL[:\s]/s.test(code) || /\bERROR[:\s]/s.test(code)
-      || /return\s+false\b/s.test(code) || /return\s+'FAIL/s.test(code) || /return\s+`FAIL/s.test(code))) {
-      // Check for template returns with ${var} interpolation (informational, never fails)
+    // 🚨 Pattern: evaluate that NEVER fails — no throw, no FAIL:/ERROR:, no return false
+    const canFail = /throw\s+new\s+Error/s.test(code) || /\bFAIL[:\s]/s.test(code) || /\bERROR[:\s]/s.test(code)
+      || /return\s+false\b/s.test(code) || /return\s+'FAIL/s.test(code) || /return\s+`FAIL/s.test(code);
+
+    if (!canFail) {
+      // Any template string return → always truthy, test always passes
       if (/return\s+`[^`]*\$\{[^}]+\}[^`]*`/s.test(code)) {
-        // Heuristic: does the template interpolate boolean-like variables?
-        const hasConditionInterpolation = /\$\{(has\w+|is\w+|no\w+|found|exists|present|visible|loaded)\}/i.test(code);
-        const hasComparisonInterpolation = /\$\{[^}]*(===|!==|>|<|&&|\|\|)[^}]*\}/s.test(code);
-        if (hasConditionInterpolation || hasComparisonInterpolation) {
-          suggestions.push(
-            '🚨 Evaluate returns informational template string with boolean/condition values but NEVER throws or returns false — ' +
-            'this test will ALWAYS PASS. Either throw new Error("FAIL: ...") when conditions are not met, or replace with built-in assert actions'
-          );
-        }
+        suggestions.push(
+          '🚨 Evaluate returns template string but NEVER throws or returns false — ' +
+          'this action will ALWAYS PASS regardless of results. Either throw new Error("FAIL: ...") when conditions fail, or use built-in assert actions'
+        );
       }
+      // Returns a plain string (not template) that isn't FAIL/ERROR
+      else if (/return\s+['"][^'"]*['"]/s.test(code) && code.length > 60) {
+        suggestions.push(
+          '⚠️ Evaluate returns a plain string but never fails — informational-only. Add failure conditions or replace with assert actions'
+        );
+      }
+    }
+
+    // 🚨 Pattern: .click() inside evaluate — should use built-in click action
+    if (/\.click\(\)/s.test(code) && !(/\.textContent[^]*\.click\(\)/s.test(code))) {
+      // Only flag if not already caught by the textContent click pattern above
+      if (/\.filter\([^)]*text/s.test(code) || /querySelectorAll[^)]*\)[^]*\.click/s.test(code) || /querySelector[^)]*\)[^]*\.click/s.test(code)) {
+        suggestions.push(
+          '🚨 Element click via evaluate → use { type: "click", text: "..." } or { type: "click", selector: "..." }. ' +
+          'Built-in click has retries, waits, and better error reporting'
+        );
+      }
+    }
+
+    // 🚨 Pattern: MUI/framework selectors inside evaluate — fragile
+    const muiMatches = code.match(/\.Mui[\w-]+/g) || [];
+    if (muiMatches.length > 0) {
+      suggestions.push(
+        `⚠️ MUI class selectors (${muiMatches.slice(0, 3).join(', ')}) are auto-generated and change between versions. ` +
+        `Prefer [data-testid="..."], [role="..."], or text-based selectors`
+      );
     }
 
     // 🚨 Pattern: sets window.__e2e_* globals for cross-test state sharing
@@ -1089,6 +1186,23 @@ function analyzeActionPatterns(tests) {
           );
           break; // one warning per test is enough
         }
+      }
+    }
+  }
+
+  // Detect MUI/framework selectors in action selectors
+  for (const test of tests) {
+    if (!test.actions) continue;
+    for (const action of test.actions) {
+      const sel = action.selector || '';
+      if (/\.Mui[\w-]+/.test(sel) || /\.ant-[\w-]+/.test(sel) || /\.v-[\w-]+/.test(sel)) {
+        const match = sel.match(/\.(Mui[\w-]+|ant-[\w-]+|v-[\w-]+)/);
+        warnings.push(
+          `⚠️ Framework selector ".${match[1]}" in "${test.name}" (${action.type}) — ` +
+          `these class names are auto-generated and break on version upgrades. ` +
+          `Prefer [data-testid="..."], [role="..."], or text-based actions`
+        );
+        break;
       }
     }
   }
@@ -1695,6 +1809,36 @@ function buildSuggestedTests(structure, pageUrl) {
   return tests;
 }
 
+/**
+ * Smart page navigation with fallback for SPA/WebSocket apps.
+ * - "auto" (default): tries networkidle2 with 10s timeout, falls back to domcontentloaded + 2s delay
+ * - "networkidle2"/"load"/"domcontentloaded": uses that strategy directly with 30s timeout
+ */
+async function smartNavigate(page, url, waitUntil) {
+  const strategy = waitUntil || 'auto';
+
+  if (strategy === 'auto') {
+    try {
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 10000 });
+    } catch (err) {
+      if (err.name === 'TimeoutError' || (err.message && err.message.includes('timeout'))) {
+        // networkidle2 timed out — likely a SPA with WebSocket/SSE/polling
+        // Fall back to domcontentloaded + wait for hydration
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    await page.goto(url, { waitUntil: strategy, timeout: 30000 });
+    // For domcontentloaded, add a small hydration delay for SPAs
+    if (strategy === 'domcontentloaded') {
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+}
+
 async function handleAnalyze(args) {
   if (!args.url) return errorResult('Missing required parameter: url');
 
@@ -1708,8 +1852,8 @@ async function handleAnalyze(args) {
     const page = await browser.newPage();
     await page.setViewport(config.viewport);
 
-    // Inject auth token into localStorage before navigation
-    const authToken = args.authToken || config.authToken;
+    // Resolve auth token: explicit arg > config static > auto-login
+    const authToken = args.authToken || await resolveAuthToken(config);
     if (authToken) {
       const storageKey = args.authStorageKey || config.authStorageKey || 'accessToken';
       const origin = new URL(args.url).origin;
@@ -1717,7 +1861,7 @@ async function handleAnalyze(args) {
       await page.evaluate((key, token) => { localStorage.setItem(key, token); }, storageKey, authToken);
     }
 
-    await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await smartNavigate(page, args.url, args.waitUntil);
 
     if (args.selector) {
       await page.waitForSelector(args.selector, { timeout: 10000 });
@@ -1797,8 +1941,8 @@ async function handleCapture(args) {
     const page = await browser.newPage();
     await page.setViewport(config.viewport);
 
-    // Inject auth token into localStorage before navigation
-    const authToken = args.authToken || config.authToken;
+    // Resolve auth token: explicit arg > config static > auto-login
+    const authToken = args.authToken || await resolveAuthToken(config);
     if (authToken) {
       const storageKey = args.authStorageKey || config.authStorageKey || 'accessToken';
       // Navigate to origin first so localStorage is accessible
@@ -1807,7 +1951,7 @@ async function handleCapture(args) {
       await page.evaluate((key, token) => { localStorage.setItem(key, token); }, storageKey, authToken);
     }
 
-    await page.goto(args.url, { waitUntil: 'networkidle2', timeout: 30000 });
+    await smartNavigate(page, args.url, args.waitUntil);
 
     if (args.selector) {
       await page.waitForSelector(args.selector, { timeout: 10000 });
@@ -1872,6 +2016,35 @@ async function handleDashboardStop() {
   stopDashboard(dashboardHandle);
   dashboardHandle = null;
   return textResult('Dashboard stopped');
+}
+
+async function handleDashboardRestart(args) {
+  const port = args.port || (dashboardHandle ? dashboardHandle.port : 8484);
+
+  // Stop current instance if we own it
+  if (dashboardHandle) {
+    stopDashboard(dashboardHandle);
+    dashboardHandle = null;
+  }
+
+  // Kill any process occupying the target port (e.g. from another session)
+  try {
+    const { execFileSync } = await import('child_process');
+    const lsof = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    if (lsof) {
+      for (const pid of lsof.split('\n').filter(Boolean)) {
+        try { process.kill(Number(pid), 'SIGTERM'); } catch {}
+      }
+      // Brief wait for port to free up
+      await new Promise(r => setTimeout(r, 500));
+    }
+  } catch {}
+
+  // Start fresh
+  const overrides = { dashboardPort: port };
+  const config = await loadConfig(overrides, args.cwd);
+  dashboardHandle = await startDashboard(config);
+  return textResult(`Dashboard restarted at http://localhost:${dashboardHandle.port}`);
 }
 
 async function handleNeo4j(args) {
@@ -1965,8 +2138,10 @@ async function handleLearnings(args) {
       return textResult(JSON.stringify(getErrorPatterns(projectId), null, 2));
     case 'trends':
       return textResult(JSON.stringify(getTestTrends(projectId, days), null, 2));
+    case 'actions':
+      return textResult(JSON.stringify(getActionHealthScores(projectId, days), null, 2));
     default:
-      return errorResult(`Unknown query: "${args.query}". Use: summary, flaky, selectors, pages, apis, errors, trends, test:<name>, page:<path>, selector:<value>`);
+      return errorResult(`Unknown query: "${args.query}". Use: summary, flaky, selectors, pages, apis, errors, trends, actions, test:<name>, page:<path>, selector:<value>`);
   }
 }
 
@@ -2142,6 +2317,8 @@ export async function dispatchTool(name, args = {}) {
       return await handleDashboardStart(args);
     case 'e2e_dashboard_stop':
       return await handleDashboardStop();
+    case 'e2e_dashboard_restart':
+      return await handleDashboardRestart(args);
     case 'e2e_issue':
       return await handleIssue(args);
     case 'e2e_create_module':

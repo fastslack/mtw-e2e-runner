@@ -199,6 +199,24 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_al_project  ON api_learnings(project_id);
     CREATE INDEX IF NOT EXISTS idx_al_endpoint ON api_learnings(endpoint);
 
+    CREATE TABLE IF NOT EXISTS action_health (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id      INTEGER NOT NULL REFERENCES projects(id),
+      run_id          INTEGER REFERENCES runs(id) ON DELETE CASCADE,
+      test_name       TEXT NOT NULL,
+      action_index    INTEGER NOT NULL,
+      action_type     TEXT NOT NULL,
+      selector        TEXT,
+      success         INTEGER NOT NULL,
+      duration_ms     INTEGER,
+      console_errors_after INTEGER DEFAULT 0,
+      network_errors_after INTEGER DEFAULT 0,
+      page_url        TEXT,
+      created_at      TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ah_project  ON action_health(project_id);
+    CREATE INDEX IF NOT EXISTS idx_ah_selector ON action_health(selector);
+
     CREATE TABLE IF NOT EXISTS error_patterns (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       project_id      INTEGER NOT NULL REFERENCES projects(id),

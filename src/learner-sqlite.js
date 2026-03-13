@@ -293,6 +293,117 @@ export function getRunInsights(projectId, report) {
     }
   }
 
+  // ── At-Least-One Guarantee: generate positive insights if none exist ──
+  if (insights.length === 0 && report.results.length > 0) {
+    const allPassed = report.results.every(r => r.success);
+
+    // Green streak detection
+    if (allPassed) {
+      const recentRuns = d.prepare(`
+        SELECT run_id, MIN(success) AS all_passed
+        FROM test_learnings
+        WHERE project_id = ?
+        GROUP BY run_id
+        ORDER BY created_at DESC
+        LIMIT 10
+      `).all(projectId);
+      const streak = recentRuns.findIndex(r => r.all_passed === 0);
+      const streakCount = streak === -1 ? recentRuns.length : streak;
+      if (streakCount >= 3) {
+        insights.push({
+          type: 'green-streak',
+          streak: streakCount,
+          message: `${streakCount}-run green streak — suite is stable.`,
+        });
+      }
+    }
+
+    // New tests (no historical data)
+    const newTests = report.results.filter(r => {
+      const h = d.prepare('SELECT COUNT(*) AS c FROM test_learnings WHERE project_id = ? AND test_name = ?').get(projectId, r.name);
+      return !h || h.c <= 1; // <= 1 because current run may already be written
+    });
+    if (newTests.length > 0) {
+      insights.push({
+        type: 'new-tests',
+        tests: newTests.map(t => t.name),
+        message: `${newTests.length} new test(s): ${newTests.map(t => t.name).slice(0, 3).join(', ')}${newTests.length > 3 ? '...' : ''}`,
+      });
+    }
+
+    // Pass rate improvement vs 7-day average
+    const avg7d = d.prepare(`
+      SELECT ROUND(AVG(CASE WHEN success = 1 THEN 100.0 ELSE 0.0 END), 1) AS pass_rate
+      FROM test_learnings
+      WHERE project_id = ? AND created_at >= datetime('now', '-7 days')
+    `).get(projectId);
+    const thisRunPassRate = Math.round((report.results.filter(r => r.success).length / report.results.length) * 1000) / 10;
+    if (avg7d?.pass_rate && thisRunPassRate > avg7d.pass_rate + 5) {
+      insights.push({
+        type: 'improved-pass-rate',
+        message: `Pass rate improved: ${thisRunPassRate}% this run vs ${avg7d.pass_rate}% 7-day average.`,
+      });
+    }
+
+    // Performance comparison
+    const avgDuration = d.prepare(`
+      SELECT ROUND(AVG(duration_ms)) AS avg_ms
+      FROM test_learnings
+      WHERE project_id = ? AND duration_ms IS NOT NULL AND created_at >= datetime('now', '-30 days')
+    `).get(projectId);
+    if (avgDuration?.avg_ms && report.results.length > 0) {
+      const thisAvg = report.results.reduce((s, r) => {
+        const ms = (r.endTime && r.startTime) ? new Date(r.endTime) - new Date(r.startTime) : 0;
+        return s + ms;
+      }, 0) / report.results.length;
+      const delta = Math.round(((thisAvg - avgDuration.avg_ms) / avgDuration.avg_ms) * 100);
+      if (Math.abs(delta) > 15) {
+        insights.push({
+          type: 'performance',
+          message: delta < 0
+            ? `This run was ${Math.abs(delta)}% faster than the 30-day average.`
+            : `This run was ${delta}% slower than the 30-day average — check for new slow pages.`,
+        });
+      }
+    }
+
+    // Stable selectors confirmed
+    if (allPassed) {
+      const usedSelectors = new Set();
+      for (const r of report.results) {
+        if (!r.actions) continue;
+        for (const a of r.actions) {
+          if (a.selector) usedSelectors.add(a.selector);
+        }
+      }
+      if (usedSelectors.size > 0) {
+        const stableCount = d.prepare(`
+          SELECT COUNT(DISTINCT selector) AS c
+          FROM selector_learnings
+          WHERE project_id = ? AND selector IN (${[...usedSelectors].map(() => '?').join(',')})
+          GROUP BY selector
+          HAVING SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) = 0 AND COUNT(*) > 3
+        `).all(projectId, ...usedSelectors).length;
+        if (stableCount > 0) {
+          insights.push({
+            type: 'stable-selectors',
+            count: stableCount,
+            message: `${stableCount} selector(s) confirmed stable across multiple runs.`,
+          });
+        }
+      }
+    }
+
+    // Fallback: if still no insights, report basic run stats
+    if (insights.length === 0) {
+      const passed = report.results.filter(r => r.success).length;
+      insights.push({
+        type: 'run-summary',
+        message: `${passed}/${report.results.length} tests passed (${thisRunPassRate}%).`,
+      });
+    }
+  }
+
   return insights;
 }
 
@@ -397,6 +508,49 @@ export function getSelectorHistory(projectId, selector, days = 30) {
  * Aggregated context for test authoring — curates the most actionable learnings
  * into a compact object that AI agents can use to write better tests.
  */
+/**
+ * Action health scores — composite per-action metrics aggregated by (action_type, selector).
+ * Score = (success_rate * 0.5) + (speed_score * 0.3) + (collateral_score * 0.2)
+ */
+export function getActionHealthScores(projectId, days = 30) {
+  const d = getDb();
+  const rows = d.prepare(`
+    SELECT
+      action_type,
+      selector,
+      page_url,
+      COUNT(*) AS total_uses,
+      ROUND(AVG(CASE WHEN success = 1 THEN 100.0 ELSE 0.0 END), 1) AS success_rate,
+      ROUND(AVG(duration_ms)) AS avg_duration_ms,
+      MAX(duration_ms) AS max_duration_ms,
+      ROUND(AVG(console_errors_after + network_errors_after), 1) AS avg_collateral_errors,
+      COUNT(DISTINCT test_name) AS used_by_tests
+    FROM action_health
+    WHERE project_id = ? AND created_at >= datetime('now', '-' || ? || ' days')
+    GROUP BY action_type, selector
+    HAVING total_uses >= 2
+    ORDER BY success_rate ASC, total_uses DESC
+  `).all(projectId, days);
+
+  return rows.map(r => {
+    const speedScore = 100 - Math.min(100, ((r.avg_duration_ms || 0) / 5000) * 100);
+    const collateralScore = 100 - Math.min(100, (r.avg_collateral_errors || 0) * 20);
+    const healthScore = Math.round(r.success_rate * 0.5 + speedScore * 0.3 + collateralScore * 0.2);
+    return {
+      actionType: r.action_type,
+      selector: r.selector,
+      pageUrl: r.page_url,
+      totalUses: r.total_uses,
+      successRate: r.success_rate,
+      avgDurationMs: r.avg_duration_ms,
+      maxDurationMs: r.max_duration_ms,
+      avgCollateralErrors: r.avg_collateral_errors,
+      usedByTests: r.used_by_tests,
+      healthScore,
+    };
+  });
+}
+
 export function getTestCreationContext(projectId) {
   const d = getDb();
   const ctx = {};

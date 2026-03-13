@@ -115,7 +115,7 @@ function getByPath(obj, dotPath) {
 }
 
 /** Fetches an auth token by POSTing credentials to a login endpoint. */
-function fetchAuthToken(endpoint, credentials, tokenPath) {
+export function fetchAuthToken(endpoint, credentials, tokenPath) {
   return new Promise((resolve, reject) => {
     const url = new URL(endpoint);
     const transport = url.protocol === 'https:' ? https : http;
@@ -123,7 +123,7 @@ function fetchAuthToken(endpoint, credentials, tokenPath) {
 
     const req = transport.request(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'Accept': '*/*', 'User-Agent': '@matware/e2e-runner' },
       timeout: 15000,
     }, (res) => {
       let data = '';
@@ -155,6 +155,7 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
   let browser = null;
   let context = null;
   let page = null;
+  let cdpSession = null;
 
   const result = {
     name: test.name,
@@ -182,6 +183,35 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     context = await browser.createBrowserContext();
     page = await context.newPage();
     await page.setViewport(config.viewport);
+
+    // CDP screencast — streams browser frames as JPEG to the dashboard
+    if (config.screencast) {
+      try {
+        cdpSession = await page.createCDPSession();
+        let frameCount = 0;
+        const everyNth = config.screencastEveryNthFrame || 1;
+        cdpSession.on('Page.screencastFrame', (frame) => {
+          frameCount++;
+          cdpSession.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
+          if (everyNth > 1 && frameCount % everyNth !== 0) return;
+          progressFn({
+            event: 'test:frame',
+            name: test.name,
+            data: frame.data,
+            metadata: frame.metadata,
+          });
+        });
+        await cdpSession.send('Page.startScreencast', {
+          format: 'jpeg',
+          quality: config.screencastQuality || 60,
+          maxWidth: config.screencastMaxWidth || 800,
+          maxHeight: config.screencastMaxHeight || 600,
+          everyNthFrame: 1,
+        });
+      } catch {
+        cdpSession = null;
+      }
+    }
 
     page.on('console', (msg) => {
       result.consoleLogs.push({ type: msg.type(), text: msg.text() });
@@ -351,6 +381,11 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       } catch { /* page may be dead */ }
     }
   } finally {
+    // Stop screencast before disconnecting
+    if (cdpSession) {
+      try { await cdpSession.send('Page.stopScreencast'); } catch { /* */ }
+      try { await cdpSession.detach(); } catch { /* */ }
+    }
     // Flush pending response body reads before disconnecting
     if (pendingBodies.length > 0) {
       try { await Promise.allSettled(pendingBodies); } catch { /* */ }
@@ -369,6 +404,58 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     if (result.poolUrl) {
       releasePending(result.poolUrl);
     }
+  }
+
+  return result;
+}
+
+/**
+ * Majority voting — runs a test N times in parallel and uses majority vote for pass/fail.
+ * If majority passes but not unanimously, marks as flaky.
+ */
+async function runTestWithVoting(test, config, hooks, votingCount, testTimeout, progressFn) {
+  const votes = [];
+  const promises = [];
+
+  for (let v = 0; v < votingCount; v++) {
+    const timeoutPromise = new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(new Error(`Test timed out after ${testTimeout}ms`)), testTimeout);
+      timer.unref();
+    });
+    promises.push(
+      Promise.race([runTest(test, config, hooks, progressFn), timeoutPromise])
+        .catch(error => ({
+          name: test.name,
+          startTime: new Date().toISOString(),
+          endTime: new Date().toISOString(),
+          actions: [],
+          success: false,
+          error: error.message,
+          consoleLogs: [],
+          networkErrors: [],
+          networkLogs: [],
+        }))
+    );
+  }
+
+  const results = await Promise.all(promises);
+  const passCount = results.filter(r => r.success).length;
+  const majorityPassed = passCount > votingCount / 2;
+
+  // Pick the representative result: a passing one if majority passed, failing one otherwise
+  const representative = majorityPassed
+    ? results.find(r => r.success) || results[0]
+    : results.find(r => !r.success) || results[0];
+
+  const result = { ...representative };
+  result.success = majorityPassed;
+  result.voting = { total: votingCount, passed: passCount, failed: votingCount - passCount };
+  result.attempt = 1;
+  result.maxAttempts = 1;
+
+  // Non-unanimous pass = flaky
+  if (majorityPassed && passCount < votingCount) {
+    result.flaky = true;
   }
 
   return result;
@@ -414,8 +501,27 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       );
       log('✅', `${C.dim}Auth token acquired (${config.authToken.length} chars)${C.reset}`);
     } catch (error) {
-      log('❌', `${C.red}Auth auto-login failed: ${error.message}${C.reset}`);
-      throw error;
+      // Docker-internal hostname (nginx, api, etc.) → retry with localhost from host machine
+      if (error.message && error.message.includes('ENOTFOUND')) {
+        const url = new URL(config.authLoginEndpoint);
+        if (!url.hostname.includes('.')) {
+          const localhostUrl = `http://localhost${url.port && url.port !== '80' ? ':' + url.port : ''}${url.pathname}${url.search}`;
+          log('🔄', `${C.dim}Docker hostname "${url.hostname}" not reachable from host, retrying with ${localhostUrl}...${C.reset}`);
+          try {
+            config.authToken = await fetchAuthToken(localhostUrl, config.authCredentials, config.authTokenPath || 'token');
+            log('✅', `${C.dim}Auth token acquired via localhost fallback (${config.authToken.length} chars)${C.reset}`);
+          } catch (retryErr) {
+            log('❌', `${C.red}Auth auto-login failed (localhost fallback): ${retryErr.message}${C.reset}`);
+            throw retryErr;
+          }
+        } else {
+          log('❌', `${C.red}Auth auto-login failed: ${error.message}${C.reset}`);
+          throw error;
+        }
+      } else {
+        log('❌', `${C.red}Auth auto-login failed: ${error.message}${C.reset}`);
+        throw error;
+      }
     }
   }
 
@@ -446,40 +552,49 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       log('▶▶▶', `${C.cyan}${test.name}${C.reset} ${C.dim}(${activeCount} active)${C.reset}`);
       _progress({ event: 'test:start', name: test.name, serial: test.serial || false, activeCount, queueRemaining: queue.length });
 
-      const maxAttempts = (test.retries ?? config.retries ?? 0) + 1;
       const testTimeout = test.timeout ?? config.testTimeout ?? 60000;
+      const votingCount = test.voting ?? config.voting ?? 0;
+      const testHooks = test._suiteHooks ? mergeHooks(config.hooks, test._suiteHooks) : hooks;
       let result;
 
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        const timeoutPromise = new Promise((_, reject) => {
-          const timer = setTimeout(() => reject(new Error(`Test timed out after ${testTimeout}ms`)), testTimeout);
-          timer.unref();
-        });
+      if (votingCount > 1) {
+        // Majority voting: run N times in parallel, majority wins
+        log('🗳️', `${C.dim}${test.name}: voting ${votingCount}x in parallel${C.reset}`);
+        result = await runTestWithVoting(test, config, testHooks, votingCount, testTimeout, _progress);
+      } else {
+        // Standard sequential retry
+        const maxAttempts = (test.retries ?? config.retries ?? 0) + 1;
 
-        try {
-          const testHooks = test._suiteHooks ? mergeHooks(config.hooks, test._suiteHooks) : hooks;
-          result = await Promise.race([runTest(test, config, testHooks, _progress), timeoutPromise]);
-        } catch (error) {
-          result = {
-            name: test.name,
-            startTime: new Date().toISOString(),
-            endTime: new Date().toISOString(),
-            actions: [],
-            success: false,
-            error: error.message,
-            consoleLogs: [],
-            networkErrors: [],
-            networkLogs: [],
-          };
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const timeoutPromise = new Promise((_, reject) => {
+            const timer = setTimeout(() => reject(new Error(`Test timed out after ${testTimeout}ms`)), testTimeout);
+            timer.unref();
+          });
+
+          try {
+            result = await Promise.race([runTest(test, config, testHooks, _progress), timeoutPromise]);
+          } catch (error) {
+            result = {
+              name: test.name,
+              startTime: new Date().toISOString(),
+              endTime: new Date().toISOString(),
+              actions: [],
+              success: false,
+              error: error.message,
+              consoleLogs: [],
+              networkErrors: [],
+              networkLogs: [],
+            };
+          }
+
+          result.attempt = attempt;
+          result.maxAttempts = maxAttempts;
+
+          if (result.success || attempt === maxAttempts) break;
+          log('🔄', `${C.yellow}${test.name}${C.reset} failed, retrying (${attempt}/${maxAttempts})...`);
+          _progress({ event: 'test:retry', name: test.name, attempt, maxAttempts });
+          await sleep(config.retryDelay || 1000);
         }
-
-        result.attempt = attempt;
-        result.maxAttempts = maxAttempts;
-
-        if (result.success || attempt === maxAttempts) break;
-        log('🔄', `${C.yellow}${test.name}${C.reset} failed, retrying (${attempt}/${maxAttempts})...`);
-        _progress({ event: 'test:retry', name: test.name, attempt, maxAttempts });
-        await sleep(config.retryDelay || 1000);
       }
 
       results.push(result);
@@ -489,11 +604,13 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       _progress({ event: 'test:complete', name: test.name, success: result.success, duration: timeDiff(result.startTime, result.endTime), error: result.error, consoleLogs: result.consoleLogs, networkErrors: result.networkErrors, networkLogs: result.networkLogs, errorScreenshot: result.errorScreenshot, screenshots, poolUrl: result.poolUrl || null });
 
       if (result.success) {
-        const flaky = result.attempt > 1 ? ` ${C.yellow}(flaky, passed on attempt ${result.attempt}/${result.maxAttempts})${C.reset}` : '';
-        log('✅', `${C.green}${test.name}${C.reset} ${C.dim}(${timeDiff(result.startTime, result.endTime)})${C.reset}${flaky}`);
+        const votingInfo = result.voting ? ` ${C.yellow}(voting: ${result.voting.passed}/${result.voting.total} passed${result.flaky ? ', flaky' : ''})${C.reset}` : '';
+        const retryInfo = !result.voting && result.attempt > 1 ? ` ${C.yellow}(flaky, passed on attempt ${result.attempt}/${result.maxAttempts})${C.reset}` : '';
+        log('✅', `${C.green}${test.name}${C.reset} ${C.dim}(${timeDiff(result.startTime, result.endTime)})${C.reset}${votingInfo}${retryInfo}`);
       } else {
-        const attempts = result.maxAttempts > 1 ? ` (${result.maxAttempts} attempts)` : '';
-        log('❌', `${C.red}${test.name}${C.reset}: ${result.error}${attempts}`);
+        const votingInfo = result.voting ? ` (voting: ${result.voting.passed}/${result.voting.total} passed)` : '';
+        const attempts = !result.voting && result.maxAttempts > 1 ? ` (${result.maxAttempts} attempts)` : '';
+        log('❌', `${C.red}${test.name}${C.reset}: ${result.error}${votingInfo}${attempts}`);
       }
 
       const consoleIssues = result.consoleLogs?.filter(l => l.type === 'error' || l.type === 'warning').length || 0;

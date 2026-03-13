@@ -240,6 +240,77 @@ Existing suites: ${existingSuites.join(', ') || 'none'}`;
 }
 
 /**
+ * Generates a hindsight hint for a failed test result.
+ * Sends the error + action context to Claude API and returns a concrete fix suggestion.
+ * Returns null if API key is unavailable or on any error.
+ */
+export async function generateHindsightHint(failedResult, config = {}) {
+  const apiKey = config.anthropicApiKey || process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+
+  const model = config.hintsModel || config.anthropicModel || 'claude-sonnet-4-5-20250929';
+  const lastActions = (failedResult.actions || []).slice(-8);
+  const failedAction = lastActions.find(a => a.success === false);
+
+  const consoleErrors = (failedResult.consoleLogs || [])
+    .filter(l => l.type === 'error')
+    .slice(-5)
+    .map(l => l.text);
+
+  const networkErrors = (failedResult.networkErrors || [])
+    .slice(-5)
+    .map(e => `${e.url} (${e.error})`);
+
+  const prompt = `Analyze this failed E2E test and suggest a concrete fix.
+
+TEST: "${failedResult.name}"
+ERROR: ${failedResult.error}
+
+LAST ACTIONS:
+${lastActions.map((a, i) => `  ${i + 1}. ${a.type}${a.selector ? ' selector=' + a.selector : ''}${a.text ? ' text=' + a.text : ''}${a.value ? ' value=' + (a.value.length > 80 ? a.value.slice(0, 80) + '...' : a.value) : ''} → ${a.success === false ? 'FAILED: ' + a.error : 'OK'} (${a.duration}ms)`).join('\n')}
+
+${failedAction ? `FAILED ACTION: ${JSON.stringify({ type: failedAction.type, selector: failedAction.selector, text: failedAction.text, value: failedAction.value?.slice?.(0, 200) })}` : ''}
+${consoleErrors.length ? `CONSOLE ERRORS:\n${consoleErrors.join('\n')}` : ''}
+${networkErrors.length ? `NETWORK ERRORS:\n${networkErrors.join('\n')}` : ''}
+
+Respond with ONLY a JSON object: { "suggestion": "concrete fix description", "confidence": "high"|"medium"|"low", "fixType": "selector"|"wait"|"timeout"|"logic"|"infra"|"data" }`;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1024,
+        system: 'You are an E2E test debugging expert. Given a failed test, suggest the most likely fix. Be specific: name exact selectors, wait times, or code changes. Keep suggestions under 100 words.',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+    const result = await response.json();
+    const text = result.content?.[0]?.text;
+    if (!text) return null;
+
+    const cleaned = text.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const hint = JSON.parse(cleaned);
+    return { test: failedResult.name, ...hint };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Checks if the Anthropic API key is available.
  * @returns {boolean}
  */

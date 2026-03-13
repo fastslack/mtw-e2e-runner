@@ -54,6 +54,11 @@ const DEFAULTS = {
   failOnNetworkError: false,
   actionRetries: 0,
   actionRetryDelay: 500,
+  screencast: false,
+  screencastQuality: 60,
+  screencastMaxWidth: 800,
+  screencastMaxHeight: 600,
+  screencastEveryNthFrame: 1,
   anthropicApiKey: null,
   anthropicModel: 'claude-sonnet-4-5-20250929',
   authToken: null,
@@ -142,6 +147,11 @@ function loadEnvVars() {
   if (process.env.FAIL_ON_NETWORK_ERROR) env.failOnNetworkError = process.env.FAIL_ON_NETWORK_ERROR === 'true' || process.env.FAIL_ON_NETWORK_ERROR === '1';
   if (process.env.ACTION_RETRIES) env.actionRetries = parseInt(process.env.ACTION_RETRIES);
   if (process.env.ACTION_RETRY_DELAY) env.actionRetryDelay = parseInt(process.env.ACTION_RETRY_DELAY);
+  if (process.env.SCREENCAST) env.screencast = process.env.SCREENCAST === 'true' || process.env.SCREENCAST === '1';
+  if (process.env.SCREENCAST_QUALITY) env.screencastQuality = parseInt(process.env.SCREENCAST_QUALITY);
+  if (process.env.SCREENCAST_MAX_WIDTH) env.screencastMaxWidth = parseInt(process.env.SCREENCAST_MAX_WIDTH);
+  if (process.env.SCREENCAST_MAX_HEIGHT) env.screencastMaxHeight = parseInt(process.env.SCREENCAST_MAX_HEIGHT);
+  if (process.env.SCREENCAST_EVERY_NTH_FRAME) env.screencastEveryNthFrame = parseInt(process.env.SCREENCAST_EVERY_NTH_FRAME);
   if (process.env.ANTHROPIC_API_KEY) env.anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   if (process.env.ANTHROPIC_MODEL) env.anthropicModel = process.env.ANTHROPIC_MODEL;
   if (process.env.AUTH_TOKEN) env.authToken = process.env.AUTH_TOKEN;
@@ -158,6 +168,25 @@ function loadEnvVars() {
   if (process.env.NETWORK_IGNORE_DOMAINS) env.networkIgnoreDomains = process.env.NETWORK_IGNORE_DOMAINS.split(',').map(d => d.trim()).filter(Boolean);
   if (process.env.AUTH_LOGIN_ENDPOINT) env.authLoginEndpoint = process.env.AUTH_LOGIN_ENDPOINT;
   if (process.env.AUTH_TOKEN_PATH) env.authTokenPath = process.env.AUTH_TOKEN_PATH;
+  // credentials.env convention: E2E_USERNAME + E2E_PASSWORD → authCredentials
+  // Sends both email and username fields so the API accepts whichever it expects.
+  // E2E_AUTH_FIELD overrides to send a single field if desired.
+  if (process.env.E2E_USERNAME && process.env.E2E_PASSWORD) {
+    if (process.env.E2E_AUTH_FIELD) {
+      env.authCredentials = {
+        [process.env.E2E_AUTH_FIELD]: process.env.E2E_USERNAME,
+        password: process.env.E2E_PASSWORD,
+      };
+    } else {
+      env.authCredentials = {
+        email: process.env.E2E_USERNAME,
+        username: process.env.E2E_USERNAME,
+        password: process.env.E2E_PASSWORD,
+      };
+    }
+  }
+  if (process.env.E2E_LOGIN_ENDPOINT) env.authLoginEndpoint = process.env.E2E_LOGIN_ENDPOINT;
+  if (process.env.E2E_TOKEN_PATH) env.authTokenPath = process.env.E2E_TOKEN_PATH;
   if (process.env.GQL_ENDPOINT) env.gqlEndpoint = process.env.GQL_ENDPOINT;
   if (process.env.GQL_AUTH_HEADER) env.gqlAuthHeader = process.env.GQL_AUTH_HEADER;
   if (process.env.GQL_AUTH_KEY) env.gqlAuthKey = process.env.GQL_AUTH_KEY;
@@ -231,11 +260,10 @@ async function loadConfigFile(cwd) {
   return {};
 }
 
-/** Load .env file from cwd into process.env (no deps, KEY=VALUE format). */
-function loadDotEnv(cwd) {
-  const envPath = path.join(cwd, '.env');
-  if (!fs.existsSync(envPath)) return;
-  const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+/** Load a KEY=VALUE file into process.env (no deps). */
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
@@ -252,6 +280,14 @@ function loadDotEnv(cwd) {
       process.env[key] = val;
     }
   }
+}
+
+/** Load .env and credentials.env from cwd into process.env. */
+function loadDotEnv(cwd) {
+  loadEnvFile(path.join(cwd, '.env'));
+  // credentials.env — search e2e/ subdir first, then cwd root
+  loadEnvFile(path.join(cwd, 'e2e', 'credentials.env'));
+  loadEnvFile(path.join(cwd, 'credentials.env'));
 }
 
 export async function loadConfig(cliArgs = {}, cwd = null) {
@@ -298,6 +334,11 @@ export async function loadConfig(cliArgs = {}, cwd = null) {
   // Ensure screenshots directory exists
   if (!fs.existsSync(config.screenshotsDir)) {
     fs.mkdirSync(config.screenshotsDir, { recursive: true });
+  }
+
+  // Auto-infer authLoginEndpoint from baseUrl if credentials are available but no endpoint
+  if (config.authCredentials && !config.authLoginEndpoint && config.baseUrl) {
+    config.authLoginEndpoint = config.baseUrl.replace(/\/+$/, '') + '/api/auth/login';
   }
 
   // Stash cwd for project identity (used by db.js)
