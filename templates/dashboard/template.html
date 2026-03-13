@@ -79,7 +79,11 @@
   <div class="view" id="view-tests">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
       <div style="font-family:var(--sans);font-size:16px;font-weight:600">Tests</div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <label class="screencast-toggle-label" title="Enable live browser screencast during test runs">
+          <input type="checkbox" id="screencastToggle" />
+          <span>&#128249;</span>
+        </label>
         <button class="btn sm primary" id="btnRunAll">&#9655; Run All</button>
       </div>
     </div>
@@ -181,13 +185,12 @@
           <button class="btn sm" id="btnRefreshLearnings">Refresh</button>
         </div>
       </div>
-      <div id="learningsOverview"></div>
-      <div id="learningsTrend"></div>
-      <div id="learningsFlaky"></div>
-      <div id="learningsSelectors"></div>
-      <div id="learningsPages"></div>
-      <div id="learningsApis"></div>
-      <div id="learningsErrors"></div>
+      <div id="learnDash">
+        <div id="learnHero"></div>
+        <div id="learnCards" class="learn-cols"></div>
+        <div id="learnTrend"></div>
+        <div id="learnBottom" class="learn-cols"></div>
+      </div>
       <div class="empty" id="learningsEmpty" style="display:none">
         <div class="empty-icon">&#9733;</div>
         <p>No learnings data yet. Run some tests to start building knowledge.</p>
@@ -214,7 +217,19 @@
         <button class="live-clear-btn" id="liveClearBtn">Clear All</button>
       </div>
       <div class="live-progress"><div class="live-progress-fill" id="liveProgressFill" style="width:0"></div></div>
-      <div class="live-tests" id="liveTests"></div>
+      <div class="live-body">
+        <div class="live-tests" id="liveTests"></div>
+        <div class="screencast-panel" id="screencastPanel" style="display:none">
+          <div class="screencast-header">
+            <span class="screencast-label">&#128249; Screencast</span>
+            <select id="screencastSelect" class="screencast-select"><option value="">Select test...</option></select>
+          </div>
+          <div class="screencast-viewport">
+            <img id="screencastImg" alt="Browser screencast" />
+            <div class="screencast-placeholder" id="screencastPlaceholder">Select a running test to watch</div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="empty" id="liveEmpty">
       <div class="empty-icon" style="font-size:48px;opacity:.3">&#9679;</div>

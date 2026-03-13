@@ -436,10 +436,8 @@ function refreshLearnings(){
   fetch(url).then(function(r){return r.json()}).then(function(data){
     if(!data||data.totalRuns===0){
       $('#learningsEmpty').style.display='block';
-      $('#learningsOverview').textContent='';$('#learningsTrend').textContent='';
-      $('#learningsFlaky').textContent='';$('#learningsSelectors').textContent='';
-      $('#learningsPages').textContent='';$('#learningsApis').textContent='';
-      $('#learningsErrors').textContent='';
+      $('#learnHero').textContent='';$('#learnCards').textContent='';
+      $('#learnTrend').textContent='';$('#learnBottom').textContent='';
       $('#badgeLearnings').textContent='-';
       return;
     }
@@ -464,48 +462,139 @@ function refreshLearnings(){
       $('#badgeLearnings').textContent='\u2714';
       $('#badgeLearnings').style.background='var(--green-dim)';$('#badgeLearnings').style.color='var(--green)';
     }
-    renderLearnOverview(data);
+    renderLearnHero(data);
+    renderLearnCards(data);
     renderLearnTrend(data.recentTrend||[]);
-    renderLearnFlaky(data.flakyTests||[]);
-    renderLearnSelectors(data.unstableSelectors||[]);
-    renderLearnPages(data.failingPages||[]);
-    renderLearnApis(data.apiIssues||[]);
-    renderLearnErrors(data.topErrors||[]);
+    renderLearnBottomRow(data);
   }).catch(function(){$('#learningsEmpty').style.display='block'});
 }
 
-function renderLearnOverview(d){
-  var container=$('#learningsOverview');container.textContent='';
-  var grid=document.createElement('div');grid.className='learn-grid';
-  [{val:d.totalRuns,lbl:'Runs',cls:'accent'},{val:d.totalTests,lbl:'Tests',cls:'accent'},
-   {val:d.overallPassRate+'%',lbl:'Pass Rate',cls:d.overallPassRate>=90?'green':d.overallPassRate>=70?'':'red'},
-   {val:d.avgDurationMs<1000?d.avgDurationMs+'ms':(d.avgDurationMs/1000).toFixed(1)+'s',lbl:'Avg Duration',cls:'purple'},
-   {val:(d.flakyTests?d.flakyTests.length:0),lbl:'Flaky Tests',cls:d.flakyTests&&d.flakyTests.length>0?'red':'green'},
-   {val:(d.unstableSelectors?d.unstableSelectors.length:0),lbl:'Unstable Selectors',cls:d.unstableSelectors&&d.unstableSelectors.length>0?'red':'green'}
-  ].forEach(function(item){
-    var stat=document.createElement('div');stat.className='learn-stat';
-    var valEl=document.createElement('div');valEl.className='learn-stat-val '+item.cls;valEl.textContent=item.val;
-    var lblEl=document.createElement('div');lblEl.className='learn-stat-lbl';lblEl.textContent=item.lbl;
-    stat.appendChild(valEl);stat.appendChild(lblEl);grid.appendChild(stat);
+function rateColor(v){return v>=90?'var(--green)':v>=70?'var(--amber)':'var(--red)'}
+function rateClass(v){return v>=90?'good':v>=70?'warn':'bad'}
+function durFmt(ms){return ms<1000?Math.round(ms)+'ms':(ms/1000).toFixed(1)+'s'}
+
+function renderLearnHero(d){
+  var c=$('#learnHero');c.textContent='';
+  var wrap=document.createElement('div');wrap.className='learn-hero';
+  var passRate=d.overallPassRate||0;
+  var ns='http://www.w3.org/2000/svg';
+  var ringWrap=document.createElement('div');ringWrap.className='learn-hero-ring';
+  var svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 36 36');
+  var bgCircle=document.createElementNS(ns,'circle');bgCircle.setAttribute('cx','18');bgCircle.setAttribute('cy','18');bgCircle.setAttribute('r','15.9');bgCircle.className.baseVal='learn-hero-ring-bg';svg.appendChild(bgCircle);
+  var fgCircle=document.createElementNS(ns,'circle');fgCircle.setAttribute('cx','18');fgCircle.setAttribute('cy','18');fgCircle.setAttribute('r','15.9');fgCircle.className.baseVal='learn-hero-ring-fg';
+  var circ=2*Math.PI*15.9;fgCircle.setAttribute('stroke-dasharray',circ.toFixed(1));fgCircle.setAttribute('stroke-dashoffset',(circ*(1-passRate/100)).toFixed(1));fgCircle.setAttribute('stroke',rateColor(passRate));
+  svg.appendChild(fgCircle);ringWrap.appendChild(svg);
+  var pctEl=document.createElement('div');pctEl.className='learn-hero-pct';pctEl.style.color=rateColor(passRate);pctEl.textContent=passRate+'%';
+  ringWrap.appendChild(pctEl);wrap.appendChild(ringWrap);
+
+  var stats=document.createElement('div');stats.className='learn-hero-stats';
+  var badSels=d.unstableSelectors?d.unstableSelectors.length:0;
+  var slowTests=d.failingPages?d.failingPages.length:0;
+  var apiIssues=d.apiIssues?d.apiIssues.length:0;
+  var topErr=d.topErrors&&d.topErrors.length>0?d.topErrors[0].occurrence_count:0;
+  var flakyCount=d.flakyTests?d.flakyTests.length:0;
+  var items=[
+    {val:String(d.totalRuns),lbl:'Runs',color:'var(--accent)'},
+    {val:String(d.totalTests),lbl:'Tests',color:'var(--accent)'},
+    {val:durFmt(d.avgDurationMs||0),lbl:'Avg Duration',color:'var(--purple)'},
+    {val:String(flakyCount),lbl:'Flaky',color:flakyCount>0?'var(--amber)':'var(--green)'},
+    {val:String(badSels),lbl:'Bad Selectors',color:badSels>0?'var(--red)':'var(--green)'},
+    {val:String(slowTests),lbl:'Slow Pages',color:slowTests>0?'var(--amber)':'var(--green)'},
+    {val:String(apiIssues),lbl:'API Issues',color:apiIssues>0?'var(--red)':'var(--green)'},
+    {val:String(topErr),lbl:'Top Error Hits',color:topErr>0?'var(--red)':'var(--green)'}
+  ];
+  items.forEach(function(it){
+    var statEl=document.createElement('div');statEl.className='learn-hero-stat';
+    var valEl=document.createElement('div');valEl.className='learn-hero-stat-val';valEl.style.color=it.color;valEl.textContent=it.val;
+    var lblEl=document.createElement('div');lblEl.className='learn-hero-stat-lbl';lblEl.textContent=it.lbl;
+    statEl.appendChild(valEl);statEl.appendChild(lblEl);stats.appendChild(statEl);
   });
-  container.appendChild(grid);
+  wrap.appendChild(stats);c.appendChild(wrap);
+}
+
+function makeLearnItem(label,sub,pct,valText,color){
+  var item=document.createElement('div');item.className='learn-item';
+  var barWrap=document.createElement('div');barWrap.className='learn-item-bar';
+  var lblEl=document.createElement('div');lblEl.className='learn-item-label';
+  var codeEl=document.createElement('code');codeEl.textContent=label;lblEl.appendChild(codeEl);
+  barWrap.appendChild(lblEl);
+  if(sub){var subEl=document.createElement('div');subEl.className='learn-item-sub';subEl.textContent=sub;barWrap.appendChild(subEl)}
+  var bar=document.createElement('div');bar.className='learn-bar';
+  var fill=document.createElement('div');fill.className='learn-bar-fill';fill.style.width=Math.min(pct,100)+'%';fill.style.background=color;
+  bar.appendChild(fill);barWrap.appendChild(bar);
+  item.appendChild(barWrap);
+  var valEl=document.createElement('div');valEl.className='learn-item-val';valEl.style.color=color;valEl.textContent=valText;
+  item.appendChild(valEl);
+  return item;
+}
+
+function makeLearnCard(icon,title,emptyMsg){
+  var card=document.createElement('div');card.className='learn-card';
+  var titleEl=document.createElement('div');titleEl.className='learn-card-title';
+  var iconEl=document.createElement('span');iconEl.className='lc-icon';iconEl.textContent=icon;
+  titleEl.appendChild(iconEl);titleEl.appendChild(document.createTextNode(title));
+  card.appendChild(titleEl);
+  card._empty=emptyMsg;
+  return card;
+}
+
+function renderLearnCards(d){
+  var c=$('#learnCards');c.textContent='';
+
+  var selCard=makeLearnCard('\u26A0','Risky Selectors','No unstable selectors');
+  var sels=d.unstableSelectors||[];
+  if(!sels.length){var e1=document.createElement('div');e1.className='learn-card-empty';e1.textContent=selCard._empty;selCard.appendChild(e1)}
+  else{sels.slice(0,5).forEach(function(s){
+    var sel=s.selector.length>40?s.selector.slice(0,37)+'...':s.selector;
+    selCard.appendChild(makeLearnItem(sel,s.action_type+' \u00B7 '+s.total_uses+' uses',parseFloat(s.fail_rate),s.fail_rate+'%',parseFloat(s.fail_rate)>30?'var(--red)':'var(--amber)'));
+  })}
+  c.appendChild(selCard);
+
+  var pageCard=makeLearnCard('\u23F1','Problem Pages','No failing pages');
+  var pages=d.failingPages||[];
+  if(!pages.length){var e2=document.createElement('div');e2.className='learn-card-empty';e2.textContent=pageCard._empty;pageCard.appendChild(e2)}
+  else{pages.slice(0,5).forEach(function(p){
+    pageCard.appendChild(makeLearnItem(p.url_path,p.total_visits+' visits \u00B7 '+p.console_errors+' console errs',parseFloat(p.fail_rate),p.fail_rate+'%',parseFloat(p.fail_rate)>30?'var(--red)':'var(--amber)'));
+  })}
+  c.appendChild(pageCard);
+
+  var flakyCard=makeLearnCard('\u223C','Flaky Tests','No flaky tests detected');
+  var flaky=d.flakyTests||[];
+  if(!flaky.length){var e3=document.createElement('div');e3.className='learn-card-empty';e3.textContent=flakyCard._empty;flakyCard.appendChild(e3)}
+  else{flaky.slice(0,5).forEach(function(f){
+    flakyCard.appendChild(makeLearnItem(f.test_name,'Attempt avg '+f.avg_attempts+' \u00B7 '+f.total_runs+' runs',parseFloat(f.flaky_rate),f.flaky_rate+'%',parseFloat(f.flaky_rate)>30?'var(--red)':'var(--amber)'));
+  })}
+  c.appendChild(flakyCard);
+
+  var apiCard=makeLearnCard('\u21C4','API Issues','No API issues');
+  var apis=d.apiIssues||[];
+  if(!apis.length){var e4=document.createElement('div');e4.className='learn-card-empty';e4.textContent=apiCard._empty;apiCard.appendChild(e4)}
+  else{apis.slice(0,5).forEach(function(a){
+    var ep=a.endpoint.length>40?a.endpoint.slice(0,37)+'...':a.endpoint;
+    apiCard.appendChild(makeLearnItem(ep,a.total_calls+' calls \u00B7 '+durFmt(a.avg_duration_ms),parseFloat(a.error_rate),a.error_rate+'%',parseFloat(a.error_rate)>20?'var(--red)':'var(--amber)'));
+  })}
+  c.appendChild(apiCard);
 }
 
 function renderLearnTrend(trend){
-  var container=$('#learningsTrend');container.textContent='';
+  var container=$('#learnTrend');container.textContent='';
   if(!trend.length)return;
-  var card=document.createElement('div');card.className='card';
-  var label=document.createElement('div');label.className='card-label';label.textContent='Pass Rate Trend (7 days)';card.appendChild(label);
-  var chartDiv=document.createElement('div');chartDiv.className='learn-trend-chart';
+  var card=document.createElement('div');card.className='learn-card';
+  var titleEl=document.createElement('div');titleEl.className='learn-card-title';
+  var iconEl=document.createElement('span');iconEl.className='lc-icon';iconEl.textContent='\u2197';
+  titleEl.appendChild(iconEl);titleEl.appendChild(document.createTextNode('Pass Rate Trend'));
+  card.appendChild(titleEl);
+  var chartDiv=document.createElement('div');chartDiv.style.cssText='height:80px;width:100%';
   var w=100/trend.length;var ns='http://www.w3.org/2000/svg';
-  var svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('preserveAspectRatio','none');
+  var svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 100 100');svg.setAttribute('preserveAspectRatio','none');svg.style.cssText='width:100%;height:100%';
   var bg=document.createElementNS(ns,'rect');bg.setAttribute('x','0');bg.setAttribute('y','0');bg.setAttribute('width','100');bg.setAttribute('height','100');bg.setAttribute('fill','var(--surface2)');bg.setAttribute('rx','2');svg.appendChild(bg);
   var gridLine=document.createElementNS(ns,'line');gridLine.setAttribute('x1','0');gridLine.setAttribute('y1','50');gridLine.setAttribute('x2','100');gridLine.setAttribute('y2','50');gridLine.setAttribute('stroke','var(--border)');gridLine.setAttribute('stroke-width','0.3');gridLine.setAttribute('stroke-dasharray','2,2');svg.appendChild(gridLine);
   var pts=trend.map(function(t,i){return(i*w+w/2)+','+(100-t.pass_rate)}).join(' ');
   var poly=document.createElementNS(ns,'polygon');poly.setAttribute('points',(0*w+w/2)+',100 '+pts+' '+((trend.length-1)*w+w/2)+',100');poly.setAttribute('fill','var(--accent-dim)');svg.appendChild(poly);
   var pl=document.createElementNS(ns,'polyline');pl.setAttribute('points',pts);pl.setAttribute('fill','none');pl.setAttribute('stroke','var(--accent)');pl.setAttribute('stroke-width','1.5');svg.appendChild(pl);
   trend.forEach(function(t,i){
-    var circle=document.createElementNS(ns,'circle');circle.setAttribute('cx',''+(i*w+w/2));circle.setAttribute('cy',''+(100-t.pass_rate));circle.setAttribute('r','2');circle.setAttribute('fill','var(--accent)');
+    var color=rateColor(t.pass_rate);
+    var circle=document.createElementNS(ns,'circle');circle.setAttribute('cx',''+(i*w+w/2));circle.setAttribute('cy',''+(100-t.pass_rate));circle.setAttribute('r','2.5');circle.setAttribute('fill',color);
     var title=document.createElementNS(ns,'title');title.textContent=t.date+': '+t.pass_rate+'% ('+t.total_tests+' tests)';circle.appendChild(title);svg.appendChild(circle);
   });
   chartDiv.appendChild(svg);card.appendChild(chartDiv);
@@ -514,34 +603,46 @@ function renderLearnTrend(trend){
   card.appendChild(dates);container.appendChild(card);
 }
 
-function buildLearnTable(title,headers,rows){
-  var card=document.createElement('div');card.className='card learn-section';
-  var h=document.createElement('div');h.className='learn-section-title';h.textContent=title;card.appendChild(h);
-  var wrap=document.createElement('div');wrap.className='tbl-wrap';
-  var tbl=document.createElement('table');tbl.className='learn-table';
-  var thead=document.createElement('thead');var hr=document.createElement('tr');
-  headers.forEach(function(hdr){var th=document.createElement('th');th.textContent=hdr;hr.appendChild(th)});
-  thead.appendChild(hr);tbl.appendChild(thead);
-  var tbody=document.createElement('tbody');
-  rows.forEach(function(cells){
-    var tr=document.createElement('tr');
-    cells.forEach(function(cell){
-      var td=document.createElement('td');
-      if(cell.code){var code=document.createElement('code');code.textContent=cell.code;td.appendChild(code)}
-      else if(cell.badge){var span=document.createElement('span');span.className='badge '+cell.cls;span.textContent=cell.badge;td.appendChild(span)}
-      else{td.textContent=cell.text!==undefined&&cell.text!==null?cell.text:(typeof cell==='object'?'-':cell)}
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  });
-  tbl.appendChild(tbody);wrap.appendChild(tbl);card.appendChild(wrap);return card;
-}
+function renderLearnBottomRow(d){
+  var c=$('#learnBottom');c.textContent='';
 
-function renderLearnFlaky(flaky){var c=$('#learningsFlaky');c.textContent='';if(!flaky.length)return;c.appendChild(buildLearnTable('Flaky Tests',['Test','Flaky Rate','Occurrences','Total Runs','Last Flaky','Avg Attempts'],flaky.map(function(f){return[{code:f.test_name},{badge:f.flaky_rate+'%',cls:f.flaky_rate>30?'fail':'flaky'},{text:f.flaky_count},{text:f.total_runs},{text:(f.last_flaky||'-').split('T')[0]},{text:f.avg_attempts}]})))}
-function renderLearnSelectors(sels){var c=$('#learningsSelectors');c.textContent='';if(!sels.length)return;c.appendChild(buildLearnTable('Unstable Selectors',['Selector','Action','Fail Rate','Uses','Tests','Page'],sels.map(function(s){var sel=s.selector.length>45?s.selector.slice(0,42)+'...':s.selector;return[{code:sel},{text:s.action_type},{badge:s.fail_rate+'%',cls:s.fail_rate>30?'fail':'flaky'},{text:s.total_uses},{text:s.used_by_tests},{text:s.page_url||'-'}]})))}
-function renderLearnPages(pages){var c=$('#learningsPages');c.textContent='';if(!pages.length)return;c.appendChild(buildLearnTable('Failing Pages',['Page','Fail Rate','Visits','Console Errors','Network Errors'],pages.map(function(p){return[{code:p.url_path},{badge:p.fail_rate+'%',cls:p.fail_rate>30?'fail':'flaky'},{text:p.total_visits},{text:p.console_errors},{text:p.network_errors}]})))}
-function renderLearnApis(apis){var c=$('#learningsApis');c.textContent='';if(!apis.length)return;c.appendChild(buildLearnTable('API Issues',['Endpoint','Error Rate','Calls','Avg Duration','Status Codes'],apis.map(function(a){var ep=a.endpoint.length>45?a.endpoint.slice(0,42)+'...':a.endpoint;var d=a.avg_duration_ms<1000?Math.round(a.avg_duration_ms)+'ms':(a.avg_duration_ms/1000).toFixed(1)+'s';return[{code:ep},{badge:a.error_rate+'%',cls:a.error_rate>20?'fail':'flaky'},{text:a.total_calls},{text:d},{text:a.status_codes||'-'}]})))}
-function renderLearnErrors(errors){var c=$('#learningsErrors');c.textContent='';if(!errors.length)return;c.appendChild(buildLearnTable('Error Patterns',['Pattern','Category','Count','First Seen','Last Seen','Example Test'],errors.map(function(e){var pat=e.pattern.length>50?e.pattern.slice(0,47)+'...':e.pattern;return[{text:pat},{badge:e.category,cls:'run'},{text:e.occurrence_count},{text:(e.first_seen||'-').split('T')[0]},{text:(e.last_seen||'-').split('T')[0]},{code:e.example_test||'-'}]})))}
+  var errCard=makeLearnCard('\u2718','Most Common Errors','No errors recorded');
+  var errors=d.topErrors||[];
+  if(!errors.length){var e1=document.createElement('div');e1.className='learn-card-empty';e1.textContent=errCard._empty;errCard.appendChild(e1)}
+  else{errors.slice(0,5).forEach(function(e){
+    var pat=e.pattern.length>45?e.pattern.slice(0,42)+'...':e.pattern;
+    var maxCount=errors[0].occurrence_count||1;
+    var pct=(e.occurrence_count/maxCount)*100;
+    var verdictEl=document.createElement('div');verdictEl.className='learn-verdict '+rateClass(100-(pct));verdictEl.textContent=e.category.replace(/-/g,' ');
+    var item=makeLearnItem(pat,(e.last_seen||'').split('T')[0]+' \u00B7 '+e.occurrence_count+'x',pct,e.occurrence_count+'x','var(--red)');
+    item.insertBefore(verdictEl,item.lastChild);
+    errCard.appendChild(item);
+  })}
+  c.appendChild(errCard);
+
+  var slowCard=makeLearnCard('\u23F3','Slowest Tests','No slow test data');
+  var trend=d.recentTrend||[];
+  var slowTests=[];
+  if(d.flakyTests){
+    d.flakyTests.forEach(function(f){
+      if(f.avg_duration_ms&&f.avg_duration_ms>2000){slowTests.push({name:f.test_name,dur:f.avg_duration_ms})}
+    });
+  }
+  if(d.failingPages){
+    d.failingPages.forEach(function(p){
+      if(p.avg_load_time_ms&&p.avg_load_time_ms>3000){slowTests.push({name:p.url_path,dur:p.avg_load_time_ms})}
+    });
+  }
+  slowTests.sort(function(a,b){return b.dur-a.dur});
+  if(!slowTests.length){var e2=document.createElement('div');e2.className='learn-card-empty';e2.textContent=slowCard._empty;slowCard.appendChild(e2)}
+  else{
+    var maxDur=slowTests[0].dur;
+    slowTests.slice(0,5).forEach(function(t){
+      slowCard.appendChild(makeLearnItem(t.name,'','',durFmt(t.dur),(t.dur/maxDur)*100,t.dur>5000?'var(--red)':'var(--amber)'));
+    });
+  }
+  c.appendChild(slowCard);
+}
 
 $('#btnRefreshLearnings').addEventListener('click',refreshLearnings);
 $('#learningsDays').addEventListener('change',refreshLearnings);

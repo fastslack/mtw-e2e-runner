@@ -1,9 +1,40 @@
 /* ══════════════════════════════════════════════════════════════════
    Live Execution View
    ══════════════════════════════════════════════════════════════════ */
-function clearFinishedLiveRuns(){for(var k in S.liveRuns){if(S.liveRuns[k].done||!S.liveRuns[k].on)delete S.liveRuns[k]}renderLive()}
+function clearFinishedLiveRuns(){for(var k in S.liveRuns){if(S.liveRuns[k].done||!S.liveRuns[k].on)delete S.liveRuns[k]}S.screencastTest=null;renderLive()}
 function dismissLiveRun(rid){delete S.liveRuns[rid];renderLive()}
 $('#liveClearBtn').addEventListener('click',clearFinishedLiveRuns);
+
+// Screencast state
+S.screencastTest=null;
+
+$('#screencastSelect').addEventListener('change',function(){
+  S.screencastTest=this.value||null;
+  var img=$('#screencastImg'),ph=$('#screencastPlaceholder');
+  if(S.screencastTest){img.style.display='block';ph.style.display='none';img.src=''}
+  else{img.style.display='none';ph.style.display='flex'}
+});
+
+function updateScreencastSelect(){
+  var sel=$('#screencastSelect'),panel=$('#screencastPanel');
+  var runningTests=[];
+  for(var k in S.liveRuns){var r=S.liveRuns[k];for(var n in r.tests){if(n!=='__error'&&r.tests[n].status==='running')runningTests.push(n)}}
+  // Show panel if any run is active
+  var anyActive=false;for(var k2 in S.liveRuns)if(S.liveRuns[k2].on)anyActive=true;
+  panel.style.display=anyActive?'':'none';
+  // Rebuild options
+  var prev=sel.value;
+  while(sel.options.length>1)sel.remove(1);
+  runningTests.forEach(function(n){var o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o)});
+  // Auto-select first running test if nothing selected
+  if(!S.screencastTest&&runningTests.length>0){S.screencastTest=runningTests[0];sel.value=S.screencastTest;$('#screencastImg').style.display='block';$('#screencastPlaceholder').style.display='none'}
+  else if(S.screencastTest&&runningTests.indexOf(S.screencastTest)===-1){
+    // Current test finished — pick next running or clear
+    if(runningTests.length>0){S.screencastTest=runningTests[0];sel.value=S.screencastTest}
+    else{S.screencastTest=null;sel.value='';$('#screencastImg').style.display='none';$('#screencastPlaceholder').style.display='flex';$('#screencastPlaceholder').textContent='No running tests'}
+  }
+  else{sel.value=S.screencastTest||''}
+}
 
 function renderLive(){
   var panel=$('#livePanel'),grid=$('#liveTests'),navLive=$('#navLive'),liveEmpty=$('#liveEmpty');
@@ -115,12 +146,18 @@ function renderLive(){
         ssEl=el('div',{className:'lt-screenshots'},[toggle,ssGridEl]);
       }
 
+      // Screencast focus indicator
+      var scFocusBadge=null;
+      if(t.status==='running'){
+        var isFocused=S.screencastTest===name;
+        scFocusBadge=el('span',{className:'sc-focus-badge'+(isFocused?' active':''),title:'Watch this test',onclick:function(e){e.stopPropagation();S.screencastTest=name;$('#screencastSelect').value=name;$('#screencastImg').style.display='block';$('#screencastPlaceholder').style.display='none';renderLive()}},'\uD83C\uDFA5');
+      }
       var serialBadge=t.serial?el('span',{className:'serial-badge'},'Serial'):null;
       var poolBadge=t.poolUrl?el('span',{className:'pool-badge'},t.poolUrl.replace('ws://','').replace('wss://','')):null;
       var card=el('div',{className:'live-test '+t.status+(isCollapsed?' collapsed':'')},[
         el('div',{className:'lt-name'},[
           t.status==='running'?el('span',{className:'spinner'}):el('span',{className:'lt-icon',style:iconColor},iconText),
-          document.createTextNode(' '+name),serialBadge,poolBadge,summaryEl
+          document.createTextNode(' '+name),scFocusBadge,serialBadge,poolBadge,summaryEl
         ]),
         el('div',{className:'lt-meta'},meta),stepsEl
       ]);
@@ -140,4 +177,5 @@ function renderLive(){
     });
     grid.appendChild(testGrid);
   });
+  updateScreencastSelect();
 }

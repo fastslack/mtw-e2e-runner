@@ -1,0 +1,88 @@
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);font-family:var(--mono);font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface2);color:var(--text);transition:all .15s;white-space:nowrap}
+.btn:hover{background:var(--surface3);border-color:var(--border-hi)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#2563eb}
+.btn.danger{background:var(--red-dim);border-color:rgba(239,68,68,.3);color:var(--red)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.sm{padding:4px 10px;font-size:10px}
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:16px}
+.card-label{font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}
+/* Tables */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:9px;font-weight:600;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;padding:8px 12px;border-bottom:1px solid var(--border)}
+td{padding:8px 12px;border-bottom:1px solid var(--border)}
+tbody tr{cursor:pointer;transition:background .1s}
+tbody tr:hover td{background:var(--surface2)}
+tbody tr.selected td{background:var(--accent-dim)}
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.badge.pass{background:var(--green-dim);color:var(--green)}
+.badge.fail{background:var(--red-dim);color:var(--red)}
+.badge.flaky{background:var(--amber-dim);color:var(--amber)}
+.badge.run{background:var(--purple-dim);color:var(--purple)}
+/* Empty */
+.empty{text-align:center;padding:48px 24px;color:var(--text3)}
+.empty-icon{font-size:36px;margin-bottom:8px;opacity:.5}
+/* Modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:none;align-items:center;justify-content:center;padding:24px;cursor:pointer}
+.modal.open{display:flex}
+.modal img{max-width:100%;max-height:90vh;border-radius:var(--r);cursor:default}
+/* Toast */
+.toast-container{position:fixed;bottom:24px;right:24px;z-index:300;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none}
+.toast{padding:10px 16px;border-radius:var(--r);font-family:var(--mono);font-size:11px;font-weight:500;color:#fff;pointer-events:auto;animation:toastIn .3s ease;min-width:200px;max-width:380px;box-shadow:0 8px 24px rgba(0,0,0,.4);display:flex;align-items:center;gap:8px}
+.toast.success{background:var(--green);border:1px solid rgba(255,255,255,.15)}
+.toast.error{background:var(--red);border:1px solid rgba(255,255,255,.15)}
+.toast.info{background:var(--accent);border:1px solid rgba(255,255,255,.15)}
+.toast.fade-out{animation:toastOut .3s ease forwards}
+@keyframes toastIn{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(24px)}}
+.toast.clickable{cursor:pointer}
+.toast.clickable:hover{filter:brightness(1.1)}
+/* Copy Button */
+.copy-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:4px;font-size:9px;font-family:var(--mono);font-weight:500;color:var(--text3);background:transparent;border:1px solid transparent;cursor:pointer;transition:all .15s;user-select:none;white-space:nowrap;flex-shrink:0}
+.copy-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-dim)}
+.copy-btn.copied{color:var(--green);border-color:var(--green);background:var(--green-dim)}
+/* SS Hash Badge */
+.ss-hash{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:10px;font-family:var(--mono);font-size:9px;font-weight:500;background:var(--surface3);border:1px solid var(--border);color:var(--text2);cursor:pointer;transition:all .15s;user-select:none;white-space:nowrap;vertical-align:middle}
+.ss-hash:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.ss-hash.copied{border-color:var(--green);color:var(--green);background:var(--green-dim)}
+.ss-hash .ss-icon{font-size:10px;line-height:1}
+/* Trigger Badge */
+.trigger-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;font-family:var(--mono);white-space:nowrap}
+.trigger-badge.src-dashboard{background:rgba(127,140,162,.10);color:var(--text2)}
+.trigger-badge.src-mcp{background:var(--purple-dim);color:var(--purple)}
+.trigger-badge.src-cli{background:var(--accent-dim);color:var(--accent)}
+.trigger-badge.src-unknown{background:rgba(70,75,98,.15);color:var(--text3)}
+.trigger-badge .trig-icon{font-size:11px;line-height:1}
+/* Filter Bar */
+.filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.filter-btn{padding:5px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s}
+.filter-btn:hover{background:var(--surface3);border-color:var(--border-hi)}
+.filter-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.filter-bar input{padding:5px 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:11px;max-width:200px}
+.filter-bar input:focus{outline:none;border-color:var(--accent)}
+.filter-bar input::placeholder{color:var(--text3)}
+/* Tab Bar */
+.tab-bar{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tab-btn{padding:8px 16px;font-family:var(--mono);font-size:11px;font-weight:500;color:var(--text3);cursor:pointer;border:none;background:transparent;border-bottom:2px solid transparent;transition:all .15s}
+.tab-btn:hover{color:var(--text2);background:var(--surface2)}
+.tab-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+/* KB Modal */
+.kb-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:250;display:none;align-items:center;justify-content:center;padding:24px}
+.kb-modal.open{display:flex}
+.kb-modal-content{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:420px;width:100%;max-height:80vh;overflow-y:auto}
+.kb-modal-content h2{font-family:var(--sans);font-size:16px;font-weight:700;margin-bottom:16px;color:var(--text)}
+.kb-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)}
+.kb-row:last-child{border-bottom:none}
+.kb-key{display:inline-flex;align-items:center;justify-content:center;min-width:24px;padding:2px 8px;border-radius:4px;background:var(--surface3);border:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent)}
+.kb-desc{font-size:12px;color:var(--text2)}
+/* Serial / Pool Badges */
+.serial-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:var(--amber-dim);color:var(--amber);vertical-align:middle;margin-left:4px}
+.pool-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:rgba(99,102,241,.15);color:#818cf8;vertical-align:middle;margin-left:4px;font-family:var(--mono);letter-spacing:-.3px}
+/* Spinners */
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--border);border-top-color:var(--purple);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
+.spinner-small{display:inline-block;width:8px;height:8px;border:1.5px solid var(--border);border-top-color:var(--purple);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}

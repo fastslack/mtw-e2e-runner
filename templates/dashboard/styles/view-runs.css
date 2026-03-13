@@ -200,6 +200,42 @@ tr.expanded td:first-child::before{content:'';position:absolute;left:0;top:0;bot
 .learn-trend-chart{width:100%;height:100px;margin-bottom:20px}
 .learn-trend-chart svg{width:100%;height:100%}
 
+/* ── Learnings Dashboard (visual cards) ── */
+.learn-hero{display:flex;align-items:center;gap:24px;margin-bottom:20px;padding:20px 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r)}
+.learn-hero-ring{position:relative;width:100px;height:100px;flex-shrink:0}
+.learn-hero-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.learn-hero-ring-bg{fill:none;stroke:var(--surface3);stroke-width:8}
+.learn-hero-ring-fg{fill:none;stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset .6s ease}
+.learn-hero-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;font-family:var(--mono)}
+.learn-hero-stats{flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.learn-hero-stat{text-align:center}
+.learn-hero-stat-val{font-size:18px;font-weight:700;font-family:var(--mono)}
+.learn-hero-stat-lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+
+.learn-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.learn-cols{grid-template-columns:1fr}}
+
+.learn-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px}
+.learn-card-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.learn-card-title .lc-icon{font-size:13px}
+.learn-card-empty{font-size:11px;color:var(--text3);font-style:italic}
+
+.learn-item{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)}
+.learn-item:last-child{border-bottom:none}
+.learn-item-bar{flex:1;min-width:0}
+.learn-item-label{font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.learn-item-label code{background:var(--surface3);padding:1px 4px;border-radius:3px;font-size:10px}
+.learn-item-sub{font-size:9px;color:var(--text3)}
+.learn-item-val{font-size:13px;font-weight:700;font-family:var(--mono);flex-shrink:0;min-width:44px;text-align:right}
+
+.learn-bar{height:4px;border-radius:2px;background:var(--surface3);overflow:hidden;margin-top:3px}
+.learn-bar-fill{height:100%;border-radius:2px;transition:width .4s ease}
+
+.learn-verdict{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.learn-verdict.good{background:var(--green-dim);color:var(--green)}
+.learn-verdict.warn{background:var(--amber-dim);color:var(--amber)}
+.learn-verdict.bad{background:var(--red-dim);color:var(--red)}
+
 /* ── Pool Distribution ── */
 .pool-dist{display:flex;align-items:stretch;gap:0;border-radius:6px;overflow:hidden;height:22px;margin:8px 0;font-size:10px;font-weight:600;font-family:var(--mono)}
 .pool-dist-seg{display:flex;align-items:center;justify-content:center;gap:4px;padding:0 8px;color:#fff;white-space:nowrap;min-width:40px;transition:flex .3s}

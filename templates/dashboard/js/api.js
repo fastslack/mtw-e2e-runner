@@ -6,6 +6,8 @@ function triggerRun(suite,projectId){
   if(suite)body.suite=suite;
   if(projectId)body.projectId=projectId;
   else if(S.project)body.projectId=S.project;
+  var scToggle=$('#screencastToggle');
+  if(scToggle&&scToggle.checked)body.screencast=true;
   fetch('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 }
 

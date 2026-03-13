@@ -104,6 +104,12 @@ function handleWS(m){
       var r7=getLiveRun(m);if(r7){r7.on=false;r7.done=true;r7.tests.__error={status:'failed',error:m.error}}
       showToast('Run error: '+m.error,'error');
       renderLive();break;
+    case 'test:frame':
+      if(S.screencastTest===m.name&&m.data){
+        var img=$('#screencastImg');
+        if(img)img.src='data:image/jpeg;base64,'+m.data;
+      }
+      break;
     case 'db:updated':
       refreshRuns();refreshProjects();refreshScreenshots();refreshLearnings();refreshWatch();break;
   }
