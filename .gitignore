@@ -5,6 +5,7 @@ node_modules/
 .env
 *.token
 .idea/
+scripts/publish.sh
 
 e2e/screenshots/
 

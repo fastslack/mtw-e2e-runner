@@ -18,7 +18,7 @@ about:
   icon: https://avatars.githubusercontent.com/u/1126975?v=4
 source:
   project: https://github.com/fastslack/mtw-e2e-runner
-  commit: 2c12f59347af512c655f9e47050eb7add50d469a
+  commit: 02f35b2e598337ab6fbfb12695d252403b6106f9
   dockerfile: Dockerfile
 run:
   allowHosts:

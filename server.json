@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.fastslack/e2e-runner",
-  "description": "JSON-driven E2E test runner with parallel execution against a Chrome pool.",
+  "description": "JSON-driven E2E test runner with parallel Chrome pool execution and 16 MCP tools.",
   "repository": {
     "url": "https://github.com/fastslack/mtw-e2e-runner",
     "source": "github"
   },
-  "version": "1.0.2",
+  "version": "1.3.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@matware/e2e-runner",
-      "version": "1.0.1",
+      "version": "1.3.0",
       "transport": {
         "type": "stdio"
       },
@@ -19,10 +19,76 @@
     },
     {
       "registryType": "oci",
-      "identifier": "docker.io/fastslack/e2e-runner-mcp:1.0.1",
+      "identifier": "docker.io/fastslack/e2e-runner-mcp:1.3.0",
       "transport": {
         "type": "stdio"
       }
+    }
+  ],
+  "tools": [
+    {
+      "name": "e2e_run",
+      "description": "Run E2E browser tests. Specify all suites, a specific suite, or a JSON file path. Returns structured results with pass/fail status, duration, screenshots, network summary, and stability insights."
+    },
+    {
+      "name": "e2e_list",
+      "description": "List all available E2E test suites with their test names and counts."
+    },
+    {
+      "name": "e2e_create_test",
+      "description": "Create a new E2E test JSON file with 28+ built-in action types: click, type, assert, navigate, wait, evaluate, visual verification, and more. Supports hooks, retries, serial mode, and module composition."
+    },
+    {
+      "name": "e2e_create_module",
+      "description": "Create reusable test modules with parameterized actions. Modules encapsulate repeated sequences (auth flows, navigation, form fills) and compose via $use references with mustache-style parameters."
+    },
+    {
+      "name": "e2e_pool_status",
+      "description": "Get Chrome pool availability, running sessions, queue depth, and capacity across all configured pools."
+    },
+    {
+      "name": "e2e_screenshot",
+      "description": "Retrieve a screenshot by its content hash (ss:HASH). Returns the image for visual inspection of test results or error states."
+    },
+    {
+      "name": "e2e_capture",
+      "description": "Capture a screenshot of any URL on demand. Supports full-page capture, CSS selector waits, custom delays, auth token injection, and SPA-aware navigation strategies."
+    },
+    {
+      "name": "e2e_analyze",
+      "description": "Analyze a page's structure and return all interactive elements (forms, buttons, links, tables, modals) with CSS selectors plus suggested test scaffolds. Replaces the screenshot-guess-retry cycle."
+    },
+    {
+      "name": "e2e_issue",
+      "description": "Fetch a GitHub/GitLab issue and generate E2E or API tests. Supports prompt mode (returns test prompt) and verify mode (auto-generates tests via Claude API, runs them, and reports results)."
+    },
+    {
+      "name": "e2e_learnings",
+      "description": "Query stability insights built across runs: flaky tests, selector health, page reliability, API health, error patterns, and 7-day trends. Drill down by test name, page, or selector."
+    },
+    {
+      "name": "e2e_network_logs",
+      "description": "Query network request/response logs for a specific test run. Filter by HTTP method, status code, URL pattern, or errors only. Optionally include headers and bodies for deep debugging."
+    },
+    {
+      "name": "e2e_vars",
+      "description": "Manage project variables stored in SQLite. Variables are referenced in test JSON as {{var.KEY}} with project-wide or per-suite scoping. Supports set, get, list, and delete operations."
+    },
+    {
+      "name": "e2e_dashboard_start",
+      "description": "Start the real-time web dashboard with live test execution, results history, screenshot gallery, pool visualization, and WebSocket updates."
+    },
+    {
+      "name": "e2e_dashboard_stop",
+      "description": "Stop the E2E Runner web dashboard."
+    },
+    {
+      "name": "e2e_dashboard_restart",
+      "description": "Restart the web dashboard, optionally with a new project directory or port. Useful when switching projects or recovering from stale sessions."
+    },
+    {
+      "name": "e2e_neo4j",
+      "description": "Manage the Neo4j knowledge graph container for advanced E2E learnings visualization and cross-project analysis. Supports start, stop, and status actions."
     }
   ]
 }

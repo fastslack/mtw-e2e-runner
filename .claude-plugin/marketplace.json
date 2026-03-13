@@ -1,21 +1,52 @@
 {
   "name": "matware",
   "owner": {
-    "name": "Matware"
+    "name": "Matware",
+    "email": "fastslack@matware.nl"
   },
   "metadata": {
-    "description": "E2E testing tools by Matware"
+    "description": "AI-powered E2E testing tools by Matware — JSON-driven browser tests, Chrome pool, visual verification, and stability learning",
+    "version": "1.3.0"
   },
   "plugins": [
     {
       "name": "e2e-runner",
-      "source": "./",
-      "description": "JSON-driven E2E browser test runner with Chrome pool, visual verification, and learning system",
-      "version": "1.2.1",
+      "source": {
+        "source": "npm",
+        "package": "@matware/e2e-runner",
+        "version": "^1.3.0"
+      },
+      "description": "JSON-driven E2E browser test runner — no JavaScript test files needed. Parallel execution against a Chrome pool, 28+ built-in actions, visual verification, network debugging, flaky test detection, reusable modules, and a real-time dashboard. Includes 3 specialized agents (test-creator, test-analyzer, test-improver), 4 slash commands, and 16 MCP tools.",
+      "version": "1.3.0",
       "author": { "name": "Matware" },
+      "homepage": "https://www.npmjs.com/package/@matware/e2e-runner",
       "repository": "https://github.com/fastslack/mtw-e2e-runner",
       "license": "Apache-2.0",
-      "keywords": ["e2e", "testing", "chrome", "puppeteer", "mcp"]
+      "category": "testing",
+      "keywords": [
+        "e2e",
+        "testing",
+        "chrome",
+        "puppeteer",
+        "mcp",
+        "browser-automation",
+        "json-tests",
+        "ai-testing",
+        "visual-verification",
+        "claude-code",
+        "test-runner",
+        "browserless"
+      ],
+      "tags": [
+        "e2e-testing",
+        "browser-automation",
+        "mcp-server",
+        "ai-testing",
+        "chrome-pool",
+        "visual-verification",
+        "json-driven",
+        "parallel-execution"
+      ]
     }
   ]
 }

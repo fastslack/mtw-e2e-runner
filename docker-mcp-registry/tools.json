@@ -1,54 +1,146 @@
 [
   {
     "name": "e2e_run",
-    "description": "Run E2E browser tests. Specify \"all\" to run every suite, \"suite\" for a specific suite, or \"file\" for a JSON file path. Returns structured results with pass/fail status, duration, and error details."
+    "description": "Run E2E browser tests. Specify \"all\" to run every suite, \"suite\" for a specific suite, or \"file\" for a JSON file path. Returns structured results with pass/fail status, duration, and error details.",
+    "arguments": [
+      { "name": "all", "type": "boolean", "desc": "Run all test suites" },
+      { "name": "suite", "type": "string", "desc": "Suite name to run" },
+      { "name": "file", "type": "string", "desc": "Path to a JSON test file" },
+      { "name": "concurrency", "type": "number", "desc": "Number of parallel workers" },
+      { "name": "baseUrl", "type": "string", "desc": "Override the base URL" },
+      { "name": "retries", "type": "number", "desc": "Retries for failed tests" },
+      { "name": "failOnNetworkError", "type": "boolean", "desc": "Fail tests on network errors" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_list",
-    "description": "List all available E2E test suites with their test names and counts."
+    "description": "List all available E2E test suites with their test names and counts.",
+    "arguments": [
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_create_test",
-    "description": "Create a new E2E test JSON file. Provide the suite name and an array of test objects, each with a name and actions array."
+    "description": "Create a new E2E test JSON file. Provide the suite name and an array of test objects, each with a name and actions array.",
+    "arguments": [
+      { "name": "name", "type": "string", "desc": "Suite file name without .json extension" },
+      { "name": "tests", "type": "array", "desc": "Array of test objects with name, actions, and optional expect" },
+      { "name": "hooks", "type": "object", "desc": "Optional lifecycle hooks (beforeAll, beforeEach, afterEach, afterAll)" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_create_module",
-    "description": "Create a reusable module for E2E tests. Modules define action sequences that can be referenced from tests via { \"$use\": \"module-name\", \"params\": {...} }."
+    "description": "Create a reusable module for E2E tests. Modules define action sequences referenced via { \"$use\": \"module-name\", \"params\": {...} }.",
+    "arguments": [
+      { "name": "name", "type": "string", "desc": "Module name" },
+      { "name": "description", "type": "string", "desc": "What this module does" },
+      { "name": "params", "type": "object", "desc": "Parameter definitions with required flag and defaults" },
+      { "name": "actions", "type": "array", "desc": "Sequential browser actions" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_pool_status",
-    "description": "Get the status of the Chrome pool (browserless/chrome). Shows availability, running sessions, capacity, and queued requests."
+    "description": "Get the status of the Chrome pool (browserless/chrome). Shows availability, running sessions, capacity, and queued requests.",
+    "arguments": [
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_screenshot",
-    "description": "Retrieve a screenshot by its hash (e.g. ss:a3f2b1c9). Returns the image."
+    "description": "Retrieve a screenshot by its hash (e.g. ss:a3f2b1c9). Returns the image.",
+    "arguments": [
+      { "name": "hash", "type": "string", "desc": "Screenshot hash with or without ss: prefix" }
+    ]
   },
   {
     "name": "e2e_capture",
-    "description": "Capture a screenshot of any URL on demand. Connects to the Chrome pool, navigates to the URL, takes a screenshot, and returns the image with its ss:HASH."
+    "description": "Capture a screenshot of any URL on demand. Connects to the Chrome pool, navigates to the URL, takes a screenshot, and returns the image with its ss:HASH.",
+    "arguments": [
+      { "name": "url", "type": "string", "desc": "URL to capture" },
+      { "name": "fullPage", "type": "boolean", "desc": "Capture full page" },
+      { "name": "selector", "type": "string", "desc": "Wait for this selector before capture" },
+      { "name": "delay", "type": "number", "desc": "Wait this many ms after page load" },
+      { "name": "authToken", "type": "string", "desc": "JWT token to inject into localStorage" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
+  },
+  {
+    "name": "e2e_analyze",
+    "description": "Analyze a page's structure and return all interactive elements with their CSS selectors, plus suggested test scaffolds.",
+    "arguments": [
+      { "name": "url", "type": "string", "desc": "URL to analyze" },
+      { "name": "authToken", "type": "string", "desc": "JWT token to inject" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_dashboard_start",
-    "description": "Start the E2E Runner web dashboard. Provides a real-time UI for running tests, viewing results, screenshots, history, and pool status."
+    "description": "Start the E2E Runner web dashboard. Provides a real-time UI for running tests, viewing results, screenshots, history, and pool status.",
+    "arguments": [
+      { "name": "port", "type": "number", "desc": "Dashboard port (default 8484)" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_dashboard_stop",
-    "description": "Stop the E2E Runner web dashboard."
+    "description": "Stop the E2E Runner web dashboard.",
+    "arguments": []
+  },
+  {
+    "name": "e2e_dashboard_restart",
+    "description": "Restart the E2E Runner web dashboard. Stops current instance and starts a new one.",
+    "arguments": [
+      { "name": "port", "type": "number", "desc": "Dashboard port" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_issue",
-    "description": "Fetch a GitHub/GitLab issue and prepare E2E test generation. Returns issue details and a prompt for test creation. Use mode \"verify\" to auto-generate and run tests."
+    "description": "Fetch a GitHub/GitLab issue and prepare E2E test generation. Returns issue details and a prompt for test creation. Use mode \"verify\" to auto-generate and run tests.",
+    "arguments": [
+      { "name": "url", "type": "string", "desc": "GitHub or GitLab issue URL" },
+      { "name": "mode", "type": "string", "desc": "\"prompt\" or \"verify\"" },
+      { "name": "testType", "type": "string", "desc": "\"ui\" or \"api\"" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_network_logs",
-    "description": "Query network request/response logs for a specific test run. Returns filtered logs from SQLite. Use the runDbId from e2e_run results to drill down."
+    "description": "Query network request/response logs for a specific test run. Use the runDbId from e2e_run results to drill down.",
+    "arguments": [
+      { "name": "runDbId", "type": "number", "desc": "Run database ID from e2e_run results" },
+      { "name": "testName", "type": "string", "desc": "Filter by test name" },
+      { "name": "errorsOnly", "type": "boolean", "desc": "Show only failed requests" },
+      { "name": "includeHeaders", "type": "boolean", "desc": "Include request/response headers" },
+      { "name": "includeBodies", "type": "boolean", "desc": "Include response bodies" }
+    ]
   },
   {
     "name": "e2e_learnings",
-    "description": "Query the E2E learning system for insights about test stability, flaky tests, selector health, page health, API health, error patterns, and trends."
+    "description": "Query the E2E learning system for insights about test stability, flaky tests, selector health, page health, API health, error patterns, and trends.",
+    "arguments": [
+      { "name": "query", "type": "string", "desc": "Query type: summary, flaky, selectors, pages, apis, errors, trends, test:<name>, page:<path>" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
+  },
+  {
+    "name": "e2e_vars",
+    "description": "Manage project variables stored in SQLite. Variables can be referenced in test JSON as {{var.KEY}}.",
+    "arguments": [
+      { "name": "action", "type": "string", "desc": "set, get, delete, or list" },
+      { "name": "key", "type": "string", "desc": "Variable key" },
+      { "name": "value", "type": "string", "desc": "Variable value (for set)" },
+      { "name": "cwd", "type": "string", "desc": "Project root directory" }
+    ]
   },
   {
     "name": "e2e_neo4j",
-    "description": "Manage the Neo4j knowledge graph container for E2E learnings. Requires Docker."
+    "description": "Manage the Neo4j knowledge graph container for E2E learnings. Requires Docker.",
+    "arguments": [
+      { "name": "action", "type": "string", "desc": "start, stop, or status" }
+    ]
   }
 ]
