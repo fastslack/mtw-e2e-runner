@@ -42,16 +42,22 @@ function getPending(poolUrl) {
   return pendingConnections.get(poolUrl) || 0;
 }
 
+/** Extracts pool driver options from config for passing to getPoolStatus. */
+function driverOpts(config) {
+  if (!config) return {};
+  return { poolDriver: config.poolDriver || 'auto', maxSessions: config.maxSessions || 10 };
+}
+
 /** Returns the normalized pool URL array from config. Always an array, even for single pool. */
 export function getPoolUrls(config) {
   return config._poolUrls || [config.poolUrl];
 }
 
-/** Fetches /pressure from all pools in parallel. Returns [{ url, status, error }]. */
-export async function getAllPoolStatuses(poolUrls) {
+/** Fetches status from all pools in parallel. Returns [{ url, status, error }]. */
+export async function getAllPoolStatuses(poolUrls, options = {}) {
   return Promise.all(poolUrls.map(async (url) => {
     try {
-      const status = await getPoolStatus(url);
+      const status = await getPoolStatus(url, options);
       return { url, status, error: null };
     } catch (error) {
       return { url, status: null, error: error.message };
@@ -60,8 +66,8 @@ export async function getAllPoolStatuses(poolUrls) {
 }
 
 /** Combined view across all pools: totalRunning, totalMaxConcurrent, per-pool details. */
-export async function getAggregatedPoolStatus(poolUrls) {
-  const results = await getAllPoolStatuses(poolUrls);
+export async function getAggregatedPoolStatus(poolUrls, options = {}) {
+  const results = await getAllPoolStatuses(poolUrls, options);
 
   let totalRunning = 0;
   let totalMaxConcurrent = 0;
@@ -90,11 +96,11 @@ export async function getAggregatedPoolStatus(poolUrls) {
 }
 
 /** Blocks until at least one pool is reachable and available. */
-export async function waitForAnyPool(poolUrls, maxWaitMs = 30000) {
+export async function waitForAnyPool(poolUrls, maxWaitMs = 30000, options = {}) {
   const start = Date.now();
 
   while (Date.now() - start < maxWaitMs) {
-    const results = await getAllPoolStatuses(poolUrls);
+    const results = await getAllPoolStatuses(poolUrls, options);
     const available = results.find(r => r.status?.available);
     if (available) return available.status;
 
@@ -115,17 +121,17 @@ export async function waitForAnyPool(poolUrls, maxWaitMs = 30000) {
  * Picks the pool with the lowest pressure ratio.
  *
  * Algorithm:
- * 1. Query all pools' /pressure in parallel
+ * 1. Query all pools' status in parallel (driver-aware)
  * 2. Add local pending count to each pool's running total
  * 3. Filter to reachable pools with (running + pending) < maxConcurrent
  * 4. Sort by: lowest effective pressure → fewest queued → most free slots
  * 5. Track selection in pending counter, return best candidate URL
  * 6. If all full, poll every 2s up to 60s, then pick least-pressured anyway
  */
-export async function selectPool(poolUrls, pollIntervalMs = 2000, maxWaitMs = 60000) {
+export async function selectPool(poolUrls, pollIntervalMs = 2000, maxWaitMs = 60000, options = {}) {
   // Fast path: single pool
   if (poolUrls.length === 1) {
-    await waitForSlotOnPool(poolUrls[0], pollIntervalMs, maxWaitMs);
+    await waitForSlotOnPool(poolUrls[0], pollIntervalMs, maxWaitMs, options);
     trackPending(poolUrls[0]);
     return poolUrls[0];
   }
@@ -133,7 +139,7 @@ export async function selectPool(poolUrls, pollIntervalMs = 2000, maxWaitMs = 60
   const start = Date.now();
 
   while (Date.now() - start < maxWaitMs) {
-    const results = await getAllPoolStatuses(poolUrls);
+    const results = await getAllPoolStatuses(poolUrls, options);
     const candidates = results
       .filter(r => r.status && !r.error && r.status.available)
       .map(r => {
@@ -173,7 +179,7 @@ export async function selectPool(poolUrls, pollIntervalMs = 2000, maxWaitMs = 60
   }
 
   // Timeout — pick the least-pressured pool anyway (let connectToPool deal with it)
-  const results = await getAllPoolStatuses(poolUrls);
+  const results = await getAllPoolStatuses(poolUrls, options);
   const reachable = results
     .filter(r => r.status && !r.error)
     .sort((a, b) => {
@@ -198,16 +204,16 @@ export async function selectPool(poolUrls, pollIntervalMs = 2000, maxWaitMs = 60
 /** Convenience: selectPool + connectToPool in one call. */
 export async function selectAndConnect(config) {
   const poolUrls = getPoolUrls(config);
-  const chosenUrl = await selectPool(poolUrls);
+  const chosenUrl = await selectPool(poolUrls, 2000, 60000, driverOpts(config));
   return connectToPool(chosenUrl, config.connectRetries, config.connectRetryDelay);
 }
 
-/** Waits until a single pool has capacity (replaces the old waitForSlot from runner.js). */
-async function waitForSlotOnPool(poolUrl, pollIntervalMs = 2000, maxWaitMs = 60000) {
+/** Waits until a single pool has capacity. */
+async function waitForSlotOnPool(poolUrl, pollIntervalMs = 2000, maxWaitMs = 60000, options = {}) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     try {
-      const status = await getPoolStatus(poolUrl);
+      const status = await getPoolStatus(poolUrl, options);
       if (status.available && status.running < status.maxConcurrent) {
         return;
       }

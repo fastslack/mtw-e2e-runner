@@ -120,7 +120,7 @@ export async function startDashboard(config) {
       // API: pool status + dashboard state
       if (pathname === '/api/status') {
         const poolUrls = getPoolUrls(config);
-        const aggregated = await getAggregatedPoolStatus(poolUrls);
+        const aggregated = await getAggregatedPoolStatus(poolUrls, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
         jsonResponse(res, {
           pool: aggregated,
           poolUrls,
@@ -765,7 +765,7 @@ export async function startDashboard(config) {
   const poolUrls = getPoolUrls(config);
   const pollInterval = setInterval(async () => {
     try {
-      const aggregated = await getAggregatedPoolStatus(poolUrls);
+      const aggregated = await getAggregatedPoolStatus(poolUrls, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
       wss.broadcast(JSON.stringify({ event: 'pool:status', data: aggregated }));
     } catch { /* */ }
   }, 5000);
@@ -821,7 +821,7 @@ export async function startDashboard(config) {
         ({ tests, hooks } = loadAllSuites(runConfig.testsDir, runConfig.modulesDir, runConfig.exclude));
       }
 
-      await waitForAnyPool(getPoolUrls(runConfig));
+      await waitForAnyPool(getPoolUrls(runConfig), 30000, { poolDriver: runConfig.poolDriver, maxSessions: runConfig.maxSessions });
       const results = await runTestsParallel(tests, runConfig, hooks || {});
       const report = generateReport(results);
       const suiteName = params.suite || null;

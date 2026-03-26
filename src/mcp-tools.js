@@ -27,6 +27,7 @@ import { listModules } from './module-resolver.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getTestHistory, getPageHistory, getSelectorHistory, getHealthSnapshot, getTestCreationContext, generateImprovements, getActionHealthScores } from './learner-sqlite.js';
 import { queryGraph } from './learner-neo4j.js';
 import { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
+import { getAppPoolStatus, isAppPoolEnabled } from './app-pool.js';
 
 /**
  * Resolves auth token from config: uses static authToken if set,
@@ -248,6 +249,20 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         cwd: {
           type: 'string',
           description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+        },
+      },
+    },
+  },
+  {
+    name: 'e2e_app_pool_status',
+    description:
+      'Get the status of the app environment pool. Shows active forks, allocated ports, per-fork details (driver, baseUrl, test name, fork time). Only relevant when appPool is enabled in config.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cwd: {
+          type: 'string',
+          description: 'Absolute path to the project root directory.',
         },
       },
     },
@@ -677,7 +692,8 @@ async function handleRun(args) {
   const config = await loadConfig(configOverrides, args.cwd);
   config.triggeredBy = 'mcp';
 
-  await waitForAnyPool(getPoolUrls(config));
+  const driverOpts = { poolDriver: config.poolDriver, maxSessions: config.maxSessions };
+  await waitForAnyPool(getPoolUrls(config), 30000, driverOpts);
 
   let tests, hooks;
 
@@ -1246,7 +1262,7 @@ function analyzeActionPatterns(tests) {
 async function handlePoolStatus(args) {
   const config = await loadConfig({}, args.cwd);
   const poolUrls = getPoolUrls(config);
-  const aggregated = await getAggregatedPoolStatus(poolUrls);
+  const aggregated = await getAggregatedPoolStatus(poolUrls, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
 
   const lines = [];
 
@@ -1267,6 +1283,30 @@ async function handlePoolStatus(args) {
     lines.push(`Sessions:  ${pool.sessions?.length ?? 0}`);
     if (pool.error) {
       lines.push(`Error:     ${pool.error}`);
+    }
+  }
+
+  return textResult(lines.join('\n'));
+}
+
+async function handleAppPoolStatus(args) {
+  const config = await loadConfig({}, args.cwd);
+  if (!isAppPoolEnabled(config)) {
+    return textResult('App pool is not enabled. Set appPool.enabled = true in e2e.config.js to use isolated app environments per test.');
+  }
+
+  const status = getAppPoolStatus();
+  const lines = [
+    `Driver:        ${config.appPool.driver}`,
+    `Active forks:  ${status.activeForks}/${config.appPool.maxForks}`,
+    `Port range:    ${config.appPool.forkBasePort}-${config.appPool.forkBasePort + config.appPool.maxForks - 1}`,
+    `Allocated:     ${status.allocatedPorts.length ? status.allocatedPorts.join(', ') : 'none'}`,
+  ];
+
+  if (status.forks.length > 0) {
+    lines.push('');
+    for (const fork of status.forks) {
+      lines.push(`  ${fork.forkId}: port ${fork.port}, ${fork.baseUrl} (${fork.testName || 'unnamed'}, ${fork.forkTimeMs}ms)`);
     }
   }
 
@@ -1844,7 +1884,7 @@ async function handleAnalyze(args) {
 
   const config = await loadConfig({}, args.cwd);
   const poolUrls = getPoolUrls(config);
-  const chosenPool = await selectPool(poolUrls);
+  const chosenPool = await selectPool(poolUrls, 2000, 60000, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
 
   let browser;
   try {
@@ -1933,7 +1973,7 @@ async function handleCapture(args) {
 
   const config = await loadConfig({}, args.cwd);
   const capturePoolUrls = getPoolUrls(config);
-  const capturePool = await selectPool(capturePoolUrls);
+  const capturePool = await selectPool(capturePoolUrls, 2000, 60000, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
 
   let browser;
   try {
@@ -2311,6 +2351,8 @@ export async function dispatchTool(name, args = {}) {
       return await handleCreateTest(args);
     case 'e2e_pool_status':
       return await handlePoolStatus(args);
+    case 'e2e_app_pool_status':
+      return await handleAppPoolStatus(args);
     case 'e2e_screenshot':
       return await handleScreenshot(args);
     case 'e2e_dashboard_start':

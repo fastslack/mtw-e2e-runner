@@ -273,6 +273,13 @@ function migrate(db) {
     db.exec('ALTER TABLE test_results ADD COLUMN pool_url TEXT');
   }
 
+  // Add pool_driver column to runs for driver visibility
+  try {
+    db.prepare('SELECT pool_driver FROM runs LIMIT 0').run();
+  } catch {
+    db.exec('ALTER TABLE runs ADD COLUMN pool_driver TEXT');
+  }
+
   // Migrations: add metadata columns to screenshot_hashes
   const ssColumns = db.pragma('table_info(screenshot_hashes)').map(c => c.name);
   if (!ssColumns.includes('test_name')) {
@@ -354,13 +361,13 @@ export function getScreenshotHashes(filePaths) {
 }
 
 /** Save a run + its test results in a single transaction. Returns the run's DB id. */
-export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
+export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDriver) {
   const d = getDb();
   const { summary, results, generatedAt } = report;
 
   const insertRun = d.prepare(`
-    INSERT INTO runs (project_id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name, triggered_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO runs (project_id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name, triggered_by, pool_driver)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertTest = d.prepare(`
@@ -382,6 +389,7 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy) {
       generatedAt,
       suiteName || null,
       triggeredBy || null,
+      poolDriver || null,
     );
     const runDbId = runInfo.lastInsertRowid;
 
@@ -498,7 +506,7 @@ export function listProjects() {
 export function getProjectRuns(projectId, limit = 50, offset = 0) {
   const d = getDb();
   return d.prepare(`
-    SELECT id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name, triggered_by
+    SELECT id, run_id, total, passed, failed, pass_rate, duration, generated_at, suite_name, triggered_by, pool_driver
     FROM runs
     WHERE project_id = ?
     ORDER BY generated_at DESC
@@ -536,6 +544,7 @@ export function getRunDetail(runDbId) {
     generatedAt: run.generated_at,
     suiteName: run.suite_name,
     triggeredBy: run.triggered_by || null,
+    poolDriver: run.pool_driver || null,
     results: tests.map(t => {
       const screenshots = t.screenshots ? JSON.parse(t.screenshots) : [];
       const testPaths = [...screenshots];
@@ -571,7 +580,7 @@ export function getAllRuns(limit = 50, offset = 0) {
   const d = getDb();
   return d.prepare(`
     SELECT r.id, r.run_id, r.total, r.passed, r.failed, r.pass_rate, r.duration,
-           r.generated_at, r.suite_name, r.triggered_by, p.name AS project_name, p.id AS project_id
+           r.generated_at, r.suite_name, r.triggered_by, r.pool_driver, p.name AS project_name, p.id AS project_id
     FROM runs r
     JOIN projects p ON p.id = r.project_id
     ORDER BY r.generated_at DESC

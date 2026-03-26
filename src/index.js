@@ -8,7 +8,7 @@
  */
 
 export { loadConfig } from './config.js';
-export { waitForPool, connectToPool, startPool, stopPool, restartPool, getPoolStatus } from './pool.js';
+export { waitForPool, connectToPool, disconnectFromPool, startPool, stopPool, restartPool, getPoolStatus, clearDriverCache, getCachedDriver, trackCdpSession, releaseCdpSession, releaseSteelSession } from './pool.js';
 export { getPoolUrls, getAllPoolStatuses, getAggregatedPoolStatus, waitForAnyPool, selectPool, selectAndConnect } from './pool-manager.js';
 export { executeAction } from './actions.js';
 export { runTest, runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites, fetchAuthToken } from './runner.js';
@@ -23,6 +23,7 @@ export { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHeal
 export { generateLearningsMarkdown } from './learner-markdown.js';
 export { writeToGraph, queryGraph, closeNeo4j } from './learner-neo4j.js';
 export { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
+export { forkAppInstance, destroyFork, destroyAllForks, getAppPoolStatus, isAppPoolEnabled } from './app-pool.js';
 
 import { loadConfig } from './config.js';
 import { waitForAnyPool, getPoolUrls } from './pool-manager.js';

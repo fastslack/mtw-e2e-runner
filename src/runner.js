@@ -9,8 +9,9 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import https from 'https';
-import { connectToPool } from './pool.js';
+import { connectToPool, getCachedDriver, disconnectFromPool } from './pool.js';
 import { getPoolUrls, selectPool, releasePending } from './pool-manager.js';
+import { forkAppInstance, destroyFork, isAppPoolEnabled } from './app-pool.js';
 import { executeAction } from './actions.js';
 import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
@@ -156,6 +157,7 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
   let context = null;
   let page = null;
   let cdpSession = null;
+  let appFork = null;
 
   const result = {
     name: test.name,
@@ -170,8 +172,20 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
   const pendingBodies = [];
 
   try {
-    const chosenPool = await selectPool(getPoolUrls(config));
+    // Fork an isolated app instance if app pool is enabled
+    let effectiveConfig = config;
+    if (isAppPoolEnabled(config)) {
+      appFork = await forkAppInstance(config, test.name);
+      // Override baseUrl to point to this test's isolated app instance
+      // Use dockerBaseUrl when Chrome runs inside Docker (default setup)
+      effectiveConfig = { ...config, baseUrl: appFork.dockerBaseUrl };
+      result.appFork = { forkId: appFork.forkId, baseUrl: appFork.baseUrl, port: appFork.port, forkTimeMs: appFork.forkTimeMs };
+    }
+
+    const driverOpts = { poolDriver: config.poolDriver || 'auto', maxSessions: config.maxSessions || 10 };
+    const chosenPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
     result.poolUrl = chosenPool;
+    result.poolDriver = getCachedDriver(chosenPool);
     const poolLabel = chosenPool.replace('ws://', '').replace('wss://', '');
     const isMultiPool = getPoolUrls(config).length > 1;
     if (isMultiPool) {
@@ -185,9 +199,15 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     await page.setViewport(config.viewport);
 
     // CDP screencast — streams browser frames as JPEG to the dashboard
-    if (config.screencast) {
+    // Only attempt on browserless pools; generic CDP pools (Lightpanda) break on createCDPSession
+    const poolDriver = getCachedDriver(chosenPool);
+    if (config.screencast && poolDriver !== 'cdp') {
       try {
-        cdpSession = await page.createCDPSession();
+        const raceTimeout = (promise, ms) => Promise.race([
+          promise,
+          new Promise((_, reject) => { const t = setTimeout(() => reject(new Error('CDP timeout')), ms); t.unref(); }),
+        ]);
+        cdpSession = await raceTimeout(page.createCDPSession(), 5000);
         let frameCount = 0;
         const everyNth = config.screencastEveryNthFrame || 1;
         cdpSession.on('Page.screencastFrame', (frame) => {
@@ -201,13 +221,13 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             metadata: frame.metadata,
           });
         });
-        await cdpSession.send('Page.startScreencast', {
+        await raceTimeout(cdpSession.send('Page.startScreencast', {
           format: 'jpeg',
           quality: config.screencastQuality || 60,
           maxWidth: config.screencastMaxWidth || 800,
           maxHeight: config.screencastMaxHeight || 600,
           everyNthFrame: 1,
-        });
+        }), 5000);
       } catch {
         cdpSession = null;
       }
@@ -255,9 +275,9 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     });
 
     // Auto-inject auth token into localStorage (runs BEFORE beforeEach hooks)
-    if (config.authToken) {
-      const storageKey = config.authStorageKey || 'accessToken';
-      await page.goto(config.baseUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    if (effectiveConfig.authToken) {
+      const storageKey = effectiveConfig.authStorageKey || 'accessToken';
+      await page.goto(effectiveConfig.baseUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
       await page.evaluate((key, token) => {
         localStorage.setItem(key, token);
       }, storageKey, config.authToken);
@@ -273,14 +293,14 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
 
     // Run beforeEach hook
     if (hooks.beforeEach?.length) {
-      await executeHookActions(page, hooks.beforeEach, config);
+      await executeHookActions(page, hooks.beforeEach, effectiveConfig);
     }
 
     // Auto-capture baseline screenshot if test has "expect" (BEFORE actions)
     if (test.expect && page) {
       try {
         const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
-        const baselinePath = path.join(config.screenshotsDir, `baseline-${safeName}-${Date.now()}.png`);
+        const baselinePath = path.join(effectiveConfig.screenshotsDir, `baseline-${safeName}-${Date.now()}.png`);
         await page.screenshot({ path: baselinePath, fullPage: true });
         result.baselineScreenshot = baselinePath;
       } catch { /* page may not be ready */ }
@@ -288,8 +308,8 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
 
     for (let i = 0; i < test.actions.length; i++) {
       const action = test.actions[i];
-      const maxActionRetries = action.retries ?? config.actionRetries ?? 0;
-      const actionRetryDelay = config.actionRetryDelay ?? 500;
+      const maxActionRetries = action.retries ?? effectiveConfig.actionRetries ?? 0;
+      const actionRetryDelay = effectiveConfig.actionRetryDelay ?? 500;
       let lastError = null;
 
       for (let attempt = 0; attempt <= maxActionRetries; attempt++) {
@@ -304,7 +324,7 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             }
             actionResult = null;
           } else {
-            actionResult = await executeAction(page, action, config);
+            actionResult = await executeAction(page, action, effectiveConfig);
           }
           const actionDuration = Date.now() - actionStart;
           const actionEntry = {
@@ -361,7 +381,7 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
 
     // Run afterEach hook (success path)
     if (hooks.afterEach?.length) {
-      await executeHookActions(page, hooks.afterEach, config);
+      await executeHookActions(page, hooks.afterEach, effectiveConfig);
     }
   } catch (error) {
     result.success = false;
@@ -369,7 +389,7 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
 
     // Run afterEach hook (failure path)
     if (page && hooks.afterEach?.length) {
-      try { await executeHookActions(page, hooks.afterEach, config); } catch { /* */ }
+      try { await executeHookActions(page, hooks.afterEach, effectiveConfig); } catch { /* */ }
     }
 
     if (page) {
@@ -398,11 +418,15 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       try { await context.close(); } catch { /* */ }
     }
     if (browser) {
-      try { browser.disconnect(); } catch { /* */ }
+      try { await disconnectFromPool(browser, result.poolUrl); } catch { /* */ }
     }
     // Release local pending counter so selectPool() knows this slot is free
     if (result.poolUrl) {
       releasePending(result.poolUrl);
+    }
+    // Destroy the app fork after the test completes
+    if (appFork) {
+      try { await destroyFork(appFork.forkId); } catch { /* best effort */ }
     }
   }
 
@@ -464,6 +488,7 @@ async function runTestWithVoting(test, config, hooks, votingCount, testTimeout, 
 /** Runs tests in parallel with limited concurrency, retries, timeouts, and hooks */
 export async function runTestsParallel(tests, config, suiteHooks = {}) {
   const hooks = mergeHooks(config.hooks, suiteHooks);
+  const driverOpts = { poolDriver: config.poolDriver || 'auto', maxSessions: config.maxSessions || 10 };
 
   // Run beforeAll hook
   if (hooks.beforeAll?.length) {
@@ -476,7 +501,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     log('🪝', `${C.dim}Running beforeAll hook...${C.reset}`);
     let browser = null;
     try {
-      const hookPool = await selectPool(getPoolUrls(config));
+      const hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
       browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
       const page = await browser.newPage();
       await page.setViewport(config.viewport);
@@ -486,7 +511,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
       log('❌', `${C.red}beforeAll hook failed: ${error.message}${C.reset}`);
       throw error;
     } finally {
-      if (browser) try { browser.disconnect(); } catch { /* */ }
+      if (browser) try { await disconnectFromPool(browser, hookPool); } catch { /* */ }
     }
   }
 
@@ -641,7 +666,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     log('🪝', `${C.dim}Running afterAll hook...${C.reset}`);
     let browser = null;
     try {
-      const hookPool = await selectPool(getPoolUrls(config));
+      const hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
       browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
       const page = await browser.newPage();
       await page.setViewport(config.viewport);
@@ -650,7 +675,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     } catch (error) {
       log('⚠️', `${C.yellow}afterAll hook failed: ${error.message}${C.reset}`);
     } finally {
-      if (browser) try { browser.disconnect(); } catch { /* */ }
+      if (browser) try { await disconnectFromPool(browser, hookPool); } catch { /* */ }
     }
   }
 

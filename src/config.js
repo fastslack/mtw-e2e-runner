@@ -40,6 +40,7 @@ const DEFAULTS = {
   connectRetries: 3,
   connectRetryDelay: 2000,
   poolPort: 3333,
+  poolDriver: 'auto',
   maxSessions: 10,
   retries: 0,
   retryDelay: 1000,
@@ -74,6 +75,25 @@ const DEFAULTS = {
   neo4jHttpPort: 7474,
   verificationStrictness: 'moderate',
   networkIgnoreDomains: [],
+  // App pool: isolated app environments per test
+  appPool: {
+    enabled: false,
+    driver: 'docker',              // 'docker' | 'zeroboot'
+    image: null,                   // Docker image to run (docker driver)
+    containerPort: 3000,           // Port the app listens on inside the container
+    cmd: null,                     // Optional command override
+    envVars: null,                 // { KEY: 'value' } for the container
+    forkBasePort: 4000,            // Host port range start for forked instances
+    forkHost: 'localhost',         // Host for health checks from runner
+    forkProtocol: 'http',
+    maxForks: 10,                  // Max concurrent forks
+    readyCheck: null,              // Path to poll for readiness (e.g. '/health')
+    readyTimeout: 15000,           // ms to wait for fork to be ready
+    zeroboot: {                    // Zeroboot-specific config
+      apiUrl: 'http://localhost:8484',
+      templateId: null,            // Pre-created template ID
+    },
+  },
   authLoginEndpoint: null,
   authCredentials: null,
   authTokenPath: 'token',
@@ -147,6 +167,7 @@ function loadEnvVars() {
   if (process.env.FAIL_ON_NETWORK_ERROR) env.failOnNetworkError = process.env.FAIL_ON_NETWORK_ERROR === 'true' || process.env.FAIL_ON_NETWORK_ERROR === '1';
   if (process.env.ACTION_RETRIES) env.actionRetries = parseInt(process.env.ACTION_RETRIES);
   if (process.env.ACTION_RETRY_DELAY) env.actionRetryDelay = parseInt(process.env.ACTION_RETRY_DELAY);
+  if (process.env.POOL_DRIVER) env.poolDriver = process.env.POOL_DRIVER;
   if (process.env.SCREENCAST) env.screencast = process.env.SCREENCAST === 'true' || process.env.SCREENCAST === '1';
   if (process.env.SCREENCAST_QUALITY) env.screencastQuality = parseInt(process.env.SCREENCAST_QUALITY);
   if (process.env.SCREENCAST_MAX_WIDTH) env.screencastMaxWidth = parseInt(process.env.SCREENCAST_MAX_WIDTH);
@@ -204,6 +225,50 @@ function loadEnvVars() {
     }
   }
   
+  // App pool configuration from env vars
+  if (process.env.APP_POOL_ENABLED) {
+    env.appPool = env.appPool || {};
+    env.appPool.enabled = process.env.APP_POOL_ENABLED === 'true' || process.env.APP_POOL_ENABLED === '1';
+  }
+  if (process.env.APP_POOL_DRIVER) {
+    env.appPool = env.appPool || {};
+    env.appPool.driver = process.env.APP_POOL_DRIVER;
+  }
+  if (process.env.APP_POOL_IMAGE) {
+    env.appPool = env.appPool || {};
+    env.appPool.image = process.env.APP_POOL_IMAGE;
+  }
+  if (process.env.APP_POOL_CONTAINER_PORT) {
+    env.appPool = env.appPool || {};
+    env.appPool.containerPort = parseInt(process.env.APP_POOL_CONTAINER_PORT);
+  }
+  if (process.env.APP_POOL_BASE_PORT) {
+    env.appPool = env.appPool || {};
+    env.appPool.forkBasePort = parseInt(process.env.APP_POOL_BASE_PORT);
+  }
+  if (process.env.APP_POOL_MAX_FORKS) {
+    env.appPool = env.appPool || {};
+    env.appPool.maxForks = parseInt(process.env.APP_POOL_MAX_FORKS);
+  }
+  if (process.env.APP_POOL_READY_CHECK) {
+    env.appPool = env.appPool || {};
+    env.appPool.readyCheck = process.env.APP_POOL_READY_CHECK;
+  }
+  if (process.env.APP_POOL_READY_TIMEOUT) {
+    env.appPool = env.appPool || {};
+    env.appPool.readyTimeout = parseInt(process.env.APP_POOL_READY_TIMEOUT);
+  }
+  if (process.env.ZEROBOOT_API_URL) {
+    env.appPool = env.appPool || {};
+    env.appPool.zeroboot = env.appPool.zeroboot || {};
+    env.appPool.zeroboot.apiUrl = process.env.ZEROBOOT_API_URL;
+  }
+  if (process.env.ZEROBOOT_TEMPLATE_ID) {
+    env.appPool = env.appPool || {};
+    env.appPool.zeroboot = env.appPool.zeroboot || {};
+    env.appPool.zeroboot.templateId = process.env.ZEROBOOT_TEMPLATE_ID;
+  }
+
   // Sync configuration from env vars
   if (process.env.E2E_SYNC_MODE) {
     const mode = process.env.E2E_SYNC_MODE.toLowerCase();
@@ -303,13 +368,21 @@ export async function loadConfig(cliArgs = {}, cwd = null) {
     ...cliArgs,
   };
   
-  // Deep merge sync config (nested objects need special handling)
+  // Deep merge nested config objects
   if (fileConfig.sync || envConfig.sync || cliArgs.sync) {
     config.sync = deepMerge(
       DEFAULTS.sync,
       fileConfig.sync || {},
       envConfig.sync || {},
       cliArgs.sync || {}
+    );
+  }
+  if (fileConfig.appPool || envConfig.appPool || cliArgs.appPool) {
+    config.appPool = deepMerge(
+      DEFAULTS.appPool,
+      fileConfig.appPool || {},
+      envConfig.appPool || {},
+      cliArgs.appPool || {}
     );
   }
 

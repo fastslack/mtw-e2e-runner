@@ -158,7 +158,10 @@ export async function persistRun(report, config, suiteName) {
 
   try {
     const projectId = ensureProject(config._cwd, config.projectName, config.screenshotsDir, config.testsDir);
-    runDbId = saveRunToDb(projectId, report, runId, suiteName || null, config.triggeredBy || null);
+    // Derive actual pool driver from test results (resolves 'auto' to real driver)
+    const drivers = [...new Set((report.results || []).map(r => r.poolDriver).filter(Boolean))];
+    const resolvedDriver = drivers.length === 1 ? drivers[0] : drivers.length > 1 ? drivers.join(',') : config.poolDriver || null;
+    runDbId = saveRunToDb(projectId, report, runId, suiteName || null, config.triggeredBy || null, resolvedDriver);
 
     // Fire-and-forget: learn from this run (never blocks or crashes the runner)
     if (config.learningsEnabled !== false) {

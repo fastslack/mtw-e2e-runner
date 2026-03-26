@@ -264,7 +264,7 @@ async function cmdRun() {
 
   // Verify pool connectivity
   log('🔌', `Checking Chrome Pool${poolUrls.length > 1 ? 's' : ''}...`);
-  const pressure = await waitForAnyPool(poolUrls);
+  const pressure = await waitForAnyPool(poolUrls, 30000, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
   log('✅', `Pool ready (${pressure.running}/${pressure.maxConcurrent} sessions, queued: ${pressure.queued})`);
 
   // Wire up live progress to dashboard if running
@@ -351,7 +351,7 @@ async function cmdPool() {
 
     case 'status': {
       const statusPoolUrls = getPoolUrls(config);
-      const aggregated = await getAggregatedPoolStatus(statusPoolUrls);
+      const aggregated = await getAggregatedPoolStatus(statusPoolUrls, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
       console.log(`\n${C.bold}Chrome Pool Status:${C.reset}\n`);
 
       if (statusPoolUrls.length > 1) {
@@ -494,11 +494,12 @@ async function cmdCapture() {
 
   const capturePoolUrls = getPoolUrls(config);
   log('🔌', 'Checking Chrome Pool...');
-  await waitForAnyPool(capturePoolUrls);
+  const captureDriverOpts = { poolDriver: config.poolDriver, maxSessions: config.maxSessions };
+  await waitForAnyPool(capturePoolUrls, 30000, captureDriverOpts);
 
   let browser;
   try {
-    const capturePool = await selectPool(capturePoolUrls);
+    const capturePool = await selectPool(capturePoolUrls, 2000, 60000, captureDriverOpts);
     browser = await connectToPool(capturePool);
     const page = await browser.newPage();
     await page.setViewport(config.viewport);
