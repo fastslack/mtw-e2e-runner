@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { app } from './lib/stores/state.svelte.js';
   import { connectWS, setPoolCallback, setRefreshCallback } from './lib/stores/websocket.svelte.js';
   import { initRouter, pushHash } from './lib/stores/router.svelte.js';
@@ -38,8 +38,10 @@
   onMount(() => {
     initRouter();
     connectWS();
-    refreshAll();
-    if (app.view === 'watch') watchView?.startPolling();
+    tick().then(() => {
+      refreshAll();
+      if (app.view === 'watch') watchView?.startPolling();
+    });
   });
 
   // Sync URL hash when view changes
@@ -47,9 +49,21 @@
     pushHash(app.view, app._tab);
   });
 
+  // Refresh data when switching views
+  let prevView = app.view;
   $effect(() => {
-    if (app.view === 'watch') watchView?.startPolling();
-    else watchView?.stopPolling();
+    const v = app.view;
+    if (v === 'watch') { watchView?.startPolling(); }
+    else { watchView?.stopPolling(); }
+    if (v !== prevView) {
+      prevView = v;
+      tick().then(() => {
+        if (v === 'watch') watchView?.refresh();
+        else if (v === 'tests') testsView?.refresh();
+        else if (v === 'runs') runsView?.refresh();
+        else if (v === 'learnings') learningsView?.refresh();
+      });
+    }
   });
 
   function handleKeydown(e) {

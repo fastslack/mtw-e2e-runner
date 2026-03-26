@@ -88,7 +88,7 @@ function refreshRuns(){
     var htr=document.createElement('tr');
     var cols=[];
     if(!S.project)cols.push('Project');
-    cols=cols.concat(['Suite','Source','Date','Total','Pass','Fail','Rate','Time']);
+    cols=cols.concat(['Suite','Driver','Source','Date','Total','Pass','Fail','Rate','Time']);
     cols.forEach(function(c){htr.appendChild(el('th',null,c))});
     head.textContent='';head.appendChild(htr);
     var colSpan=cols.length;
@@ -107,6 +107,7 @@ function refreshRuns(){
       if(r.id===S.selectedRun)tr.classList.add('expanded');
       if(!S.project)tr.appendChild(el('td',{style:'font-weight:600'},r.project_name||'-'));
       tr.appendChild(el('td',{style:'color:var(--accent)'},r.suite_name||'all'));
+      var driverTd=document.createElement('td');driverTd.appendChild(createDriverBadge(r.pool_driver));tr.appendChild(driverTd);
       var srcTd=document.createElement('td');srcTd.appendChild(createTriggerBadge(r.triggered_by));tr.appendChild(srcTd);
       tr.appendChild(el('td',null,fdate(r.generated_at)));
       tr.appendChild(el('td',null,String(r.total||0)));
@@ -203,8 +204,10 @@ function loadDetailInline(id,detailTr){
       ])
     ]);
     var srcBlock=el('div',null,[el('div',{className:'rd-s-label'},'Source'),el('div',{style:'margin-top:4px'},[createTriggerBadge(d.triggeredBy)])]);
+    var drvBlock=el('div',null,[el('div',{className:'rd-s-label'},'Driver'),el('div',{style:'margin-top:4px'},[createDriverBadge(d.poolDriver)])]);
     var summ=el('div',{className:'rd-summary'},[
       el('div',null,[el('div',{className:'rd-s-label'},'Suite'),el('div',{className:'rd-s-val',style:'font-size:14px;color:var(--accent)'},d.suiteName||'all')]),
+      drvBlock,
       srcBlock,
       el('div',null,[el('div',{className:'rd-s-label'},'Total'),el('div',{className:'rd-s-val'},String(d.summary.total))]),
       el('div',null,[el('div',{className:'rd-s-label'},'Passed'),el('div',{className:'rd-s-val',style:'color:var(--green)'},String(d.summary.passed))]),

@@ -61,71 +61,73 @@
   });
 </script>
 
-<div class="p-4">
+<div class="p-5">
   {#if loading}
-    <div class="flex items-center gap-2 p-3 text-base-content/30 text-xs">
-      <span class="loading loading-spinner loading-xs"></span> Loading...
+    <div class="flex items-center gap-3 p-4 text-base-content/30 text-sm">
+      <span class="loading loading-spinner loading-sm"></span> Loading run details...
     </div>
   {:else if error}
-    <div class="text-error text-xs p-3">Failed to load run detail</div>
+    <div class="text-error text-sm p-4 font-semibold">Failed to load run detail</div>
   {:else if detail}
     <!-- Summary -->
-    <div class="flex flex-wrap gap-5 px-4 py-3 bg-base-200 rounded-lg mb-3">
+    <div class="run-summary-card flex flex-wrap gap-6 px-5 py-4 mb-4">
       <div>
-        <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Suite</div>
-        <div class="text-sm text-primary font-mono mt-0.5">{detail.suiteName || 'all'}</div>
+        <div class="text-xs text-base-content/35 uppercase tracking-wider font-sans font-semibold">Suite</div>
+        <div class="text-base text-primary font-mono font-semibold mt-1">{detail.suiteName || 'all'}</div>
       </div>
       <div>
-        <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Source</div>
-        <div class="mt-1"><TriggerBadge source={detail.triggeredBy || 'cli'} /></div>
+        <div class="text-xs text-base-content/35 uppercase tracking-wider font-sans font-semibold">Source</div>
+        <div class="mt-1.5"><TriggerBadge source={detail.triggeredBy || 'cli'} /></div>
       </div>
       <div>
-        <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Total</div>
-        <div class="text-lg font-bold font-mono mt-0.5">{detail.summary.total}</div>
+        <div class="text-xs text-base-content/35 uppercase tracking-wider font-sans font-semibold">Total</div>
+        <div class="text-2xl font-bold font-mono mt-1 text-base-content">{detail.summary.total}</div>
       </div>
       <div>
-        <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Passed</div>
-        <div class="text-lg font-bold font-mono text-success mt-0.5">{detail.summary.passed}</div>
+        <div class="text-xs text-base-content/35 uppercase tracking-wider font-sans font-semibold">Passed</div>
+        <div class="text-2xl font-bold font-mono text-success mt-1" style="text-shadow: 0 0 12px oklch(var(--su) / 0.3)">{detail.summary.passed}</div>
       </div>
       <div>
-        <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Failed</div>
-        <div class="text-lg font-bold font-mono mt-0.5 {detail.summary.failed > 0 ? 'text-error' : 'text-base-content/30'}">{detail.summary.failed}</div>
+        <div class="text-xs text-base-content/35 uppercase tracking-wider font-sans font-semibold">Failed</div>
+        <div class="text-2xl font-bold font-mono mt-1 {detail.summary.failed > 0 ? 'text-error' : 'text-base-content/20'}" style="{detail.summary.failed > 0 ? 'text-shadow: 0 0 12px oklch(var(--er) / 0.3)' : ''}">{detail.summary.failed}</div>
       </div>
       <div>
-        <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Duration</div>
-        <div class="text-sm font-mono text-base-content/50 mt-0.5">{detail.summary.duration || '-'}</div>
+        <div class="text-xs text-base-content/35 uppercase tracking-wider font-sans font-semibold">Duration</div>
+        <div class="text-base font-mono text-base-content/60 mt-1 font-semibold">{detail.summary.duration || '-'}</div>
       </div>
       <div>
-        <div class="text-[10px] text-base-content/30 uppercase tracking-wider">Export</div>
-        <div class="mt-1">
-          <button class="btn btn-xs btn-ghost" onclick={exportJson}>JSON</button>
+        <div class="text-xs text-base-content/35 uppercase tracking-wider font-sans font-semibold">Export</div>
+        <div class="mt-1.5">
+          <button class="btn btn-sm btn-ghost text-base-content/50 hover:text-primary" onclick={exportJson}>JSON</button>
         </div>
       </div>
     </div>
 
     <!-- Insights -->
     {#if healthInfo || insightItems.length > 0}
-      <div class="flex flex-col gap-1.5 mb-3 p-3 bg-base-300 border border-base-content/10 rounded-lg">
-        {#if healthInfo}
-          <div class="flex items-center gap-2.5 flex-wrap">
-            <span class="text-base font-bold font-mono {healthInfo.rc}">{healthInfo.h.passRate}%</span>
-            <span class="text-xs {healthInfo.trendCls}">{healthInfo.trendIcon} {healthInfo.h.passRateTrend}</span>
-            {#if healthInfo.h.flakyCount > 0}
-              <span class="badge badge-xs badge-warning">{healthInfo.h.flakyCount} flaky</span>
-            {/if}
-            {#if healthInfo.h.unstableSelectorCount > 0}
-              <span class="badge badge-xs badge-error">{healthInfo.h.unstableSelectorCount} unstable sel.</span>
-            {/if}
-          </div>
-        {/if}
-        {#each insightItems as i}
-          {@const icon = i.type === 'new-failure' ? '\u2718' : i.type === 'recovered' ? '\u2714' : i.type === 'flaky' ? '\u223C' : '!'}
-          {@const cls = i.type === 'new-failure' ? 'text-error' : i.type === 'recovered' ? 'text-success' : i.type === 'flaky' ? 'text-warning' : ''}
-          <div class="flex items-center gap-2 text-xs {cls}">
-            <span class="text-sm shrink-0">{icon}</span>
-            <span>{i.message}</span>
-          </div>
-        {/each}
+      <div class="detail-section mb-4">
+        <div class="p-4">
+          {#if healthInfo}
+            <div class="flex items-center gap-3 flex-wrap mb-2">
+              <span class="text-xl font-bold font-mono {healthInfo.rc}" style="text-shadow: 0 0 12px oklch(var(--p) / 0.3)">{healthInfo.h.passRate}%</span>
+              <span class="text-sm font-semibold {healthInfo.trendCls}">{healthInfo.trendIcon} {healthInfo.h.passRateTrend}</span>
+              {#if healthInfo.h.flakyCount > 0}
+                <span class="badge badge-sm badge-warning font-semibold">{healthInfo.h.flakyCount} flaky</span>
+              {/if}
+              {#if healthInfo.h.unstableSelectorCount > 0}
+                <span class="badge badge-sm badge-error font-semibold">{healthInfo.h.unstableSelectorCount} unstable sel.</span>
+              {/if}
+            </div>
+          {/if}
+          {#each insightItems as i}
+            {@const icon = i.type === 'new-failure' ? '\u2718' : i.type === 'recovered' ? '\u2714' : i.type === 'flaky' ? '\u223C' : '!'}
+            {@const cls = i.type === 'new-failure' ? 'text-error' : i.type === 'recovered' ? 'text-success' : i.type === 'flaky' ? 'text-warning' : ''}
+            <div class="flex items-center gap-2.5 text-sm py-0.5 {cls}">
+              <span class="text-base shrink-0">{icon}</span>
+              <span>{i.message}</span>
+            </div>
+          {/each}
+        </div>
       </div>
     {/if}
 

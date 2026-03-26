@@ -9,9 +9,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/npm/v/@matware/e2e-runner?color=blue" alt="npm version" />
+  <a href="https://www.npmjs.com/package/@matware/e2e-runner"><img src="https://img.shields.io/npm/v/@matware/e2e-runner?color=blue" alt="npm version" /></a>
   <img src="https://img.shields.io/node/v/@matware/e2e-runner" alt="node version" />
-  <img src="https://img.shields.io/npm/l/@matware/e2e-runner" alt="license" />
+  <a href="https://www.npmjs.com/package/@matware/e2e-runner"><img src="https://img.shields.io/npm/dm/@matware/e2e-runner" alt="npm downloads" /></a>
+  <a href="https://hub.docker.com/r/fastslack/e2e-runner-mcp"><img src="https://img.shields.io/docker/pulls/fastslack/e2e-runner-mcp" alt="Docker pulls" /></a>
+  <a href="https://github.com/fastslack/mtw-e2e-runner/stargazers"><img src="https://img.shields.io/github/stars/fastslack/mtw-e2e-runner" alt="GitHub stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/@matware/e2e-runner" alt="license" /></a>
+  <a href="https://glama.ai/mcp/servers/fastslack/mtw-e2e-runner"><img src="https://glama.ai/mcp/servers/fastslack/mtw-e2e-runner/badge" alt="Glama MCP server" /></a>
   <img src="https://img.shields.io/badge/MCP-compatible-green" alt="MCP compatible" />
   <img src="https://img.shields.io/badge/AI--native-Claude%20Code-blueviolet" alt="AI native" />
   <img src="https://img.shields.io/badge/AI--native-OpenCode-orange" alt="OpenCode compatible" />

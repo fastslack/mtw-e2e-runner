@@ -77,6 +77,13 @@ tbody tr.selected td{background:var(--accent-dim)}
 .trigger-badge.src-unknown{background:rgba(70,75,98,.15);color:var(--text3)}
 .trigger-badge .trig-icon{font-size:11px;line-height:1}
 
+/* ── Driver Badges ── */
+.driver-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;font-family:var(--mono);white-space:nowrap}
+.driver-badge.drv-browserless{background:var(--accent-dim)}
+.driver-badge.drv-cdp{background:var(--purple-dim)}
+.driver-badge.drv-steel{background:var(--amber-dim)}
+.driver-badge .drv-icon{font-size:11px;line-height:1}
+
 /* ── Filter Bar ── */
 .filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .filter-btn{padding:5px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s}

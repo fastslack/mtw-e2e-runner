@@ -11,7 +11,7 @@
   --font-sans: 'Outfit', -apple-system, sans-serif;
 }
 
-html { font-size: 13px; }
+html { font-size: 14px; }
 body {
   font-family: var(--font-mono);
 }
@@ -103,6 +103,73 @@ body {
 .select:focus, .input:focus {
   border-color: oklch(var(--p) / 0.5);
   box-shadow: 0 0 0 2px oklch(var(--p) / 0.08);
+}
+
+/* ═══════════════════════════════════════════════
+   Run Detail — elevated panel when expanded
+   ═══════════════════════════════════════════════ */
+.run-detail-panel {
+  background: oklch(var(--b2));
+  border-top: 2px solid oklch(var(--p) / 0.3);
+  box-shadow:
+    inset 0 4px 16px oklch(var(--p) / 0.04),
+    inset 0 1px 0 oklch(var(--bc) / 0.04);
+  animation: detailSlide 0.25s ease;
+}
+@keyframes detailSlide {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 2000px; }
+}
+
+/* Summary card inside detail */
+.run-summary-card {
+  background: oklch(var(--b3));
+  border: 1px solid oklch(var(--bc) / 0.08);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px oklch(0 0 0 / 0.2);
+}
+
+/* Section panels (Actions, Console, Network) */
+.detail-section {
+  border: 1px solid oklch(var(--bc) / 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 4px oklch(0 0 0 / 0.15);
+}
+.detail-section-header {
+  background: oklch(var(--b2));
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.detail-section-header:hover {
+  background: oklch(var(--bc) / 0.05);
+}
+
+/* Test result cards — stronger presence */
+.test-result-card {
+  border: 1px solid oklch(var(--bc) / 0.08);
+  border-left-width: 4px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: all 0.2s;
+  box-shadow: 0 1px 4px oklch(0 0 0 / 0.15);
+}
+.test-result-card:hover {
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.25);
+}
+.test-result-card.pass { border-left-color: oklch(var(--su)); }
+.test-result-card.fail { border-left-color: oklch(var(--er)); }
+.test-result-card.flaky { border-left-color: oklch(var(--wa)); }
+
+/* Expanded row highlight in table */
+tr.run-expanded {
+  background: oklch(var(--p) / 0.06) !important;
+}
+tr.run-expanded td {
+  color: oklch(var(--bc));
 }
 
 /* ═══════════════════════════════════════════════

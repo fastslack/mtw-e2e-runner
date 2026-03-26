@@ -167,18 +167,18 @@
   </div>
 {:else}
   <div class="overflow-x-auto bg-base-300 border border-base-content/10 rounded-lg">
-    <table class="table table-xs table-zebra w-full">
+    <table class="table table-sm table-zebra w-full">
       <thead>
         <tr class="bg-base-200 border-b border-base-content/10">
-          {#if !app.project}<th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Project</th>{/if}
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Suite</th>
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Source</th>
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Date</th>
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Total</th>
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Pass</th>
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Fail</th>
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Rate</th>
-          <th class="text-[10px] font-semibold text-base-content/40 uppercase tracking-wider">Time</th>
+          {#if !app.project}<th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Project</th>{/if}
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Suite</th>
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Source</th>
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Date</th>
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Total</th>
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Pass</th>
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Fail</th>
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Rate</th>
+          <th class="text-xs font-semibold text-base-content/40 uppercase tracking-wider">Time</th>
         </tr>
       </thead>
       <tbody>
@@ -187,25 +187,25 @@
           {@const isExpanded = app.selectedRun === r.id}
           {@const isHighlighted = app.highlightedRunIdx === idx}
           <tr
-            class="cursor-pointer transition-colors duration-100 hover:bg-base-200 {isExpanded ? 'bg-base-200' : ''} {isHighlighted ? 'outline outline-1 outline-primary -outline-offset-1' : ''}"
+            class="cursor-pointer transition-colors duration-100 hover:bg-base-200 {isExpanded ? 'run-expanded' : ''} {isHighlighted ? 'outline outline-1 outline-primary -outline-offset-1' : ''}"
             onclick={() => toggleRun(r.id)}
           >
             {#if !app.project}
-              <td class="font-semibold font-mono text-xs">{r.project_name || '-'}</td>
+              <td class="font-semibold font-mono text-sm">{r.project_name || '-'}</td>
             {/if}
-            <td class="text-primary font-mono text-xs">{r.suite_name || 'all'}</td>
+            <td class="text-primary font-mono text-sm">{r.suite_name || 'all'}</td>
             <td><TriggerBadge source={r.triggered_by || 'cli'} /></td>
-            <td class="font-mono text-xs text-base-content/50">{fdate(r.generated_at)}</td>
-            <td class="font-mono text-xs">{r.total || 0}</td>
-            <td class="font-mono text-xs text-success">{r.passed || 0}</td>
-            <td class="font-mono text-xs text-error">{r.failed || 0}</td>
-            <td class="font-mono text-xs font-semibold" style="color:{rateColor(rate)}">{r.pass_rate || '-'}</td>
-            <td class="font-mono text-xs text-base-content/50">{r.duration || '-'}</td>
+            <td class="font-mono text-sm text-base-content/50">{fdate(r.generated_at)}</td>
+            <td class="font-mono text-sm font-semibold">{r.total || 0}</td>
+            <td class="font-mono text-sm font-semibold text-success">{r.passed || 0}</td>
+            <td class="font-mono text-sm font-semibold text-error">{r.failed || 0}</td>
+            <td class="font-mono text-sm font-bold" style="color:{rateColor(rate)}">{r.pass_rate || '-'}</td>
+            <td class="font-mono text-sm text-base-content/50">{r.duration || '-'}</td>
           </tr>
           {#if isExpanded}
             <tr>
-              <td colspan={app.project ? 8 : 9} class="p-0 border-b border-base-content/10">
-                <div class="bg-base-300/50">
+              <td colspan={app.project ? 8 : 9} class="p-0">
+                <div class="run-detail-panel">
                   <RunDetail run={r} />
                 </div>
               </td>

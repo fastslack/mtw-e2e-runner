@@ -162,6 +162,26 @@ function createTriggerBadge(source){
   return badge;
 }
 
+function createDriverBadge(driver){
+  if(!driver)return document.createTextNode('--');
+  var labels={browserless:'Browserless',cdp:'CDP',steel:'Steel',auto:'Auto'};
+  var colors={browserless:'var(--accent)',cdp:'var(--purple)',steel:'var(--amber)'};
+  var icons={browserless:'\u{1F310}',cdp:'\u{1F50C}',steel:'\u{1F6E1}'};
+  // Handle multi-driver (e.g. "browserless,steel")
+  var parts=driver.split(',');
+  if(parts.length>1){
+    var wrap=el('span',{style:'display:inline-flex;gap:4px'});
+    parts.forEach(function(d){wrap.appendChild(createDriverBadge(d.trim()))});
+    return wrap;
+  }
+  var d=driver.trim();
+  var badge=el('span',{className:'driver-badge drv-'+d,style:'color:'+(colors[d]||'var(--text3)')},[
+    el('span',{className:'drv-icon'},icons[d]||'\u2699'),
+    document.createTextNode(labels[d]||d)
+  ]);
+  return badge;
+}
+
 /* ── Pool Distribution Summary ── */
 var POOL_COLORS=['#6366f1','#22d3ee','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899','#14b8a6'];
 function buildPoolDistribution(tests){

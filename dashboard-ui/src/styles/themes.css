@@ -1,0 +1,170 @@
+/* ═══════════════════════════════════════════════════════════════
+   E2E Runner — Theme Definitions
+   All dashboard colors live HERE. One file, all themes.
+   Uses DaisyUI v5 custom theme plugin syntax.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────────────────────────────
+   RUNNER DARK  (default)
+   High-contrast dark with teal primary
+   ─────────────────────────────────────────────── */
+@plugin "daisyui/theme" {
+  name:         "runner-dark";
+  default:      true;
+  color-scheme:  dark;
+
+  --color-base-100:          oklch(18% 0.014 260);
+  --color-base-200:          oklch(15.5% 0.012 260);
+  --color-base-300:          oklch(13% 0.010 260);
+  --color-base-content:      oklch(90% 0.005 260);
+
+  --color-primary:           oklch(72% 0.17 175);
+  --color-primary-content:   oklch(15% 0.04 175);
+  --color-secondary:         oklch(70% 0.14 280);
+  --color-secondary-content: oklch(15% 0.03 280);
+  --color-accent:            oklch(75% 0.15 55);
+  --color-accent-content:    oklch(15% 0.04 55);
+  --color-neutral:           oklch(25% 0.015 260);
+  --color-neutral-content:   oklch(85% 0.005 260);
+
+  --color-info:              oklch(72% 0.15 235);
+  --color-info-content:      oklch(15% 0.03 235);
+  --color-success:           oklch(75% 0.18 155);
+  --color-success-content:   oklch(15% 0.04 155);
+  --color-warning:           oklch(82% 0.16 75);
+  --color-warning-content:   oklch(15% 0.04 75);
+  --color-error:             oklch(65% 0.22 25);
+  --color-error-content:     oklch(95% 0.02 25);
+
+  --radius-selector: 0.5rem;
+  --radius-field:    0.375rem;
+  --radius-box:      0.5rem;
+  --size-selector:   0.25rem;
+  --size-field:      0.25rem;
+  --border:          1px;
+  --depth:           0;
+  --noise:           0;
+}
+
+/* ───────────────────────────────────────────────
+   RUNNER MIDNIGHT
+   Deep blue, terminal vibes
+   ─────────────────────────────────────────────── */
+@plugin "daisyui/theme" {
+  name:         "runner-midnight";
+  color-scheme:  dark;
+
+  --color-base-100:          oklch(16% 0.035 265);
+  --color-base-200:          oklch(13.5% 0.030 265);
+  --color-base-300:          oklch(11% 0.025 265);
+  --color-base-content:      oklch(88% 0.015 230);
+
+  --color-primary:           oklch(75% 0.14 230);
+  --color-primary-content:   oklch(15% 0.03 230);
+  --color-secondary:         oklch(68% 0.16 290);
+  --color-secondary-content: oklch(15% 0.03 290);
+  --color-accent:            oklch(78% 0.12 190);
+  --color-accent-content:    oklch(15% 0.03 190);
+  --color-neutral:           oklch(22% 0.030 265);
+  --color-neutral-content:   oklch(85% 0.010 230);
+
+  --color-info:              oklch(72% 0.14 240);
+  --color-info-content:      oklch(15% 0.03 240);
+  --color-success:           oklch(78% 0.15 165);
+  --color-success-content:   oklch(15% 0.03 165);
+  --color-warning:           oklch(82% 0.14 80);
+  --color-warning-content:   oklch(15% 0.03 80);
+  --color-error:             oklch(68% 0.20 25);
+  --color-error-content:     oklch(95% 0.02 25);
+
+  --radius-selector: 0.5rem;
+  --radius-field:    0.375rem;
+  --radius-box:      0.5rem;
+  --size-selector:   0.25rem;
+  --size-field:      0.25rem;
+  --border:          1px;
+  --depth:           0;
+  --noise:           0;
+}
+
+/* ───────────────────────────────────────────────
+   RUNNER LIGHT
+   Clean, paper-like
+   ─────────────────────────────────────────────── */
+@plugin "daisyui/theme" {
+  name:         "runner-light";
+  color-scheme:  light;
+
+  --color-base-100:          oklch(98.5% 0.003 250);
+  --color-base-200:          oklch(95% 0.005 250);
+  --color-base-300:          oklch(91% 0.008 250);
+  --color-base-content:      oklch(22% 0.010 260);
+
+  --color-primary:           oklch(50% 0.20 175);
+  --color-primary-content:   oklch(97% 0.01 175);
+  --color-secondary:         oklch(50% 0.16 280);
+  --color-secondary-content: oklch(97% 0.01 280);
+  --color-accent:            oklch(58% 0.18 55);
+  --color-accent-content:    oklch(97% 0.01 55);
+  --color-neutral:           oklch(30% 0.015 260);
+  --color-neutral-content:   oklch(95% 0.003 260);
+
+  --color-info:              oklch(55% 0.18 235);
+  --color-info-content:      oklch(97% 0.01 235);
+  --color-success:           oklch(55% 0.20 155);
+  --color-success-content:   oklch(97% 0.01 155);
+  --color-warning:           oklch(72% 0.18 75);
+  --color-warning-content:   oklch(20% 0.04 75);
+  --color-error:             oklch(55% 0.22 25);
+  --color-error-content:     oklch(97% 0.01 25);
+
+  --radius-selector: 0.5rem;
+  --radius-field:    0.375rem;
+  --radius-box:      0.5rem;
+  --size-selector:   0.25rem;
+  --size-field:      0.25rem;
+  --border:          1px;
+  --depth:           1;
+  --noise:           0;
+}
+
+/* ───────────────────────────────────────────────
+   RUNNER CYBER
+   Neon on black, synthwave glow
+   ─────────────────────────────────────────────── */
+@plugin "daisyui/theme" {
+  name:         "runner-cyber";
+  color-scheme:  dark;
+
+  --color-base-100:          oklch(12% 0.020 300);
+  --color-base-200:          oklch(10% 0.018 300);
+  --color-base-300:          oklch(8% 0.015 300);
+  --color-base-content:      oklch(92% 0.015 310);
+
+  --color-primary:           oklch(78% 0.25 320);
+  --color-primary-content:   oklch(12% 0.05 320);
+  --color-secondary:         oklch(80% 0.20 180);
+  --color-secondary-content: oklch(12% 0.04 180);
+  --color-accent:            oklch(85% 0.18 90);
+  --color-accent-content:    oklch(12% 0.04 90);
+  --color-neutral:           oklch(18% 0.020 300);
+  --color-neutral-content:   oklch(88% 0.010 310);
+
+  --color-info:              oklch(75% 0.18 240);
+  --color-info-content:      oklch(12% 0.04 240);
+  --color-success:           oklch(82% 0.20 155);
+  --color-success-content:   oklch(12% 0.04 155);
+  --color-warning:           oklch(85% 0.18 80);
+  --color-warning-content:   oklch(12% 0.04 80);
+  --color-error:             oklch(70% 0.25 15);
+  --color-error-content:     oklch(95% 0.02 15);
+
+  --radius-selector: 0rem;
+  --radius-field:    0rem;
+  --radius-box:      0rem;
+  --size-selector:   0.25rem;
+  --size-field:      0.25rem;
+  --border:          1px;
+  --depth:           0;
+  --noise:           0;
+}
