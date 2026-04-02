@@ -87,6 +87,16 @@ Smart interaction actions:
 - click_menu_item: click a menu item by text. Searches [role="menuitem"], .dropdown-item, .menu-item, [class*="MenuItem"]. Optional "selector" scopes the search
 - click_in_context: click a child element within a container identified by text. "text" finds the container, "selector" is the child to click. Picks the smallest matching container
 
+Visual regression:
+- assert_visual: compare current page against a golden reference screenshot. "value" is the golden filename (e.g. "login-page.png"). First run auto-saves the golden. "text" is optional max diff percentage (default "0.02" = 2%). "selector" captures only that element. "maskRegions" ignores dynamic areas: [{ "x": 10, "y": 5, "width": 200, "height": 30 }]. Example: { "type": "assert_visual", "value": "dashboard.png", "text": "0.05" }
+
+Multi-tab actions (for OAuth, popups, admin+user flows):
+- open_tab: open a new tab with URL in "value". Optional "text" assigns a label for switch_tab. Example: { "type": "open_tab", "value": "/admin", "text": "admin" }
+- switch_tab: switch to a tab by label, title regex, URL substring, or index. Example: { "type": "switch_tab", "value": "admin" }
+- close_tab: close current tab or a named tab ("value" = label). Automatically switches to previous tab. Example: { "type": "close_tab", "value": "admin" }
+- wait_for_tab: wait for a popup/new tab opened by the page (window.open, target=_blank). Optional "text" labels it. Example: { "type": "wait_for_tab", "text": "oauth" }
+- assert_tab_count: verify number of open tabs. "value" is count or operator. Example: { "type": "assert_tab_count", "value": "2" }
+
 Assertion action reference:
 - assert_text: checks if text appears anywhere in the page body
 - assert_element_text: checks textContent of a specific element (use "value": "exact" for strict match)

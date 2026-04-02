@@ -24,6 +24,7 @@ export { generateLearningsMarkdown } from './learner-markdown.js';
 export { writeToGraph, queryGraph, closeNeo4j } from './learner-neo4j.js';
 export { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
 export { forkAppInstance, destroyFork, destroyAllForks, getAppPoolStatus, isAppPoolEnabled } from './app-pool.js';
+export { compareImages, assertVisualMatch } from './visual-diff.js';
 
 import { loadConfig } from './config.js';
 import { waitForAnyPool, getPoolUrls } from './pool-manager.js';

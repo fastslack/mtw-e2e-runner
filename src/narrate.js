@@ -167,6 +167,28 @@ export function narrateAction(action, result) {
       return `Executed JS: ${snippet}${time}`;
     }
 
+    case 'assert_visual': {
+      const vr = result.result;
+      if (vr?.goldenCreated) return `Saved golden reference: ${value}${time}`;
+      const pct = vr?.diffPercentage != null ? (vr.diffPercentage * 100).toFixed(2) + '% diff' : '';
+      return `Visual comparison against "${value}": ${pct}${time}`;
+    }
+
+    case 'open_tab':
+      return `Opened new tab${text ? ` "${text}"` : ''} → ${value}${time}`;
+
+    case 'switch_tab':
+      return `Switched to tab "${value}"${time}`;
+
+    case 'close_tab':
+      return `Closed tab${value ? ` "${value}"` : ''}${time}`;
+
+    case 'assert_tab_count':
+      return `Verified ${value} tab(s) open${time}`;
+
+    case 'wait_for_tab':
+      return `Waited for new tab to open${text ? ` (labeled "${text}")` : ''}${time}`;
+
     default:
       return `Unknown action "${type}"${time}`;
   }
@@ -223,6 +245,12 @@ function describeIntent(action) {
     case 'click_menu_item':        return `Click menu item "${text}"`;
     case 'click_in_context':       return `Click "${selector}" in context of "${text}"`;
     case 'evaluate':   return 'Execute JS';
+    case 'assert_visual':           return `Visual compare against "${value}"`;
+    case 'open_tab':               return `Open new tab → ${value}`;
+    case 'switch_tab':             return `Switch to tab "${value}"`;
+    case 'close_tab':              return `Close tab${value ? ` "${value}"` : ''}`;
+    case 'assert_tab_count':       return `Assert ${value} tab(s) open`;
+    case 'wait_for_tab':           return 'Wait for new tab';
     default:           return `Action "${type}"`;
   }
 }

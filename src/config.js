@@ -74,6 +74,8 @@ const DEFAULTS = {
   neo4jBoltPort: 7687,
   neo4jHttpPort: 7474,
   verificationStrictness: 'moderate',
+  verificationThreshold: 0.02,
+  goldenDir: null,
   networkIgnoreDomains: [],
   // App pool: isolated app environments per test
   appPool: {
@@ -224,7 +226,9 @@ function loadEnvVars() {
       env.verificationStrictness = val;
     }
   }
-  
+  if (process.env.VERIFICATION_THRESHOLD) env.verificationThreshold = parseFloat(process.env.VERIFICATION_THRESHOLD);
+  if (process.env.GOLDEN_DIR) env.goldenDir = process.env.GOLDEN_DIR;
+
   // App pool configuration from env vars
   if (process.env.APP_POOL_ENABLED) {
     env.appPool = env.appPool || {};

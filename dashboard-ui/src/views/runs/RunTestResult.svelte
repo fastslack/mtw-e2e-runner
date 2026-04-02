@@ -12,6 +12,7 @@
   let actionsOpen = $state(false);
   let consoleOpen = $state(false);
   let netErrorsOpen = $state(false);
+  let visualDiffOpen = $state(false);
   let ssHashes = $state({});
 
   let testDur = $derived(
@@ -152,6 +153,82 @@
               </div>
             </div>
           {/each}
+        </div>
+      {/if}
+
+      <!-- Visual Diff -->
+      {#if test.visualDiff}
+        {@const vd = test.visualDiff}
+        {@const pct = (vd.diffPercentage * 100).toFixed(2)}
+        {@const matchPct = ((1 - vd.diffPercentage) * 100).toFixed(1)}
+        {@const threshPct = ((vd.threshold || 0.02) * 100).toFixed(1)}
+        <div class="detail-section">
+          <div
+            class="detail-section-header flex items-center gap-2.5 text-sm"
+            onclick={() => visualDiffOpen = !visualDiffOpen}
+          >
+            <span class="text-xs {vd.passed ? 'text-success' : 'text-error'} transition-transform duration-200 {visualDiffOpen ? 'rotate-90' : ''}">{'\u25B6'}</span>
+            <span class="font-bold text-base-content">Visual Diff</span>
+            <div class="flex gap-3 ml-auto items-center">
+              <span class="{vd.passed ? 'text-success' : 'text-error'} font-semibold">
+                {vd.passed ? '\u2714' : '\u2718'} {pct}% diff
+              </span>
+              <span class="text-base-content/40 text-xs">threshold: {threshPct}%</span>
+              <span class="text-base-content/40 text-xs">{vd.differentPixels?.toLocaleString()} / {vd.totalPixels?.toLocaleString()} px</span>
+            </div>
+          </div>
+          {#if visualDiffOpen}
+            <div class="px-4 py-3">
+              <!-- Progress bar showing match percentage -->
+              <div class="w-full bg-base-300 rounded-full h-2 mb-4 overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all duration-500 {vd.passed ? 'bg-success' : 'bg-error'}"
+                  style="width: {matchPct}%"
+                ></div>
+              </div>
+              <!-- Side-by-side screenshots -->
+              <div class="grid grid-cols-3 gap-3">
+                {#if test.baselineScreenshot}
+                  {@const blSrc = '/api/image?path=' + encodeURIComponent(test.baselineScreenshot)}
+                  <div class="text-center">
+                    <div class="text-xs text-base-content/40 mb-1.5 font-semibold uppercase tracking-wider">Baseline</div>
+                    <div
+                      class="cursor-pointer border border-base-content/10 rounded-lg overflow-hidden hover:border-primary transition-colors"
+                      onclick={(e) => openScreenshot(blSrc, e)}
+                    >
+                      <img src={blSrc} alt="Baseline" loading="lazy" class="w-full h-auto block" />
+                    </div>
+                  </div>
+                {/if}
+                {#if test.verificationScreenshot}
+                  {@const vfSrc = '/api/image?path=' + encodeURIComponent(test.verificationScreenshot)}
+                  <div class="text-center">
+                    <div class="text-xs text-base-content/40 mb-1.5 font-semibold uppercase tracking-wider">Current</div>
+                    <div
+                      class="cursor-pointer border border-base-content/10 rounded-lg overflow-hidden hover:border-primary transition-colors"
+                      onclick={(e) => openScreenshot(vfSrc, e)}
+                    >
+                      <img src={vfSrc} alt="Current" loading="lazy" class="w-full h-auto block" />
+                    </div>
+                  </div>
+                {/if}
+                {#if test.diffScreenshot || vd.diffImagePath}
+                  {@const diffSrc = '/api/image?path=' + encodeURIComponent(test.diffScreenshot || vd.diffImagePath)}
+                  <div class="text-center">
+                    <div class="text-xs text-base-content/40 mb-1.5 font-semibold uppercase tracking-wider">
+                      Diff <span class="{vd.passed ? 'text-success' : 'text-error'}">{pct}%</span>
+                    </div>
+                    <div
+                      class="cursor-pointer border rounded-lg overflow-hidden hover:border-primary transition-colors {vd.passed ? 'border-success/30' : 'border-error/30'}"
+                      onclick={(e) => openScreenshot(diffSrc, e)}
+                    >
+                      <img src={diffSrc} alt="Diff overlay" loading="lazy" class="w-full h-auto block" style="background: #111" />
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
         </div>
       {/if}
 

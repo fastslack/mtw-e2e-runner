@@ -8,6 +8,8 @@
  */
 
 import path from 'path';
+import fs from 'fs';
+import { assertVisualMatch } from './visual-diff.js';
 
 /** All recognized action types — single source of truth for validation. */
 export const KNOWN_ACTION_TYPES = new Set([
@@ -22,6 +24,8 @@ export const KNOWN_ACTION_TYPES = new Set([
   'set_storage', 'click_icon', 'click_menu_item', 'click_in_context',
   'assert_text_in', 'assert_no_text',
   'gql', 'wait_network_idle',
+  'open_tab', 'switch_tab', 'close_tab', 'assert_tab_count', 'wait_for_tab',
+  'assert_visual',
 ]);
 
 function sleep(ms) {
@@ -749,6 +753,153 @@ export async function executeAction(page, action, config) {
       const idleTime = value ? parseInt(value) : 500;
       const maxTimeout = action.timeout ? parseInt(action.timeout) : 30000;
       await page.waitForNetworkIdle({ idleTime, timeout: maxTimeout });
+      break;
+    }
+
+    // ── Visual regression ───────────────────────────────────────────────────
+
+    case 'assert_visual': {
+      // Compares a live screenshot against a golden reference image.
+      //
+      // value: golden image filename (relative to screenshotsDir or goldenDir) — required
+      // selector: optional CSS selector — screenshot only that element instead of full page
+      // text: optional max diff percentage as string, e.g. "0.02" (default: config.verificationThreshold or 0.02)
+      //
+      // Additional fields via action object:
+      //   fullPage: boolean (default: true)
+      //   maskRegions: [{ x, y, width, height }] — regions to ignore (timestamps, avatars, etc.)
+      //   threshold: number — pixel color sensitivity 0-1 (default: 0.1)
+      //
+      // Returns: { diffPercentage, differentPixels, totalPixels, diffImagePath, baselinePath, currentPath }
+
+      if (!value) throw new Error('assert_visual requires "value" (golden image filename)');
+
+      // Resolve golden image path
+      const goldenDir = config.goldenDir || path.join(config.screenshotsDir, 'golden');
+      const goldenPath = path.isAbsolute(value) ? value : path.join(goldenDir, value);
+
+      if (!fs.existsSync(goldenPath)) {
+        // First run: save current screenshot as the golden reference
+        if (!fs.existsSync(goldenDir)) fs.mkdirSync(goldenDir, { recursive: true });
+        const screenshotOpts = { path: goldenPath, fullPage: action.fullPage !== false };
+        if (selector) {
+          const el = await page.$(selector);
+          if (!el) throw new Error(`assert_visual: selector "${selector}" not found`);
+          await el.screenshot(screenshotOpts);
+        } else {
+          await page.screenshot(screenshotOpts);
+        }
+        return {
+          goldenCreated: true,
+          goldenPath,
+          message: `Golden image saved: ${path.basename(goldenPath)}. Re-run to compare.`,
+        };
+      }
+
+      // Capture current screenshot
+      const safeName = path.basename(value, path.extname(value));
+      const currentPath = path.join(screenshotsDir, `current-${safeName}-${Date.now()}.png`);
+      const screenshotOpts = { path: currentPath, fullPage: action.fullPage !== false };
+      if (selector) {
+        const el = await page.$(selector);
+        if (!el) throw new Error(`assert_visual: selector "${selector}" not found`);
+        await el.screenshot(screenshotOpts);
+      } else {
+        await page.screenshot(screenshotOpts);
+      }
+
+      // Compare
+      const maxDiff = text ? parseFloat(text) : (config.verificationThreshold || 0.02);
+      const diffPath = path.join(screenshotsDir, `diff-${safeName}-${Date.now()}.png`);
+      const compareResult = assertVisualMatch(goldenPath, currentPath, maxDiff, {
+        threshold: action.threshold || 0.1,
+        maskRegions: action.maskRegions || [],
+        diffOutputPath: diffPath,
+        includeAntiAlias: action.includeAntiAlias || false,
+      });
+
+      if (!compareResult.passed) {
+        const pct = (compareResult.diffPercentage * 100).toFixed(2);
+        const maxPct = (maxDiff * 100).toFixed(2);
+        throw new Error(
+          `assert_visual failed: ${pct}% pixels differ (threshold: ${maxPct}%). ` +
+          `${compareResult.differentPixels}/${compareResult.totalPixels} pixels changed. ` +
+          `Diff: ${path.basename(diffPath)}`
+        );
+      }
+
+      return {
+        diffPercentage: compareResult.diffPercentage,
+        differentPixels: compareResult.differentPixels,
+        totalPixels: compareResult.totalPixels,
+        diffImagePath: compareResult.diffImagePath,
+        baselinePath: goldenPath,
+        currentPath,
+        screenshot: diffPath,
+      };
+    }
+
+    // ── Multi-tab actions ─────────────────────────────────────────────────────
+    // These actions are intercepted by the runner (runTest) which manages the
+    // tab registry and swaps the active page. The actual tab lifecycle happens
+    // in runner.js — these cases handle the in-page parts only.
+
+    case 'open_tab': {
+      // Opens a new tab and navigates to the given URL.
+      // value: URL (absolute or relative to baseUrl) — required
+      // text: optional label for the tab (used by switch_tab)
+      // The runner intercepts this to create the page and register it.
+      // If we reach here, it means the runner already created the page and
+      // we just need to navigate.
+      const tabUrl = value.startsWith('http') ? value : `${baseUrl}${value}`;
+      await page.goto(tabUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      break;
+    }
+
+    case 'switch_tab': {
+      // Switches to another open tab. The runner handles the actual page swap.
+      // This case is a no-op — the runner already switched the page reference.
+      break;
+    }
+
+    case 'close_tab': {
+      // Closes the current tab. The runner handles page cleanup and switching.
+      // This case is a no-op — the runner closes the page and swaps back.
+      break;
+    }
+
+    case 'assert_tab_count': {
+      // Asserts the number of open tabs.
+      // value: expected count (number or operator expression like ">=2")
+      // The runner injects __tabCount into the action result before we get here.
+      // If we reach here directly, we use browser context pages.
+      const tabCount = action.__tabCount;
+      if (tabCount === undefined) {
+        throw new Error('assert_tab_count: tab count not available (action must be run via runner)');
+      }
+      const opMatch = value.match(/^(>=|<=|>|<)\s*(\d+)$/);
+      if (opMatch) {
+        const [, op, numStr] = opMatch;
+        const expected = parseInt(numStr);
+        const passed = op === '>' ? tabCount > expected
+          : op === '>=' ? tabCount >= expected
+          : op === '<' ? tabCount < expected
+          : tabCount <= expected;
+        if (!passed) {
+          throw new Error(`assert_tab_count failed: ${tabCount} tabs open, expected ${op}${expected}`);
+        }
+      } else {
+        const expected = parseInt(value);
+        if (tabCount !== expected) {
+          throw new Error(`assert_tab_count failed: ${tabCount} tabs open, expected ${expected}`);
+        }
+      }
+      break;
+    }
+
+    case 'wait_for_tab': {
+      // Waits for a new tab/popup to appear. The runner handles this.
+      // This case is a no-op — the runner already waited and registered the new tab.
       break;
     }
 

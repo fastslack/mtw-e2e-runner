@@ -16,6 +16,7 @@ import { executeAction } from './actions.js';
 import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
 import { resolveTestData, validateActionTypes } from './module-resolver.js';
+import { compareImages } from './visual-diff.js';
 import { ensureProject, getVariables } from './db.js';
 
 function sleep(ms) {
@@ -159,6 +160,12 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
   let cdpSession = null;
   let appFork = null;
 
+  // ── Multi-tab registry ────────────────────────────────────────────────────
+  // Maps label → page. The "default" label is the initial page.
+  // activePage tracks the current tab; page always points to it.
+  const tabRegistry = new Map();
+  let activeTabLabel = 'default';
+
   const result = {
     name: test.name,
     startTime: new Date().toISOString(),
@@ -197,6 +204,7 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     context = await browser.createBrowserContext();
     page = await context.newPage();
     await page.setViewport(config.viewport);
+    tabRegistry.set('default', page);
 
     // CDP screencast — streams browser frames as JPEG to the dashboard
     // Only attempt on browserless pools; generic CDP pools (Lightpanda) break on createCDPSession
@@ -323,6 +331,111 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
               throw new Error(`assert_no_network_errors failed: ${result.networkErrors.length} error(s): ${summary}`);
             }
             actionResult = null;
+
+          // ── Multi-tab actions (intercepted here, not in actions.js) ──────
+          } else if (action.type === 'open_tab') {
+            const label = action.text || `tab-${tabRegistry.size}`;
+            const newPage = await context.newPage();
+            await newPage.setViewport(config.viewport);
+            tabRegistry.set(label, newPage);
+            activeTabLabel = label;
+            page = newPage;
+            // Navigate inside the new tab
+            actionResult = await executeAction(page, action, effectiveConfig);
+
+          } else if (action.type === 'switch_tab') {
+            // value: label, title regex, URL substring, or numeric index
+            const target = action.value;
+            let found = false;
+
+            // 1. By label (exact match)
+            if (tabRegistry.has(target)) {
+              page = tabRegistry.get(target);
+              activeTabLabel = target;
+              found = true;
+            }
+
+            // 2. By numeric index
+            if (!found && /^\d+$/.test(target)) {
+              const idx = parseInt(target);
+              const labels = [...tabRegistry.keys()];
+              if (idx >= 0 && idx < labels.length) {
+                activeTabLabel = labels[idx];
+                page = tabRegistry.get(activeTabLabel);
+                found = true;
+              }
+            }
+
+            // 3. By title or URL match (substring or regex)
+            if (!found) {
+              for (const [label, p] of tabRegistry) {
+                try {
+                  const title = await p.title();
+                  const url = p.url();
+                  const regex = new RegExp(target, 'i');
+                  if (regex.test(title) || regex.test(url) || url.includes(target)) {
+                    page = p;
+                    activeTabLabel = label;
+                    found = true;
+                    break;
+                  }
+                } catch { /* page may be closed */ }
+              }
+            }
+
+            if (!found) {
+              throw new Error(`switch_tab failed: no tab matching "${target}" (labels: ${[...tabRegistry.keys()].join(', ')})`);
+            }
+            // Bring tab to front
+            await page.bringToFront();
+            actionResult = null;
+
+          } else if (action.type === 'close_tab') {
+            const targetLabel = action.value || activeTabLabel;
+            if (targetLabel === 'default' && tabRegistry.size > 1) {
+              throw new Error('close_tab: cannot close the default tab while other tabs are open');
+            }
+            const targetPage = tabRegistry.get(targetLabel);
+            if (!targetPage) {
+              throw new Error(`close_tab failed: no tab with label "${targetLabel}"`);
+            }
+            tabRegistry.delete(targetLabel);
+            if (!targetPage.isClosed()) {
+              await targetPage.close();
+            }
+            // Switch to the last remaining tab
+            if (activeTabLabel === targetLabel) {
+              const remaining = [...tabRegistry.keys()];
+              activeTabLabel = remaining[remaining.length - 1] || 'default';
+              page = tabRegistry.get(activeTabLabel);
+              if (page) await page.bringToFront();
+            }
+            actionResult = null;
+
+          } else if (action.type === 'assert_tab_count') {
+            action.__tabCount = tabRegistry.size;
+            actionResult = await executeAction(page, action, effectiveConfig);
+
+          } else if (action.type === 'wait_for_tab') {
+            // Wait for a new tab/popup to be opened (e.g. by window.open, target=_blank)
+            const label = action.text || `tab-${tabRegistry.size}`;
+            const waitTimeout = action.timeout || config.defaultTimeout || 10000;
+            const newTarget = await new Promise((resolve, reject) => {
+              const timer = setTimeout(() => reject(new Error(`wait_for_tab: no new tab appeared after ${waitTimeout}ms`)), waitTimeout);
+              context.once('targetcreated', (target) => {
+                clearTimeout(timer);
+                resolve(target);
+              });
+            });
+            const newPage = await newTarget.page();
+            if (newPage) {
+              await newPage.setViewport(config.viewport);
+              tabRegistry.set(label, newPage);
+              activeTabLabel = label;
+              page = newPage;
+            }
+            actionResult = null;
+
           } else {
             actionResult = await executeAction(page, action, effectiveConfig);
           }
@@ -373,9 +486,34 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       result.expect = test.expect;
       try {
         const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
-        const verifyPath = path.join(config.screenshotsDir, `verify-${safeName}-${Date.now()}.png`);
+        const verifyPath = path.join(effectiveConfig.screenshotsDir, `verify-${safeName}-${Date.now()}.png`);
         await page.screenshot({ path: verifyPath, fullPage: true });
         result.verificationScreenshot = verifyPath;
+
+        // Auto visual comparison: compare baseline vs verification screenshot
+        if (result.baselineScreenshot && result.verificationScreenshot) {
+          try {
+            const diffPath = path.join(effectiveConfig.screenshotsDir, `diff-${safeName}-${Date.now()}.png`);
+            const threshold = effectiveConfig.verificationThreshold ?? 0.02;
+            const visualResult = compareImages(result.baselineScreenshot, result.verificationScreenshot, {
+              threshold: 0.1,
+              diffOutputPath: diffPath,
+              maskRegions: test.expect?.maskRegions || [],
+            });
+            result.visualDiff = {
+              diffPercentage: visualResult.diffPercentage,
+              differentPixels: visualResult.differentPixels,
+              totalPixels: visualResult.totalPixels,
+              matchPercentage: visualResult.matchPercentage,
+              diffImagePath: visualResult.diffImagePath,
+              threshold,
+              passed: visualResult.diffPercentage <= threshold,
+            };
+            if (result.visualDiff.diffImagePath) {
+              result.diffScreenshot = result.visualDiff.diffImagePath;
+            }
+          } catch { /* visual diff is best-effort, never blocks the test */ }
+        }
       } catch { /* page may be dead */ }
     }
 

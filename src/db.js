@@ -280,6 +280,21 @@ function migrate(db) {
     db.exec('ALTER TABLE runs ADD COLUMN pool_driver TEXT');
   }
 
+  // Add visual diff columns to test_results
+  const trCols = db.pragma('table_info(test_results)').map(c => c.name);
+  if (!trCols.includes('baseline_screenshot')) {
+    db.exec('ALTER TABLE test_results ADD COLUMN baseline_screenshot TEXT');
+  }
+  if (!trCols.includes('verification_screenshot')) {
+    db.exec('ALTER TABLE test_results ADD COLUMN verification_screenshot TEXT');
+  }
+  if (!trCols.includes('diff_screenshot')) {
+    db.exec('ALTER TABLE test_results ADD COLUMN diff_screenshot TEXT');
+  }
+  if (!trCols.includes('visual_diff_json')) {
+    db.exec('ALTER TABLE test_results ADD COLUMN visual_diff_json TEXT');
+  }
+
   // Migrations: add metadata columns to screenshot_hashes
   const ssColumns = db.pragma('table_info(screenshot_hashes)').map(c => c.name);
   if (!ssColumns.includes('test_name')) {
@@ -371,8 +386,8 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDr
   `);
 
   const insertTest = d.prepare(`
-    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots, network_logs, actions_json, pool_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO test_results (run_id, name, success, error, start_time, end_time, duration_ms, attempt, max_attempts, error_screenshot, console_logs, network_errors, screenshots, network_logs, actions_json, pool_url, baseline_screenshot, verification_screenshot, diff_screenshot, visual_diff_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertHash = d.prepare('INSERT OR IGNORE INTO screenshot_hashes (hash, file_path, project_id, run_id, test_name, step_index, page_url, screenshot_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
@@ -433,6 +448,10 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDr
         r.networkLogs?.length ? JSON.stringify(r.networkLogs) : null,
         actionsCondensed.length ? JSON.stringify(actionsCondensed) : null,
         r.poolUrl || null,
+        r.baselineScreenshot || null,
+        r.verificationScreenshot || null,
+        r.diffScreenshot || null,
+        r.visualDiff ? JSON.stringify(r.visualDiff) : null,
       );
 
       // Register screenshot hashes with metadata
@@ -450,6 +469,9 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDr
       }
       if (r.baselineScreenshot) {
         insertHash.run(computeScreenshotHash(r.baselineScreenshot), r.baselineScreenshot, projectId, runDbId, r.name, null, null, 'baseline');
+      }
+      if (r.diffScreenshot) {
+        insertHash.run(computeScreenshotHash(r.diffScreenshot), r.diffScreenshot, projectId, runDbId, r.name, null, null, 'diff');
       }
     }
 
@@ -529,6 +551,9 @@ export function getRunDetail(runDbId) {
     const ss = t.screenshots ? JSON.parse(t.screenshots) : [];
     allPaths.push(...ss);
     if (t.error_screenshot) allPaths.push(t.error_screenshot);
+    if (t.baseline_screenshot) allPaths.push(t.baseline_screenshot);
+    if (t.verification_screenshot) allPaths.push(t.verification_screenshot);
+    if (t.diff_screenshot) allPaths.push(t.diff_screenshot);
   }
   const hashMap = getScreenshotHashes(allPaths);
 
@@ -570,6 +595,10 @@ export function getRunDetail(runDbId) {
         actions: t.actions_json ? JSON.parse(t.actions_json) : [],
         screenshotHashes,
         poolUrl: t.pool_url || null,
+        baselineScreenshot: t.baseline_screenshot || null,
+        verificationScreenshot: t.verification_screenshot || null,
+        diffScreenshot: t.diff_screenshot || null,
+        visualDiff: t.visual_diff_json ? JSON.parse(t.visual_diff_json) : null,
       };
     }),
   };

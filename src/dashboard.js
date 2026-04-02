@@ -21,6 +21,7 @@ import { listProjects as dbListProjects, listProjectsWithSparklines as dbListPro
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot, getActionHealthScores } from './learner-sqlite.js';
+import { compareImages } from './visual-diff.js';
 import { handleSyncRoutes } from './sync/hub-routes.js';
 import { migrateSyncSchema } from './sync/schema.js';
 
@@ -538,6 +539,30 @@ export async function startDashboard(config) {
               return;
           }
           jsonResponse(res, data);
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
+      // API: visual diff — compare two screenshots on demand
+      if (pathname === '/api/visual-diff') {
+        try {
+          const baseline = url.searchParams.get('baseline');
+          const current = url.searchParams.get('current');
+          const thresholdParam = url.searchParams.get('threshold');
+          if (!baseline || !current) {
+            jsonResponse(res, { error: 'Missing baseline or current parameter' }, 400); return;
+          }
+          if (!fs.existsSync(baseline)) { jsonResponse(res, { error: `Baseline not found: ${baseline}` }, 404); return; }
+          if (!fs.existsSync(current)) { jsonResponse(res, { error: `Current not found: ${current}` }, 404); return; }
+
+          const diffPath = path.join(config.screenshotsDir, `api-diff-${Date.now()}.png`);
+          const result = compareImages(baseline, current, {
+            threshold: thresholdParam ? parseFloat(thresholdParam) : 0.1,
+            diffOutputPath: diffPath,
+          });
+          jsonResponse(res, { ...result, diffImagePath: diffPath });
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
         }
