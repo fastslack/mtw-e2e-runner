@@ -24,6 +24,7 @@ const CSS_ORDER = [
   'view-tests.css',
   'view-runs.css',
   'view-live.css',
+  'view-tools.css',
 ];
 
 const JS_ORDER = [
@@ -36,6 +37,8 @@ const JS_ORDER = [
   'view-tests.js',
   'view-runs.js',
   'view-live.js',
+  'view-tools.js',
+  'quicksearch.js',
   'keyboard.js',
   'init.js',
 ];

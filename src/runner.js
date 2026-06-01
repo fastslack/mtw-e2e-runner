@@ -10,9 +10,9 @@ import path from 'path';
 import http from 'http';
 import https from 'https';
 import { connectToPool, getCachedDriver, disconnectFromPool } from './pool.js';
-import { getPoolUrls, selectPool, releasePending } from './pool-manager.js';
+import { getPoolUrls, selectPool, releasePending, resolvePoolsForTest } from './pool-manager.js';
 import { forkAppInstance, destroyFork, isAppPoolEnabled } from './app-pool.js';
-import { executeAction } from './actions.js';
+import { executeAction, pageHasRenderableContent, looksLikeBlankCapture } from './actions.js';
 import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
 import { resolveTestData, validateActionTypes } from './module-resolver.js';
@@ -21,6 +21,39 @@ import { ensureProject, getVariables } from './db.js';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Best-effort step thumbnail for the storyline view.
+ * Captures once in memory, writes to disk AND returns base64 so callers
+ * can stream the same frame through the live preview WebSocket.
+ * Skips silently on any error so it never breaks a test run.
+ */
+const NO_AUTO_CAPTURE_TYPES = new Set(['screenshot', 'close_tab']);
+async function tryAutoCaptureStep(page, action, idx, testName, effectiveConfig, alreadyCaptured) {
+  if (!effectiveConfig.autoCaptureSteps) return null;
+  if (NO_AUTO_CAPTURE_TYPES.has(action?.type)) return null;
+  if (alreadyCaptured) return null;
+  if (!page || (typeof page.isClosed === 'function' && page.isClosed())) return null;
+  // Skip auto-capture when the page can't produce a meaningful image —
+  // about:blank or fully empty DOM — to stop blank step-*.jpg flooding.
+  if (!(await pageHasRenderableContent(page))) return null;
+  try {
+    const safeName = String(testName).replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+    const filename = `step-${safeName}-${String(idx).padStart(3, '0')}-${Date.now()}.jpg`;
+    const filepath = path.join(effectiveConfig.screenshotsDir, filename);
+    const buf = await page.screenshot({
+      type: 'jpeg',
+      quality: effectiveConfig.autoCaptureQuality ?? 60,
+      fullPage: false,
+      encoding: 'binary',
+    });
+    if (looksLikeBlankCapture(buf, 'jpeg')) return null;
+    fs.writeFileSync(filepath, buf);
+    return { path: filepath, base64: buf.toString('base64') };
+  } catch {
+    return null;
+  }
 }
 
 /** Simple glob matching with * wildcards for exclude patterns. */
@@ -190,9 +223,24 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     }
 
     const driverOpts = { poolDriver: config.poolDriver || 'auto', maxSessions: config.maxSessions || 10 };
-    const chosenPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
+
+    // CLI override (--driver / --fallback-driver) wins over per-test fields.
+    const requestedDriver = config.cliDriverOverride || test.driver || null;
+    const requestedFallback = config.cliFallbackDriverOverride || test.fallbackDriver || null;
+
+    let candidatePoolUrls = getPoolUrls(config);
+    let driverChoice = null;
+    if (requestedDriver) {
+      const resolved = await resolvePoolsForTest(candidatePoolUrls, requestedDriver, requestedFallback, driverOpts);
+      candidatePoolUrls = resolved.urls;
+      driverChoice = { requested: requestedDriver, used: resolved.driver, usedFallback: resolved.usedFallback };
+      log('🎯', `${C.dim}${test.name}: driver=${resolved.driver}${resolved.usedFallback ? ' (fallback)' : ''}${C.reset}`);
+    }
+
+    const chosenPool = await selectPool(candidatePoolUrls, 2000, 60000, driverOpts);
     result.poolUrl = chosenPool;
     result.poolDriver = getCachedDriver(chosenPool);
+    if (driverChoice) result.driverChoice = driverChoice;
     const poolLabel = chosenPool.replace('ws://', '').replace('wss://', '');
     const isMultiPool = getPoolUrls(config).length > 1;
     if (isMultiPool) {
@@ -236,9 +284,13 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
           maxHeight: config.screencastMaxHeight || 600,
           everyNthFrame: 1,
         }), 5000);
-      } catch {
+        log('📹', `${C.dim}screencast started for ${test.name} (driver=${poolDriver})${C.reset}`);
+      } catch (err) {
+        log('⚠️', `${C.amber}screencast failed for ${test.name}: ${err.message} (driver=${poolDriver})${C.reset}`);
         cdpSession = null;
       }
+    } else if (config.screencast && poolDriver === 'cdp') {
+      log('⚠️', `${C.amber}screencast disabled: pool driver is generic CDP (Lightpanda?), not supported${C.reset}`);
     }
 
     page.on('console', (msg) => {
@@ -440,16 +492,20 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             actionResult = await executeAction(page, action, effectiveConfig);
           }
           const actionDuration = Date.now() - actionStart;
+          const autoShot = await tryAutoCaptureStep(page, action, i, test.name, effectiveConfig, !!actionResult?.screenshot);
           const actionEntry = {
             ...action,
             success: true,
             duration: actionDuration,
             result: actionResult,
           };
+          if (autoShot) actionEntry.autoScreenshot = autoShot.path;
           if (attempt > 0) actionEntry.actionRetries = attempt;
           actionEntry.narrative = narrateAction(action, actionEntry);
           result.actions.push(actionEntry);
-          progressFn({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: true, duration: actionDuration, narrative: actionEntry.narrative, screenshotPath: actionResult?.screenshot || null });
+          progressFn({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: true, duration: actionDuration, narrative: actionEntry.narrative, screenshotPath: actionResult?.screenshot || null, autoScreenshot: autoShot?.path || null });
+          // Stream the auto-capture as a live frame so the storyline player has something to show even when CDP screencast is silent
+          if (autoShot?.base64) progressFn({ event: 'test:frame', name: test.name, data: autoShot.base64, source: 'step' });
           lastError = null;
           break;
         } catch (error) {
@@ -460,16 +516,19 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             continue;
           }
           const actionDuration = Date.now() - actionStart;
+          const autoShot = await tryAutoCaptureStep(page, action, i, test.name, effectiveConfig, false);
           const failedEntry = {
             ...action,
             success: false,
             duration: actionDuration,
             error: error.message,
           };
+          if (autoShot) failedEntry.autoScreenshot = autoShot.path;
           if (maxActionRetries > 0) failedEntry.actionRetries = attempt;
           failedEntry.narrative = narrateAction(action, failedEntry);
           result.actions.push(failedEntry);
-          progressFn({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: false, duration: actionDuration, narrative: failedEntry.narrative, error: error.message });
+          progressFn({ event: 'test:action', name: test.name, action, actionIndex: i, totalActions: test.actions.length, success: false, duration: actionDuration, narrative: failedEntry.narrative, error: error.message, autoScreenshot: autoShot?.path || null });
+          if (autoShot?.base64) progressFn({ event: 'test:frame', name: test.name, data: autoShot.base64, source: 'step' });
           throw error;
         }
       }
@@ -532,10 +591,18 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
 
     if (page) {
       try {
-        const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
-        const errorScreenshot = path.join(config.screenshotsDir, `error-${safeName}-${Date.now()}.png`);
-        await page.screenshot({ path: errorScreenshot, fullPage: true });
-        result.errorScreenshot = errorScreenshot;
+        // Only capture when the page actually has something to show.
+        // about:blank / empty-DOM failures produced 5KB blank PNGs that
+        // accumulated in screenshotsDir with no debug value.
+        if (await pageHasRenderableContent(page)) {
+          const errBuf = await page.screenshot({ fullPage: true });
+          if (!looksLikeBlankCapture(errBuf, 'png')) {
+            const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+            const errorScreenshot = path.join(config.screenshotsDir, `error-${safeName}-${Date.now()}.png`);
+            fs.writeFileSync(errorScreenshot, errBuf);
+            result.errorScreenshot = errorScreenshot;
+          }
+        }
       } catch { /* page may be dead */ }
     }
   } finally {

@@ -444,3 +444,72 @@ function buildMaskLookup(regions, imgWidth, imgHeight) {
     return (mask[bit >> 3] & (1 << (bit & 7))) !== 0;
   };
 }
+
+// ── Blank screenshot detection ─────────────────────────────────────────────
+/**
+ * Detects whether a PNG screenshot is "completely blank" — i.e. a single
+ * uniform fill color (a white/empty page, a solid error frame, etc.).
+ *
+ * Strategy: decode to RGBA, sample pixels evenly (capped for speed), compute
+ * the mean color, then count how many sampled pixels deviate from that mean by
+ * more than `tolerance` on any channel. An image is blank when the fraction of
+ * deviating pixels stays at/under `maxOutlierFraction` — this tolerates a few
+ * stray pixels (a cursor, a 1px border) while still requiring a near-uniform
+ * frame. Non-PNG or undecodable files are reported as not-blank so they are
+ * never deleted by mistake.
+ *
+ * @param {string} filePath
+ * @param {{tolerance?:number, maxOutlierFraction?:number, maxSamples?:number}} [opts]
+ * @returns {{blank:boolean, color?:{r:number,g:number,b:number}, brightness?:number,
+ *            width?:number, height?:number, outlierFraction?:number, error?:string}}
+ */
+export function isBlankImage(filePath, opts = {}) {
+  const tolerance = opts.tolerance ?? 10;
+  const maxOutlierFraction = opts.maxOutlierFraction ?? 0.005; // ≤0.5% off-color pixels
+  const maxSamples = opts.maxSamples ?? 120000;
+
+  let img;
+  try {
+    img = decodePNG(filePath);
+  } catch (error) {
+    return { blank: false, error: error.message };
+  }
+
+  const { width, height, data } = img;
+  const totalPixels = width * height;
+  if (totalPixels === 0) return { blank: false, width, height };
+
+  // Even sampling stride so huge captures stay fast without missing regions.
+  const step = Math.max(1, Math.floor(totalPixels / maxSamples));
+
+  let sumR = 0, sumG = 0, sumB = 0, n = 0;
+  for (let p = 0; p < totalPixels; p += step) {
+    const i = p * 4;
+    sumR += data[i]; sumG += data[i + 1]; sumB += data[i + 2];
+    n++;
+  }
+  const meanR = sumR / n, meanG = sumG / n, meanB = sumB / n;
+
+  let outliers = 0;
+  for (let p = 0; p < totalPixels; p += step) {
+    const i = p * 4;
+    if (Math.abs(data[i] - meanR) > tolerance ||
+        Math.abs(data[i + 1] - meanG) > tolerance ||
+        Math.abs(data[i + 2] - meanB) > tolerance) {
+      outliers++;
+    }
+  }
+
+  const outlierFraction = outliers / n;
+  const color = { r: Math.round(meanR), g: Math.round(meanG), b: Math.round(meanB) };
+  const brightness = Math.round((meanR + meanG + meanB) / 3);
+
+  return {
+    blank: outlierFraction <= maxOutlierFraction,
+    color,
+    brightness,
+    width,
+    height,
+    outlierFraction: Math.round(outlierFraction * 1e4) / 1e4,
+  };
+}

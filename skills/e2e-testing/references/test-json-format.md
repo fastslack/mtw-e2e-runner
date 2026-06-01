@@ -113,6 +113,29 @@ Module definition (in `e2e/modules/auth-login.json`):
 }
 ```
 
+### Composing modules (nested `$use` + parameter forwarding)
+
+A module can `$use` other modules, and **forward its own params/defaults** into the
+nested call's `params` block. Placeholders in a nested `params` value are resolved
+against the outer module's scope before the inner module runs:
+
+```json
+{
+  "$module": "login-and-open",
+  "params": {
+    "patientId": { "required": true },
+    "email": { "required": false, "default": "admin@test.com" }
+  },
+  "actions": [
+    { "$use": "auth-login", "params": { "email": "{{email}}", "password": "secret" } },
+    { "$use": "open-patient", "params": { "id": "{{patientId}}" } }
+  ]
+}
+```
+
+Cycles are detected and rejected. Action types are validated **after** all `$use`
+references are expanded.
+
 ## Suite Naming & Ordering
 
 Files can have numeric prefixes for execution order:

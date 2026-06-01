@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`@matware/e2e-runner` is a JSON-driven E2E test runner that executes browser tests in parallel against a Chrome pool (browserless/chrome) via Puppeteer. Tests are defined as JSON files containing sequential action arrays — no JavaScript test files.
+`@matware/e2e-runner` is a JSON-driven E2E test runner that executes browser tests in parallel against a configurable browser pool via Puppeteer. Tests are defined as JSON files containing sequential action arrays — no JavaScript test files.
 
 - **Runtime**: Node.js >= 20, ESM (`"type": "module"`)
-- **Dependencies**: `puppeteer-core` (connects to remote Chrome), `@modelcontextprotocol/sdk` (MCP server), `better-sqlite3` (dashboard DB)
-- **Infrastructure**: Docker container running `browserless/chrome` as a shared Chrome pool
+- **Dependencies**: `puppeteer-core` (connects to remote browser), `@modelcontextprotocol/sdk` (MCP server), `better-sqlite3` (dashboard DB)
+- **Infrastructure**: Multi-driver pool — `browserless`, generic `cdp`, `lightpanda` (Zig), `obscura` (Rust+V8), or `steel`. Default `auto` probes endpoints and picks per pool. `pool start` uses Docker Compose for browserless/lightpanda; Obscura ships as a single binary the user runs locally.
 
 ## Commands
 
@@ -29,6 +29,10 @@ npx e2e-runner run --all                  # all suites in e2e/tests/
 npx e2e-runner run --suite <name>         # single suite (matches with or without numeric prefix)
 npx e2e-runner run --tests <file.json>    # specific JSON file
 npx e2e-runner run --inline '<json>'      # inline JSON array
+
+# Force a driver for the whole run (overrides per-test `driver` fields)
+npx e2e-runner run --all --driver obscura
+npx e2e-runner run --all --driver obscura --fallback-driver cdp
 
 # List available suites
 npx e2e-runner list
@@ -83,7 +87,10 @@ templates/          Scaffolding templates for init command + dashboard SPA
 ## Important Details
 
 - The `baseUrl` default is `http://host.docker.internal:3000` because Chrome runs inside Docker and must reach the host machine
-- `click` with `text` (no selector) searches across `button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6, dd, dt` for text content match
+- `click` with `text` (no selector) searches across `button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6, dd, dt` for text content match. Optional refinements: `scope: "dialog"` (only match inside an open `[role=dialog]`/`.MuiDialog-root`), `visible: true` (skip hidden/zero-size matches — implied by `scope:dialog`), `last: true` (click the LAST match instead of the first). Use these instead of hand-rolled `evaluate` button-by-text scans.
+- `wait` prefers **conditions over fixed sleeps**: `{ selector }` (appear), `{ text }` (text appears), **`{ gone: "<css>" }`** (wait until a selector disappears/hides — e.g. a spinner or dialog closing), `{ gone: true, selector|text }`, and `{ value: "<ms>" }` (fixed sleep — last resort). Replacing `wait` sleeps with `gone`/`selector` makes suites faster and less flaky.
+- `select_combobox` opens a MUI Autocomplete/Select and picks an option: `selector` (combobox input, default `input[role='combobox']`), `text` (option to pick, required), optional `filter` (text typed before picking), `openWait`/`filterWait`/`waitAfter` (ms tuning), with fallback across `[role=option]`/`.MuiAutocomplete-option`/`.MuiMenuItem-root`. Replaces the verbose open-input + setNativeValue + scan-options `evaluate` pattern.
+- `type_react` sets React-controlled inputs via the native value setter (input+change events). Optional `blur: true` (commit on blur) and `waitAfter: "<ms>"` (e.g. for debounced autocomplete). Prefer this over inline `setNativeValue` evaluates.
 - `type`/`fill` actions triple-click + Backspace to clear before typing
 - `assert_no_text` verifies text is NOT present on the page: `{ type: "assert_no_text", text: "Error message" }`. Opposite of `assert_text`.
 - `assert_text_in` checks text inside a scoped container: `selector` (CSS), `text` (regex, case-insensitive), `value: "exact"` for case-sensitive substring. Joins textContent from all matching elements.
@@ -95,6 +102,7 @@ templates/          Scaffolding templates for init command + dashboard SPA
 - All action types are validated at load time — unknown types throw immediately with location info
 - SQLite DB at `~/.e2e-runner/dashboard.db` aggregates all projects (WAL mode, singleton connection)
 - The codebase is entirely in English (comments, error messages, CLI help text)
+- Tests can pin a specific browser engine via `driver` (`browserless` | `cdp` | `lightpanda` | `obscura` | `steel`). `fallbackDriver` is **explicit opt-in** — without it, a missing target driver fails hard. Capacity issues do NOT trigger fallback; the runner waits inside the filtered pool set. CLI `--driver`/`--fallback-driver` override per-test fields. Resolution lives in `resolvePoolsForTest()` in `src/pool-manager.js`.
 
 ## MCP Tools
 
@@ -105,15 +113,18 @@ templates/          Scaffolding templates for init command + dashboard SPA
 | `e2e_create_test` | Create a new test JSON file with name, tests array, and optional hooks |
 | `e2e_create_module` | Create a reusable module with parameterized actions |
 | `e2e_pool_status` | Get Chrome pool availability, running sessions, capacity |
+| `e2e_app_pool_status` | Inspect app environment pool: active forks, ports, per-fork driver/baseUrl |
 | `e2e_screenshot` | Retrieve a screenshot by its `ss:HASH` |
 | `e2e_capture` | Capture a screenshot of any URL on demand |
 | `e2e_analyze` | Analyze page structure, return interactive elements + test scaffolds |
 | `e2e_dashboard_start` | Start the web dashboard |
 | `e2e_dashboard_stop` | Stop the web dashboard |
+| `e2e_dashboard_restart` | Restart the dashboard (new project dir/port, clear stale state) |
 | `e2e_issue` | Fetch GitHub/GitLab issue and generate E2E tests |
 | `e2e_network_logs` | Query network logs for a run by `runDbId` |
 | `e2e_vars` | Manage SQLite-backed project variables |
 | `e2e_learnings` | Query stability insights, flaky tests, error patterns |
+| `e2e_neo4j` | Manage Neo4j knowledge graph container |
 
 All MCP tools accept `cwd` (project root path). Pool start/stop are CLI-only.
 

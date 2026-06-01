@@ -11,6 +11,48 @@ import path from 'path';
 import fs from 'fs';
 import { assertVisualMatch } from './visual-diff.js';
 
+/**
+ * Returns false when the page has nothing useful to capture — used to
+ * skip screenshots that would otherwise be saved as pure-color PNGs
+ * (about:blank, fresh tab before navigation, DOM-only drivers that
+ * never paint, etc). Fails open: on any evaluation error we assume
+ * there *is* content so we don't lose legitimate captures.
+ */
+export async function pageHasRenderableContent(page) {
+  try {
+    const url = page.url();
+    if (!url || url === 'about:blank' || url === 'about:srcdoc') return false;
+    return await page
+      .evaluate(() => {
+        if (!document.body) return false;
+        if (document.body.children.length > 0) return true;
+        return (document.body.innerText || '').trim().length > 0;
+      })
+      .catch(() => true);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Heuristic post-capture guard: PNGs compressed under this size at
+ * typical viewport resolutions are almost certainly near-uniform color
+ * (about:blank, default Chrome BG, broken render). Catches cases the
+ * pre-capture DOM check can't — e.g. browserless rendering example.com
+ * to a 99%-gray frame even though navigation succeeded.
+ *
+ * 20 KB sits cleanly between the observed blank cluster (5 KB – 18 KB)
+ * and the smallest real captures in this project (~23 KB+).
+ */
+export const BLANK_PNG_BYTE_THRESHOLD = 20000;
+export const BLANK_JPEG_BYTE_THRESHOLD = 8000;
+
+export function looksLikeBlankCapture(buf, format = 'png') {
+  if (!Buffer.isBuffer(buf)) return false;
+  const threshold = format === 'jpeg' ? BLANK_JPEG_BYTE_THRESHOLD : BLANK_PNG_BYTE_THRESHOLD;
+  return buf.length < threshold;
+}
+
 /** All recognized action types — single source of truth for validation. */
 export const KNOWN_ACTION_TYPES = new Set([
   'goto', 'click', 'type', 'fill', 'wait', 'screenshot',
@@ -20,7 +62,7 @@ export const KNOWN_ACTION_TYPES = new Set([
   'assert_no_network_errors', 'assert_storage',
   'get_text', 'select', 'clear', 'clear_cookies', 'press', 'scroll', 'hover',
   'navigate', 'evaluate',
-  'type_react', 'click_regex', 'click_option', 'focus_autocomplete', 'click_chip',
+  'type_react', 'click_regex', 'click_option', 'select_combobox', 'focus_autocomplete', 'click_chip',
   'set_storage', 'click_icon', 'click_menu_item', 'click_in_context',
   'assert_text_in', 'assert_no_text',
   'gql', 'wait_network_idle',
@@ -50,16 +92,35 @@ export async function executeAction(page, action, config) {
         await page.click(selector);
       } else if (text) {
         const clickTextSelector = 'button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1, h2, h3, h4, h5, h6, dd, dt';
+        // Optional refinements (backward-compatible — defaults match old behavior):
+        //   scope: "dialog" → only match inside an open [role=dialog]/MuiDialog
+        //   visible: true   → skip hidden/zero-size matches (implied by scope:dialog)
+        //   last: true      → click the LAST match instead of the first
+        const scopeSel = action.scope === 'dialog' ? '[role="dialog"], .MuiDialog-root' : null;
+        const wantVisible = action.visible === true || action.scope === 'dialog';
+        const wantLast = action.last === true;
         await page.waitForFunction(
-          (t, sel) => [...document.querySelectorAll(sel)]
-            .find(el => el.textContent.includes(t)),
+          (t, sel, scope, vis) => {
+            const roots = scope ? [...document.querySelectorAll(scope)] : [document];
+            const isVis = el => { if (!vis) return true; const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+            for (const root of roots) {
+              if ([...root.querySelectorAll(sel)].some(el => el.textContent.includes(t) && isVis(el))) return true;
+            }
+            return false;
+          },
           { timeout },
-          text, clickTextSelector
+          text, clickTextSelector, scopeSel, wantVisible
         );
-        await page.$$eval(clickTextSelector, (els, t) => {
-          const el = els.find(e => e.textContent.includes(t));
-          if (el) el.click();
-        }, text);
+        const clicked = await page.evaluate((t, sel, scope, vis, last) => {
+          const roots = scope ? [...document.querySelectorAll(scope)] : [document];
+          const isVis = el => { if (!vis) return true; const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+          const matches = [];
+          for (const root of roots) matches.push(...[...root.querySelectorAll(sel)].filter(el => el.textContent.includes(t) && isVis(el)));
+          const el = last ? matches[matches.length - 1] : matches[0];
+          if (el) { el.click(); return true; }
+          return false;
+        }, text, clickTextSelector, scopeSel, wantVisible, wantLast);
+        if (!clicked) throw new Error(`click failed: no element containing "${text}"${scopeSel ? ' in an open dialog' : ''} found`);
       }
       break;
 
@@ -71,8 +132,34 @@ export async function executeAction(page, action, config) {
       await page.type(selector, value, { delay: 20 });
       break;
 
-    case 'wait':
-      if (selector) {
+    case 'wait': {
+      // Condition waits (preferred over fixed sleeps):
+      //   { selector }            → wait until it appears
+      //   { text }                → wait until text appears in the page
+      //   { gone: "<css>" }       → wait until that selector disappears/hides (e.g. spinner)
+      //   { gone: true, selector }→ same, selector form
+      //   { gone: true, text }    → wait until text disappears
+      //   { value: "<ms>" }       → fixed sleep (last resort)
+      const goneSel = typeof action.gone === 'string' ? action.gone : (action.gone === true ? selector : null);
+      const goneTxt = action.gone === true && !selector ? text : null;
+      if (goneSel) {
+        try {
+          await page.waitForFunction((sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return true;
+            const r = el.getBoundingClientRect(); const s = getComputedStyle(el);
+            return (r.width === 0 && r.height === 0) || s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0';
+          }, { timeout }, goneSel);
+        } catch (e) {
+          throw new Error(`wait failed: "${goneSel}" still present/visible after ${timeout}ms`);
+        }
+      } else if (goneTxt) {
+        try {
+          await page.waitForFunction((t) => !document.body.innerText.includes(t), { timeout }, goneTxt);
+        } catch (e) {
+          throw new Error(`wait failed: text "${goneTxt}" still present after ${timeout}ms`);
+        }
+      } else if (selector) {
         try {
           await page.waitForSelector(selector, { timeout });
         } catch (e) {
@@ -92,6 +179,7 @@ export async function executeAction(page, action, config) {
         await sleep(parseInt(value));
       }
       break;
+    }
 
     case 'screenshot': {
       let filename = value || `screenshot-${Date.now()}.png`;
@@ -108,7 +196,20 @@ export async function executeAction(page, action, config) {
         filename = `${base}-${Date.now()}${ext}`;
       }
       const filepath = path.join(screenshotsDir, filename);
-      await page.screenshot({ path: filepath, fullPage: action.fullPage || false });
+      // Skip capture when page is at about:blank or DOM is empty — these
+      // produce uniform-color PNGs that pollute screenshotsDir with no
+      // diagnostic value.
+      if (!(await pageHasRenderableContent(page))) {
+        return { screenshot: null, skipped: 'blank-page' };
+      }
+      // Capture to buffer first so we can post-filter near-uniform frames
+      // (e.g. browserless returning a 99%-gray render). Only persist if
+      // the encoded PNG carries enough entropy to be informative.
+      const ssBuf = await page.screenshot({ fullPage: action.fullPage || false });
+      if (looksLikeBlankCapture(ssBuf, 'png')) {
+        return { screenshot: null, skipped: 'blank-render', bytes: ssBuf.length };
+      }
+      fs.writeFileSync(filepath, ssBuf);
       return { screenshot: filepath };
     }
 
@@ -356,8 +457,11 @@ export async function executeAction(page, action, config) {
     case 'type_react': {
       // Types into React controlled inputs using the native value setter.
       // This bypasses React's synthetic event system which ignores programmatic .value changes.
+      // Optional: blur (commit on blur for fields that validate then),
+      //           waitAfter (ms to wait after — e.g. for debounced autocomplete dropdowns).
       await page.waitForSelector(selector, { timeout });
-      await page.evaluate((sel, val) => {
+      const trBlur = action.blur === true;
+      await page.evaluate((sel, val, doBlur) => {
         const input = document.querySelector(sel);
         if (!input) throw new Error(`type_react: element "${sel}" not found`);
         const proto = input instanceof HTMLTextAreaElement
@@ -367,11 +471,13 @@ export async function executeAction(page, action, config) {
         if (!descriptor || !descriptor.set) {
           throw new Error(`type_react: element "${sel}" has no writable value property`);
         }
+        input.focus();
         descriptor.set.call(input, val);
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        input.focus();
-      }, selector, value);
+        if (doBlur) input.blur();
+      }, selector, value, trBlur);
+      if (action.waitAfter) await sleep(parseInt(action.waitAfter));
       break;
     }
 
@@ -415,6 +521,56 @@ export async function executeAction(page, action, config) {
       if (!optionClicked) {
         throw new Error(`click_option failed: no [role="option"] containing "${text}" found`);
       }
+      break;
+    }
+
+    case 'select_combobox': {
+      // Open a MUI Autocomplete / Select, optionally type to filter, then click the
+      // option matching `text` (case-insensitive substring). Falls back across
+      // [role=option], MuiAutocomplete-option and MuiMenuItem so it works for both
+      // Autocomplete listboxes and Select dropdowns.
+      //   selector: combobox input (default input[role='combobox'])
+      //   text:     option to pick (required)
+      //   filter:   text typed into the input before picking (optional)
+      //   openWait/filterWait: ms tuning for async/debounced option loaders
+      const cbInput = selector || "input[role='combobox']";
+      const cbOption = text || action.option;
+      if (!cbOption) throw new Error("select_combobox requires 'text' (option to pick)");
+      const cbFilter = action.filter || '';
+      const cbOpenWait = action.openWait ? parseInt(action.openWait) : 400;
+      const cbFilterWait = action.filterWait ? parseInt(action.filterWait) : 600;
+      await page.waitForSelector(cbInput, { timeout });
+      await page.evaluate((sel, flt) => {
+        const input = document.querySelector(sel);
+        if (!input) throw new Error(`select_combobox: input "${sel}" not found`);
+        input.focus();
+        if (typeof input.click === 'function') input.click();
+        if (flt) {
+          const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+          setter.call(input, flt);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }, cbInput, cbFilter);
+      await sleep(cbFilter ? cbFilterWait : cbOpenWait);
+      const cbOptionSel = '[role="option"], .MuiAutocomplete-option, li.MuiMenuItem-root, .MuiList-root li';
+      try {
+        await page.waitForFunction(
+          (sels, t) => [...document.querySelectorAll(sels)].some(o => (o.textContent || '').toLowerCase().includes(t.toLowerCase())),
+          { timeout }, cbOptionSel, cbOption
+        );
+      } catch (e) {
+        throw new Error(`select_combobox: no option matching "${cbOption}" appeared (filter="${cbFilter}")`);
+      }
+      const cbPicked = await page.evaluate((sels, t) => {
+        const c = [...document.querySelectorAll(sels)];
+        const m = c.find(o => (o.textContent || '').toLowerCase().includes(t.toLowerCase()));
+        if (m) { m.click(); return (m.textContent || '').trim().slice(0, 80); }
+        return null;
+      }, cbOptionSel, cbOption);
+      if (cbPicked === null) throw new Error(`select_combobox: option "${cbOption}" vanished before click`);
+      if (action.waitAfter) await sleep(parseInt(action.waitAfter));
       break;
     }
 

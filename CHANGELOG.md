@@ -1,5 +1,190 @@
 # Changelog
 
+## [1.5.0] - 2026-06-01
+
+### Added
+
+- **New / enhanced actions** (lighter tests, fewer `evaluate` blocks):
+  - **`select_combobox`** — open a MUI Autocomplete/Select, optionally `filter`, and click the option matching `text`, with fallback across `[role=option]` / `.MuiAutocomplete-option` / `li.MuiMenuItem-root`. Replaces the verbose open-input + `setNativeValue` + scan-options `evaluate` pattern. Fields: `selector` (default `input[role='combobox']`), `text`, `filter`, `openWait`/`filterWait`/`waitAfter`.
+  - **`click` text-mode refinements** — `scope: "dialog"` (only match inside an open `[role=dialog]`/`.MuiDialog-root`), `visible: true` (skip hidden/zero-size matches), `last: true` (click the last match). Replaces hand-rolled dialog-button-by-text `evaluate` scans. Backward-compatible: defaults match prior behavior.
+  - **`wait` condition `gone`** — `{ gone: "<css>" }` (or `{ gone: true, selector|text }`) waits until an element/text disappears or hides (spinners, closing backdrops/dialogs), complementing the existing appear-waits. Reduces fixed-sleep flakiness.
+  - **`type_react` `blur` + `waitAfter`** — commit on blur and/or wait after dispatching events (e.g. for debounced autocomplete). Makes per-app `set-react-input` wrapper modules unnecessary.
+
+- **Nested module parameter forwarding** — a module can now `$use` another module and forward its own params/defaults into the nested call's `params` block (`{{param}}` placeholders in nested params are resolved against the outer module's scope). Previously this threw "unresolved parameter".
+
+- **Dashboard — Live screencast overhaul**:
+  - Horizontal layout: the screencast feed sits **on top**, the test log below.
+  - **Filmstrip** of recent frames in fixed slots (no horizontal scroll — frames pass through in place), newest marked LIVE.
+  - **Auto-follow** the running test (sticky — stays on one test until it ends, never interleaves two tests' frames), plus a **test selector** dropdown to pin a specific test.
+  - **Click any frame to enlarge** it full-size in the lightbox.
+
+- **Dashboard — Screenshots tab**: **"Find blank"** scan that flags uniform/blank screenshots and **deletes** them. New `isBlankImage()` detector in `visual-diff.js` (zero-dependency PNG decode) and endpoints `GET /api/db/projects/:id/screenshots/blank-scan` + `POST /api/screenshots/delete` (path-validated).
+
+- **Dashboard favicon** — "E²" monogram (Test Operations Center palette), embedded as a self-contained data-URI (SVG + PNG fallbacks).
+
+### Changed
+
+- **Dashboard dark-theme contrast overhaul** — WCAG AA color tokens (text/border/signal hues retuned); **UI accent decoupled from PASS-green** (interactive/active/selected/focus states now use cyan `--ui-accent`, green is reserved for PASS); typography floor raised (8–9px labels → 10px, eased letter-spacing); decorative coordinate stamps removed; global `:focus-visible` rings.
+- **Project selection persists across reloads** (localStorage) — fixes views (Screenshots, Runs, Suites, Variables, Learnings) getting stuck on "Select a project" after a refresh because `S.project` wasn't restored from the browser-restored `<select>`.
+
+## [1.4.0] - 2026-05-13
+
+### Added
+
+- **Obscura driver support** — Rust+V8 headless browser with anti-detection, ~30 MB memory footprint
+  - Auto-detected via `/json/version` (Browser=obscura)
+  - Reuses the generic CDP status path (per-process session counter against `maxSessions`)
+  - `pool start` for `obscura` prints local-binary install/run guidance instead of attempting a Docker compose, since Obscura ships as a single binary
+
+- **Per-test driver selection** — opt into a specific browser engine on a test-by-test basis
+  - New optional fields in test JSON: `driver` (`browserless` | `cdp` | `lightpanda` | `obscura` | `steel`) and `fallbackDriver`
+  - Fallback is **explicit opt-in** — without `fallbackDriver`, a missing target driver fails hard with a clear message listing each pool's detected driver
+  - Capacity issues do NOT trigger fallback — `selectPool` waits inside the filtered set
+  - Validated at test-load time; unknown driver names or orphan `fallbackDriver` are rejected immediately
+  - Tests record the resolved driver choice in their result (`result.driverChoice`)
+  - New helper: `resolvePoolsForTest()` in `src/pool-manager.js`
+  - New export: `KNOWN_DRIVERS` set in `src/pool.js`
+
+- **`--driver` and `--fallback-driver` CLI flags** — force a driver for a whole run, overriding per-test fields
+  - Useful for A/B benchmarks: `e2e-runner run --all --driver obscura --fallback-driver cdp`
+  - Validated up-front (clearer error than waiting for the first test to fail)
+
+- **Lightpanda Docker Compose template** (`templates/docker-compose-lightpanda.yml`)
+  - `pool start` selects this template automatically when `poolDriver: 'lightpanda'`
+
+- **Interactive `init` wizard** — `e2e-runner init` now prompts for project name, base URL, driver, pool port, concurrency, max sessions, output format, and sample test
+  - `--yes` / `-y` / `--non-interactive` skips prompts (uses defaults, ideal for CI)
+  - Per-field flag overrides: `--name`, `--base-url`, `--driver`, `--pool-port`, `--concurrency`, `--no-sample`
+  - Generates a tailored `e2e.config.js` instead of copying a static template
+  - New module: `src/wizard.js`
+
+- **Module duplication analysis** — `src/module-analysis.js`
+  - Deterministic detector for 3–8 action subsequences that repeat across 2+ tests — surfaces canonical `$use` module candidates
+  - Also enumerates current modules and counts how often each is referenced
+  - Exposed in the dashboard via `/api/tools/module-analysis/:projectId` and the new **Tools** view
+  - Returns an agent-ready prompt the user can paste into the test-improver agent
+
+- **Dashboard Tools view** — `templates/dashboard/js/view-tools.js` + `view-tools.css`
+  - Module duplication analysis report (run, copy agent prompt)
+  - On-demand screenshot capture
+  - Page analysis (interactive elements, forms, headings → test scaffolds)
+  - Issue verification (paste GitHub/GitLab URL → generate + run + report)
+  - Wired through generic `/api/tool/:name` proxy that resolves `projectId → cwd` and dispatches to MCP handlers
+
+- **Quick search palette** (Ctrl/⌘+K, also `/`) — `templates/dashboard/js/quicksearch.js`
+  - Flat index of suites, modules, and tests across all projects (cached 20s)
+  - Keyboard navigation, jumps to the right view + tab on Enter
+
+- **Auto-captured step thumbnails** — new config flags `autoCaptureSteps` (default `true`), `autoCaptureWidth`, `autoCaptureHeight`, `autoCaptureQuality`
+  - ~50–100 ms per action; powers the storyline view in the dashboard
+  - Persisted alongside explicit screenshots in the SQLite hash index (`kind: 'step'`)
+
+- **`e2e_app_pool_status` MCP tool** — inspect active forks, allocated ports, and per-fork details (driver, baseUrl, owning test, fork time) when `appPool` is enabled
+
+### Changed
+
+- **Dashboard UI overhaul** — "telemetry console" aesthetic with warm-ink palette, hairline grids, Archivo + Instrument Serif typography
+  - New suites toolbar: search filter across projects/suites/tests, expand/collapse all, live count
+  - Project list now alphabetically sorted with deterministic render order
+  - Refined CSS across `base`, `components`, `view-live`, `view-runs`, `view-tests`, `view-watch`
+  - New build order in `templates/build-dashboard.js` includes `view-tools.css` and the `view-tools` + `quicksearch` JS modules
+
+- **Blank-screenshot filter** — `screenshot` action now skips and reports `skipped: 'blank-page'` / `'blank-render'` when the page is at `about:blank`, has an empty DOM, or produces a near-uniform PNG (< 20 KB) / JPEG (< 8 KB)
+  - Catches browserless rendering broken pages to a 99 %-gray frame
+  - New exports in `src/actions.js`: `pageHasRenderableContent`, `looksLikeBlankCapture`, `BLANK_PNG_BYTE_THRESHOLD`, `BLANK_JPEG_BYTE_THRESHOLD`
+  - Narration says "Skipped screenshot (page was blank / render looked blank)"
+
+- **CDP pool connection robustness** — pool driver detection now caches `webSocketDebuggerUrl` and rewrites the host to match the original `poolUrl`
+  - Lets users configure either `http://host:port` or `ws://host:port` for Obscura / Lightpanda / generic CDP without knowing the `/devtools/browser/...` suffix
+  - Fixes Obscura advertising an internal `0.0.0.0`-bound host that wasn't reachable from the runner
+  - New exports in `src/pool.js`: `getCachedWsEndpoint`, `clearDriverCache` now also clears WS endpoints
+
+- **Same-origin policy for dashboard** — HTTP CORS and WebSocket upgrade now accept the request when `Origin`'s host matches the `Host` header, in addition to the explicit `localhost` / `127.0.0.1` whitelist
+  - Unblocks remote dashboard access (e.g. via tunnel or reverse proxy) without weakening cross-site protection
+
+- **Per-test driver fields validated in `validateActionTypes`** (`src/module-resolver.js`)
+  - Unknown `driver` / `fallbackDriver`, or orphan `fallbackDriver` without `driver`, throw at load time with clear messages
+
+### Internal
+
+- Pool driver detection probe order extended to cover Obscura before falling back to generic CDP
+- `src/db.js` `saveRun` now persists per-action `autoScreenshot` thumbnails into the hash index alongside the explicit screenshot
+- Dashboard run query proxy for tools now reuses MCP tool handlers via a thin `/api/tool/:name` adapter
+- `templates/dashboard.html` regenerated from the bundled CSS/JS sources
+
+---
+
+## [1.3.1] - 2026-04-02
+
+### Added
+
+- **Multi-driver pool support** — runner now speaks to four pool flavors with auto-detection
+  - `browserless` (HTTP `/pressure` + `/sessions`)
+  - `cdp` (generic CDP via `/json/version`)
+  - `lightpanda` (Zig-based, ~9× faster, ~16× less memory than headless Chrome)
+  - `steel` (Steel Browser with `/v1/sessions` REST API and managed session lifecycle)
+  - `auto` mode probes endpoints in order and caches the detected driver per pool URL
+- **App pool isolation** — fork a fresh app instance per test
+  - New `appPool` config block with `docker` and `zeroboot` drivers
+  - Per-test container/baseUrl override; configurable `maxForks`, `forkBasePort`, `readyCheck`, `readyTimeout`
+- **Visual diff** for golden screenshot comparison
+  - Three strictness levels (`strict`, `moderate`, `lenient`) with configurable threshold
+  - Verdict format includes diff stats and actionable messages
+- **Test narration** — human-readable step-by-step narrative shown in CLI and dashboard (`src/narrate.js`)
+- **Screencast** — CDP-based JPEG frame streaming to the dashboard for live execution view
+- **Voting mode** — run a test N times in parallel and adopt majority verdict to dampen flakiness
+- **Hindsight hints** — post-failure suggestions surfaced from the learning system
+- **Smart navigation** — `goto` retries with exponential backoff on transient navigation failures
+- **Auth improvements** — token injection + auto-login flow refinements; `--auth-storage-key` CLI flag
+- **Capture command** — `e2e-runner capture <url>` for on-demand screenshots without a test suite
+- **Svelte 5 dashboard UI** — modular templates split across `templates/dashboard/` (HTML, JS modules, CSS)
+- **Theme system** for dashboard
+- **LICENSE file** added (Apache-2.0)
+
+### Changed
+
+- README badges and docs refreshed for the new feature set
+- Plugin metadata updated for v1.3.0 distribution
+
+---
+
+## [1.3.0] - 2026-03-10
+
+### Added
+
+- **5 framework-agnostic actions**: `set_storage`, `assert_storage`, `click_icon`, `click_menu_item`, `click_in_context`
+- **GraphQL `gql` action** — declarative GraphQL queries/mutations with variables and inline assertions
+- **`e2e_analyze` MCP tool** — extracts page structure (interactive elements, forms, headings) and emits ready-to-run test scaffolds
+- **Secure variables system** — SQLite-backed `{{var.KEY}}` substitution
+  - Per-project scope, dashboard-editable, CLI/MCP managed via `e2e_vars`
+- **5 quality-of-life improvements**
+  - Unknown action types throw at load time with file/location info
+  - `wait_network_idle` action
+  - Action pre-validation (selectors, text, value presence) before Puppeteer call
+  - `networkIgnoreDomains` config to silence noisy third-party errors
+  - Auth auto-login: `authLoginEndpoint` + `authCredentials` config drives token retrieval
+- **Multi-pool support** with least-pressure routing across `poolUrls`
+  - Aggregated status, pool failover, dashboard visualization, local pending counter to avoid thundering herd
+- **Hub/agent sync** — central hub aggregates runs from N agents (registration, approval, push/pull queues)
+- **Watch mode** — schedule runs on an interval, on git changes, or both; multi-project config; webhook notifications
+- **Modular dashboard** with new REST endpoints and live broadcast wiring
+- **Learning feedback loop** — test creation and run responses now embed actionable insights from `learner.js`
+- **OpenCode integration** — agent skill set + commands aligned with OpenCode workflow
+- **Skills bundle** — CLAUDE.md reference docs extracted into on-demand skill references
+- **Claude Code plugin** — marketplace.json, agents (test-improver, test-creator, test-analyzer), commands, skills
+
+### Fixed
+
+- `--ignore-scripts` no longer skips compilation of `better-sqlite3` native bindings (build stage gains `python3 make g++`)
+
+### Changed
+
+- Authentication strategies documented; `verificationStrictness` config support for visual checks
+- Plugin distribution: marketplace install path, bundled MCP disabled by default
+- Updated to match the Docker MCP Registry format
+
+---
+
 ## [1.2.0] - 2026-02-23
 
 ### Added

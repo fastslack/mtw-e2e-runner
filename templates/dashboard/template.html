@@ -1,11 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>E2E Runner</title>
+<!-- favicon (E² monogram) -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj4KICA8IS0tIEUyRSBSdW5uZXIgZmF2aWNvbiDigJQgIkXCsiIgbW9ub2dyYW0sIFRlc3QgT3BlcmF0aW9ucyBDZW50ZXIgcGFsZXR0ZSAtLT4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9Ijk2IiBmaWxsPSIjMGIwYzA5Ii8+CiAgPHJlY3QgeD0iMjAiIHk9IjIwIiB3aWR0aD0iNDcyIiBoZWlnaHQ9IjQ3MiIgcng9Ijc2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzMzM0MmEiIHN0cm9rZS13aWR0aD0iNCIvPgogIDwhLS0gcGhvc3Bob3Igc3BpbmUgYWNjZW50LCB0b3AtbGVmdCAtLT4KICA8cmVjdCB4PSI0NCIgeT0iNjAiIHdpZHRoPSI2IiBoZWlnaHQ9IjExNiIgcng9IjMiIGZpbGw9IiNhOGY1N2EiLz4KICA8IS0tIGJvbGQgYmxvY2sgRSAtLT4KICA8ZyBpZD0iRSIgZmlsbD0iI2YzZWRkYyI+CiAgICA8cmVjdCB4PSIxMzIiIHk9IjE1MCIgd2lkdGg9IjY2IiBoZWlnaHQ9IjI1MCIgcng9IjkiLz4KICAgIDxyZWN0IHg9IjEzMiIgeT0iMTUwIiB3aWR0aD0iMjE0IiBoZWlnaHQ9IjY2IiByeD0iOSIvPgogICAgPHJlY3QgeD0iMTMyIiB5PSIyNzIiIHdpZHRoPSIxNzIiIGhlaWdodD0iNTgiIHJ4PSI5Ii8+CiAgICA8cmVjdCB4PSIxMzIiIHk9IjMzNCIgd2lkdGg9IjIxNCIgaGVpZ2h0PSI2NiIgcng9IjkiLz4KICA8L2c+CiAgPCEtLSBzdXBlcnNjcmlwdCAiMiIgLS0+CiAgPHBhdGggaWQ9InR3byIgZD0iTSAzNTYgMTUwIEMgMzU2IDEwNCA0NTYgMTA0IDQ1NiAxNTIgQyA0NTYgMTkwIDM4OCAyMDYgMzYwIDIzMiBMIDQ2MCAyMzIiCiAgICAgICAgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYThmNTdhIiBzdHJva2Utd2lkdGg9IjM0IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KICA8IS0tIHN0YXR1cyAvIHNjYW4gYmFyIC0tPgogIDxyZWN0IGlkPSJzdGF0dXMtYmFyIiB4PSIxMzIiIHk9IjQyNCIgd2lkdGg9IjMwMCIgaGVpZ2h0PSIxNiIgcng9IjgiIGZpbGw9IiNhOGY1N2EiLz4KPC9zdmc+Cg==">
+<link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAA7EAAAOxAGVKw4bAAACrklEQVR4nGNgQAB2bm7OPG5ujhPc3JxfuHk4/1MVg8yEmJ0LsgvJXgYGTk5OaW4ejguCQnz/RcWF/ouKCf0XE6cuBpkJMhtkBzcPx3mQnQif83BcEBEV/C8gCJLkpCkG2QGyC+QIcEiAgh3kKjFpof98Atw0dwDYEUJ8kJDg5sxh4ObmOAkKGiM3tf/ymuJ0cQAIg+zk5uY4zsDFzflZVEyQ/g4QE/wPspsBwqF+CEjIC/0Pr3H4X7c9+n/7keT/ZavC/jvEGMCjGWQniKaJA0DmTL6e/X/F1yoMXLwsBOwImjoguc8DbNmky5n/ffIs/ttH6f+PbXf5v/htGVjcwl+TeAfMmNL5/9zJXRB8Ytf/JQum/J82uQMvnnQqF2yRuZ8Gill58wPA4pGNjpgO0HdS/i+jJorhgCf3z////PYOSXju8q7/jrEG/3l4EeYYuan+X/CqBOwAuwg9TAdw4whOchwwZ2YPXL+4nND/tEle/5d9qgRb3rg77j8vPxftHcDDx/U/oMT6//wXJSgJUEicH3su4MbhgFNHt6MYvmH1/P/tLZV4sVeg/f/mvfEoqb/ndNr/+E5XMNZ3UCLeATu3LkdxQFJCJMFcEN3shDULwjDIcTR1gIyq6P+YVme4j9ExzUOAm6iimEgH3L91iqiEd+/mSdo44AkJuWB4OuDC6T0olhzYs/7/ovmTMfCkiS3/tbRUwVhImJ96Dnh09wzJBdHk/taBiYLPWIrioe+AG5cPk+wAUHFMNQdw0wjDHcAFbZTiUmgZoPU/pMKOYuyTbY6tUfoR3izH5QCbEB2cZTopGFQ1Y22Wc3Nz5oI6CfToFcGwIHLHhAHSNTsP7pqB+220tRxkB1LXjA25c3p+oDqnMMAGChJQvIASJrV9DjaTm/MYNNghPmdgYAAATzehlatrY/0AAAAASUVORK5CYII=">
+<link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,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">
+<script>
+  // Anti-FOUC: apply saved theme before paint
+  (function(){try{var t=localStorage.getItem('e2e-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* __STYLES__ */
 </style>
@@ -15,7 +24,7 @@
 <aside class="sidebar">
   <div class="sidebar-logo">
     <h1><span>E2E</span> Runner</h1>
-    <div class="ver">Dashboard</div>
+    <div class="ver">Test Operations Center</div>
   </div>
 
   <div class="sidebar-section">
@@ -25,21 +34,53 @@
     </select>
   </div>
 
-  <div class="sidebar-section">
-    <div class="sidebar-section-label">Navigation</div>
-  </div>
-  <div class="nav-item active" data-view="watch">
-    <i class="icon">&#9202;</i><span>Watch</span>
-  </div>
-  <div class="nav-item" data-view="tests">
-    <i class="icon">&#9655;</i><span>Tests</span><span class="badge" id="badgeSuites">-</span>
-  </div>
-  <div class="nav-item" data-view="runs">
-    <i class="icon">&#9776;</i><span>Runs</span><span class="badge" id="badgeRuns">-</span>
-  </div>
-  <div class="nav-item" data-view="live" id="navLive" style="display:none">
-    <i class="icon"><span class="live-nav-dot"></span></i><span>Live</span><span class="badge" id="liveBadge" style="background:var(--purple-dim);color:var(--purple)">0</span>
-  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-group">
+      <div class="nav-group-label">Operations</div>
+      <div class="nav-item active" data-view="overview" title="Overview — what happened today">
+        <i class="icon">&#9788;</i><span>Overview</span>
+      </div>
+      <div class="nav-item" data-view="live" id="navLive" title="Live — what's running now">
+        <i class="icon"><span class="live-nav-dot"></span></i><span>Live</span><span class="badge idle" id="liveBadge">0</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Test Definitions</div>
+      <div class="nav-item" data-view="run" data-tab="testsTabSuites" title="Suites — JSON test definitions">
+        <i class="icon">&#9776;</i><span>Suites</span><span class="badge" id="badgeSuites">-</span>
+      </div>
+      <div class="nav-item" data-view="run" data-tab="testsTabModules" title="Modules — reusable action sequences">
+        <i class="icon">&#9636;</i><span>Modules</span>
+      </div>
+      <div class="nav-item" data-view="run" data-tab="testsTabVariables" title="Variables — {{var.KEY}} substitution values">
+        <i class="icon">&#9881;</i><span>Variables</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Executions</div>
+      <div class="nav-item" data-view="investigate" data-tab="runsTabHistory" title="Runs — historical executions">
+        <i class="icon">&#9784;</i><span>Runs</span><span class="badge" id="badgeRuns">-</span>
+      </div>
+      <div class="nav-item" data-view="investigate" data-tab="runsTabScreenshots" title="Screenshots — visual archive">
+        <i class="icon">&#9635;</i><span>Screenshots</span><span class="badge" id="badgeScreenshots">-</span>
+      </div>
+      <div class="nav-item" data-view="investigate" data-tab="investigateTabNetwork" title="Network — cross-run request log">
+        <i class="icon">&#9737;</i><span>Network</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Intelligence</div>
+      <div class="nav-item" data-view="insights" title="Insights — long-term health and trends">
+        <i class="icon">&#9733;</i><span>Insights</span>
+      </div>
+      <div class="nav-item" data-view="tools" title="Tools — module analysis, capture, analyze, agent prompts">
+        <i class="icon">&#9881;</i><span>Tools</span>
+      </div>
+    </div>
+  </nav>
 
   <div class="pool-status" id="poolStatus">
     <div class="pool-info">
@@ -53,14 +94,59 @@
       <span id="wsLabel" style="font-size:10px;color:var(--text3)">ws: connecting</span>
     </div>
   </div>
+
+  <button class="theme-toggle" id="themeToggle" type="button" title="Toggle light/dark theme" aria-label="Toggle theme">
+    <span class="theme-toggle-icon" data-theme-icon="dark">&#9788;</span>
+    <span class="theme-toggle-icon" data-theme-icon="light">&#9789;</span>
+    <span class="theme-toggle-label" id="themeToggleLabel">Light</span>
+  </button>
 </aside>
 
 <div class="main">
 
-  <!-- ════════════════ Watch View (default) ════════════════ -->
-  <div class="view active" id="view-watch">
+  <!-- ════════════════ Top Bar ════════════════ -->
+  <div class="topbar" id="topbar">
+    <div class="topbar-breadcrumb" id="topbarBreadcrumb">
+      <span class="topbar-section">Overview</span>
+    </div>
+    <div class="topbar-telemetry" id="topbarTelemetry">
+      <div class="tele-pill" id="telePool" title="Active pool / driver">
+        <span class="tele-pill-label">Pool</span>
+        <span class="tele-pill-dot" id="telePoolDot"></span>
+        <span class="tele-pill-value" id="telePoolValue">--</span>
+      </div>
+      <div class="tele-pill" id="teleSessions" title="Browser sessions in use">
+        <span class="tele-pill-label">Sessions</span>
+        <span class="tele-pill-value tele-pill-num" id="teleSessionsValue">-/-</span>
+      </div>
+      <div class="tele-pill" id="teleRunning" title="Tests running right now">
+        <span class="tele-pill-label">Running</span>
+        <span class="tele-pill-value tele-pill-num" id="teleRunningValue">0</span>
+      </div>
+      <div class="tele-pill" id="teleToday" title="Runs completed today">
+        <span class="tele-pill-label">Today</span>
+        <span class="tele-pill-value tele-pill-num" id="teleTodayValue">0</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="topbar-search-trigger" id="topbarSearchTrigger" title="Quick search (Ctrl/⌘+K or /)">
+        <span class="topbar-search-icon">&#128269;</span>
+        <span class="topbar-search-label">Quick search</span>
+        <span class="topbar-search-kbd">⌘K</span>
+      </button>
+      <div class="topbar-live" id="topbarLive" title="Jump to Live">
+        <span class="topbar-live-dot"></span>
+        <span class="topbar-live-label">Live</span>
+        <span class="topbar-live-count" id="topbarLiveCount">0</span>
+      </div>
+      <button class="btn sm primary topbar-run" id="topbarRunBtn" title="Run all tests">&#9655; Run</button>
+    </div>
+  </div>
+
+  <!-- ════════════════ Overview View (default) ════════════════ -->
+  <div class="view active" id="view-overview">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Watch</div>
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Overview</div>
     </div>
     <div class="watch-grid" id="watchCards"></div>
     <div class="watch-event-log">
@@ -75,10 +161,10 @@
     </div>
   </div>
 
-  <!-- ════════════════ Tests View (inner tabs: Suites / Modules / Variables) ════════════════ -->
-  <div class="view" id="view-tests">
+  <!-- ════════════════ Run View (inner tabs: Suites / Modules / Variables) ════════════════ -->
+  <div class="view" id="view-run">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Tests</div>
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Run</div>
       <div style="display:flex;gap:8px;align-items:center">
         <label class="screencast-toggle-label" title="Enable live browser screencast during test runs">
           <input type="checkbox" id="screencastToggle" />
@@ -94,6 +180,14 @@
     </div>
     <!-- Suites tab -->
     <div class="tab-pane active" id="testsTabSuites">
+      <div class="suites-toolbar" id="suitesToolbar">
+        <input type="text" id="suitesSearchInput" placeholder="Filter projects, suites or tests..." spellcheck="false">
+        <div class="suites-toolbar-actions">
+          <span class="suites-toolbar-count" id="suitesToolbarCount"></span>
+          <button class="btn sm" id="btnExpandAllSuites">Expand all</button>
+          <button class="btn sm" id="btnCollapseAllSuites">Collapse all</button>
+        </div>
+      </div>
       <div id="suiteAccordionContainer"></div>
       <div class="suite-grid" id="suiteGrid"></div>
       <div class="empty" id="suitesEmpty" style="display:none">
@@ -120,15 +214,15 @@
     </div>
   </div>
 
-  <!-- ════════════════ Runs View (inner tabs: History / Screenshots / Learnings) ════════════════ -->
-  <div class="view" id="view-runs">
+  <!-- ════════════════ Investigate View (inner tabs: Runs / Screenshots / Network) ════════════════ -->
+  <div class="view" id="view-investigate">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Runs</div>
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Investigate</div>
     </div>
     <div class="tab-bar">
-      <button class="tab-btn active" data-tab="runsTabHistory">History</button>
+      <button class="tab-btn active" data-tab="runsTabHistory">Runs</button>
       <button class="tab-btn" data-tab="runsTabScreenshots">Screenshots<span class="badge" id="badgeScreenshots" style="margin-left:6px">-</span></button>
-      <button class="tab-btn" data-tab="runsTabLearnings" id="runsTabLearnings">Learnings<span class="badge" id="badgeLearnings" style="margin-left:6px">-</span></button>
+      <button class="tab-btn" data-tab="investigateTabNetwork">Network</button>
     </div>
     <!-- History tab -->
     <div class="tab-pane active" id="runsTabHistory">
@@ -164,43 +258,199 @@
         <button id="ssHashBtn">Search</button>
       </div>
       <div id="ssSearchResult"></div>
+      <div class="ss-tools">
+        <button class="btn sm" id="ssScanBlankBtn" title="Find screenshots that are a single uniform color (blank/white pages)">&#9635; Find blank</button>
+        <div class="ss-blank-bar" id="ssBlankBar" hidden>
+          <span class="ss-blank-msg" id="ssBlankMsg"></span>
+          <button class="btn sm danger" id="ssBlankDeleteBtn">Delete blank</button>
+          <button class="btn sm" id="ssBlankCancelBtn">Cancel</button>
+        </div>
+      </div>
       <div class="gallery" id="screenshotGallery"></div>
       <div class="empty" id="screenshotsEmpty" style="display:none">
         <div class="empty-icon">&#9635;</div>
         <p>Select a project to view screenshots.</p>
       </div>
     </div>
-    <!-- Learnings tab -->
-    <div class="tab-pane" id="runsTabLearnings">
+    <!-- Network tab -->
+    <div class="tab-pane" id="investigateTabNetwork">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-        <div style="font-family:var(--sans);font-size:14px;font-weight:600;color:var(--text2)">Learnings</div>
+        <div style="font-family:var(--sans);font-size:14px;font-weight:600;color:var(--text2)">Cross-run network</div>
         <div style="display:flex;gap:8px;align-items:center">
-          <select id="learningsDays" style="padding:5px 8px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:11px">
-            <option value="7">7 days</option>
-            <option value="14">14 days</option>
-            <option value="30" selected>30 days</option>
-            <option value="90">90 days</option>
+          <select id="netStatusFilter" style="padding:5px 8px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:11px">
+            <option value="errors" selected>Errors (4xx/5xx)</option>
+            <option value="all">All requests</option>
+            <option value="slow">Slow (&gt;1s)</option>
           </select>
-          <button class="btn sm" id="btnExportLearnings">Export MD</button>
-          <button class="btn sm" id="btnRefreshLearnings">Refresh</button>
+          <input type="text" id="netUrlFilter" placeholder="URL contains..." spellcheck="false" style="padding:5px 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:11px;min-width:220px">
+          <button class="btn sm" id="btnRefreshNetwork">Refresh</button>
         </div>
       </div>
-      <div id="learnDash">
-        <div id="learnHero"></div>
-        <div id="learnCards" class="learn-cols"></div>
-        <div id="learnTrend"></div>
-        <div id="learnBottom" class="learn-cols"></div>
+      <div class="card" style="padding:0">
+        <div id="netResults"></div>
       </div>
-      <div class="empty" id="learningsEmpty" style="display:none">
-        <div class="empty-icon">&#9733;</div>
-        <p>No learnings data yet. Run some tests to start building knowledge.</p>
+      <div class="empty" id="networkEmpty" style="display:none">
+        <div class="empty-icon">&#127760;</div>
+        <p>No network data yet. Run some tests with network logging enabled.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════ Insights View ════════════════ -->
+  <div class="view" id="view-insights">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Insights</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="learningsDays" style="padding:5px 8px;border-radius:var(--r);border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:var(--mono);font-size:11px">
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="30" selected>30 days</option>
+          <option value="90">90 days</option>
+        </select>
+        <button class="btn sm" id="btnExportLearnings">Export MD</button>
+        <button class="btn sm" id="btnRefreshLearnings">Refresh</button>
+      </div>
+    </div>
+    <div id="learnDash">
+      <div id="learnHero"></div>
+      <div id="learnCards" class="learn-cols"></div>
+      <div id="learnTrend"></div>
+      <div id="learnBottom" class="learn-cols"></div>
+    </div>
+    <div class="empty" id="learningsEmpty" style="display:none">
+      <div class="empty-icon">&#9733;</div>
+      <p>No insights data yet. Run some tests to start building knowledge.</p>
+    </div>
+  </div>
+
+  <!-- ════════════════ Tools View ════════════════ -->
+  <div class="view" id="view-tools">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-family:var(--sans);font-size:16px;font-weight:600">Tools</div>
+    </div>
+
+    <!-- Module Analysis card -->
+    <div class="tool-card" id="toolModuleAnalysis">
+      <div class="tool-card-head">
+        <div class="tool-card-title">
+          <span class="tool-card-icon">&#9636;</span>
+          Module Analysis
+        </div>
+        <div class="tool-card-actions">
+          <button class="btn sm" id="btnCopyModulePrompt" disabled title="Copy a prompt to paste into Claude Code for AI-driven extraction">Copy AI prompt</button>
+          <button class="btn sm primary" id="btnRunModuleAnalysis">Run analysis</button>
+        </div>
+      </div>
+      <div class="tool-card-desc">
+        Detects action sequences that repeat across 2+ tests — the canonical extraction candidates for reusable <code>$use</code> modules. Also surfaces unused modules and adoption counts. Pair with the <code>test-improver</code> agent (Claude Code) for AI-driven refactoring using the copied prompt.
+      </div>
+      <div class="tool-card-body" id="modAnalysisBody">
+        <div class="tool-empty">Pick a project and click <strong>Run analysis</strong>.</div>
+      </div>
+    </div>
+
+    <!-- Capture URL card -->
+    <div class="tool-card">
+      <div class="tool-card-head">
+        <div class="tool-card-title">
+          <span class="tool-card-icon">&#128247;</span>
+          Capture URL
+        </div>
+      </div>
+      <div class="tool-card-desc">
+        Open any URL in a pooled browser and save a screenshot. Auth headers from the project config are applied automatically.
+      </div>
+      <div class="tool-card-body">
+        <div class="tool-form-row">
+          <input type="text" id="captureUrl" placeholder="https://example.com or /path (uses baseUrl)" spellcheck="false">
+          <label class="tool-form-check"><input type="checkbox" id="captureFullPage"> full page</label>
+          <button class="btn sm primary" id="btnRunCapture">Capture</button>
+        </div>
+        <div id="captureResult" class="tool-result"></div>
+      </div>
+    </div>
+
+    <!-- Analyze Page card -->
+    <div class="tool-card">
+      <div class="tool-card-head">
+        <div class="tool-card-title">
+          <span class="tool-card-icon">&#128269;</span>
+          Analyze Page
+        </div>
+      </div>
+      <div class="tool-card-desc">
+        Inspect a URL and return all interactive elements (buttons, links, inputs, forms, tabs) with their CSS selectors plus suggested test scaffolds.
+      </div>
+      <div class="tool-card-body">
+        <div class="tool-form-row">
+          <input type="text" id="analyzeUrl" placeholder="https://example.com or /path" spellcheck="false">
+          <button class="btn sm primary" id="btnRunAnalyze">Analyze</button>
+        </div>
+        <div id="analyzeResult" class="tool-result"></div>
+      </div>
+    </div>
+
+    <!-- Verify Issue card -->
+    <div class="tool-card">
+      <div class="tool-card-head">
+        <div class="tool-card-title">
+          <span class="tool-card-icon">&#9876;</span>
+          Verify Issue
+        </div>
+      </div>
+      <div class="tool-card-desc">
+        Fetch a GitHub/GitLab issue, generate matching E2E tests, run them, and produce a verification report. Generation needs <code>ANTHROPIC_API_KEY</code>; without a key, you get a prompt to paste into Claude Code.
+      </div>
+      <div class="tool-card-body">
+        <div class="tool-form-row">
+          <input type="text" id="issueUrl" placeholder="https://github.com/org/repo/issues/123" spellcheck="false">
+          <button class="btn sm" id="btnIssuePrompt">Copy prompt</button>
+          <button class="btn sm primary" id="btnIssueVerify">Verify</button>
+        </div>
+        <div id="issueResult" class="tool-result"></div>
+      </div>
+    </div>
+
+    <!-- AI Agents card — Claude Code paste prompts -->
+    <div class="tool-card">
+      <div class="tool-card-head">
+        <div class="tool-card-title">
+          <span class="tool-card-icon">&#9733;</span>
+          AI Agents (Claude Code)
+        </div>
+      </div>
+      <div class="tool-card-desc">
+        Spawning Claude Code agents from the dashboard isn't possible directly. Use these one-click prompts to paste into your Claude Code session and trigger the right agent.
+      </div>
+      <div class="tool-card-body">
+        <div class="agent-prompt-row">
+          <div class="agent-prompt-info">
+            <strong>test-improver</strong>
+            <span>Refactor verbose tests, extract modules, harden selectors, kill flakes.</span>
+          </div>
+          <button class="btn sm" data-prompt="improver">Copy</button>
+        </div>
+        <div class="agent-prompt-row">
+          <div class="agent-prompt-info">
+            <strong>test-creator</strong>
+            <span>Explore a page, design action sequences, write a new test from scratch.</span>
+          </div>
+          <button class="btn sm" data-prompt="creator">Copy</button>
+        </div>
+        <div class="agent-prompt-row">
+          <div class="agent-prompt-info">
+            <strong>test-analyzer</strong>
+            <span>Diagnose failures, flaky patterns, network errors — read learnings + screenshots.</span>
+          </div>
+          <button class="btn sm" data-prompt="analyzer">Copy</button>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- ════════════════ Live View ════════════════ -->
   <div class="view" id="view-live">
-    <div class="live-panel active" id="livePanel">
+    <div class="live-panel" id="livePanel">
       <div class="live-header">
         <div class="label"><span class="dot"></span> RUNNING</div>
         <div class="live-project" id="liveProject" style="display:none">
@@ -221,13 +471,17 @@
         <div class="live-tests" id="liveTests"></div>
         <div class="screencast-panel" id="screencastPanel" style="display:none">
           <div class="screencast-header">
-            <span class="screencast-label">&#128249; Screencast</span>
-            <select id="screencastSelect" class="screencast-select"><option value="">Select test...</option></select>
+            <span class="screencast-label">&#128249;</span>
+            <select class="screencast-test-select" id="screencastTestSelect" title="Choose which test to watch"></select>
+            <div class="screencast-context idle" id="screencastContext"></div>
+            <button class="screencast-stop-btn" id="screencastStopBtn" title="Stop watching" style="display:none">Stop</button>
           </div>
           <div class="screencast-viewport">
-            <img id="screencastImg" alt="Browser screencast" />
-            <div class="screencast-placeholder" id="screencastPlaceholder">Select a running test to watch</div>
+            <img id="screencastImg" alt="Browser screencast" title="Click to enlarge" />
+            <div class="screencast-placeholder" id="screencastPlaceholder">Waiting for first frame…</div>
+            <span class="screencast-zoom-hint" id="screencastZoomHint">⤢ click to enlarge</span>
           </div>
+          <div class="screencast-film" id="screencastFilm" aria-label="Recent frames"></div>
         </div>
       </div>
     </div>
@@ -259,14 +513,58 @@
   </div>
 </div>
 <div class="modal" id="modal"><img id="modalImg" src="" alt=""></div>
+
+<!-- ── Quick Search Palette ── -->
+<div class="qs-modal" id="qsModal" aria-hidden="true">
+  <div class="qs-panel" role="dialog" aria-label="Quick search">
+    <div class="qs-input-row">
+      <span class="qs-input-icon">&#128269;</span>
+      <input type="text" id="qsInput" placeholder="Search suites, modules, tests..." spellcheck="false" autocomplete="off">
+      <span class="qs-input-hint" id="qsHint">↑↓ navigate · ⏎ open · esc close</span>
+    </div>
+    <div class="qs-results" id="qsResults"></div>
+    <div class="qs-empty" id="qsEmpty">Loading index...</div>
+  </div>
+</div>
+
+
+<div class="replay-modal" id="replayModal" aria-hidden="true">
+  <div class="replay-stage">
+    <img id="replayImg" src="" alt="">
+    <div class="replay-empty" id="replayEmpty">No screenshot for this step</div>
+  </div>
+  <div class="replay-info">
+    <div class="replay-step-line">
+      <span class="replay-step-num" id="replayStepNum">1 / 1</span>
+      <span class="replay-step-type" id="replayStepType"></span>
+      <span class="replay-step-narr" id="replayStepNarr"></span>
+    </div>
+    <div class="replay-progress"><div class="replay-progress-fill" id="replayProgressFill"></div></div>
+    <div class="replay-controls">
+      <button class="replay-btn" id="replayPrev" title="Previous (←)">&#9664;&#9664;</button>
+      <button class="replay-btn replay-play" id="replayPlay" title="Play/Pause (Space)">&#9654;</button>
+      <button class="replay-btn" id="replayNext" title="Next (→)">&#9654;&#9654;</button>
+      <div class="replay-speed-group">
+        <span class="replay-label">Speed</span>
+        <button class="replay-speed-btn" data-speed="0.5">0.5x</button>
+        <button class="replay-speed-btn active" data-speed="1">1x</button>
+        <button class="replay-speed-btn" data-speed="2">2x</button>
+        <button class="replay-speed-btn" data-speed="4">4x</button>
+      </div>
+      <span class="replay-spacer"></span>
+      <button class="replay-close" id="replayClose" title="Close (Esc)">&times;</button>
+    </div>
+  </div>
+</div>
 <div class="toast-container" id="toastContainer"></div>
 <div class="kb-modal" id="kbModal">
   <div class="kb-modal-content">
     <h2>Keyboard Shortcuts</h2>
-    <div class="kb-row"><span class="kb-key">1</span><span class="kb-desc">Watch view</span></div>
-    <div class="kb-row"><span class="kb-key">2</span><span class="kb-desc">Tests view</span></div>
-    <div class="kb-row"><span class="kb-key">3</span><span class="kb-desc">Runs view</span></div>
-    <div class="kb-row"><span class="kb-key">4</span><span class="kb-desc">Live view</span></div>
+    <div class="kb-row"><span class="kb-key">1</span><span class="kb-desc">Overview</span></div>
+    <div class="kb-row"><span class="kb-key">2</span><span class="kb-desc">Live</span></div>
+    <div class="kb-row"><span class="kb-key">3</span><span class="kb-desc">Run</span></div>
+    <div class="kb-row"><span class="kb-key">4</span><span class="kb-desc">Investigate</span></div>
+    <div class="kb-row"><span class="kb-key">5</span><span class="kb-desc">Insights</span></div>
     <div class="kb-row"><span class="kb-key">j / k</span><span class="kb-desc">Navigate runs (next / previous)</span></div>
     <div class="kb-row"><span class="kb-key">Enter</span><span class="kb-desc">Expand / collapse selected run</span></div>
     <div class="kb-row"><span class="kb-key">Esc</span><span class="kb-desc">Close modal / collapse run</span></div>

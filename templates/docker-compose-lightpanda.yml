@@ -1,0 +1,7 @@
+services:
+  lightpanda-pool:
+    image: lightpanda/browser:nightly
+    container_name: e2e-lightpanda-pool
+    restart: unless-stopped
+    ports:
+      - "${PORT}:9222"

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E2E Runner Favicon — Concepts</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 2rem;
+    transition: background-color 0.3s, color 0.3s;
+  }
+  body.light { background: #f5f5f5; color: #333; }
+  body.dark  { background: #1a1a1a; color: #eee; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+  h1 { font-size: 1.5rem; font-weight: 600; }
+  h2 { font-size: 1.15rem; font-weight: 600; margin: 2.5rem 0 1.25rem; }
+  .toggle {
+    padding: 0.5rem 1rem;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 0.875rem;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+  .card {
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card-img {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    min-height: 240px;
+  }
+  body.light .card-img { background: #fff; }
+  body.dark  .card-img { background: #2a2a2a; }
+  .card-img img { max-width: 100%; max-height: 200px; }
+  .card-label {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-top: 1px solid rgba(128, 128, 128, 0.3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-label .name { font-weight: 600; }
+  .card-label .blurb { opacity: 0.7; font-weight: 400; font-size: 0.78rem; }
+  body.light .card-label { background: #fafafa; }
+  body.dark  .card-label { background: #222; }
+
+  .size-strip {
+    display: flex;
+    gap: 2.5rem;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+  body.light .size-strip { background: #fff; }
+  body.dark  .size-strip { background: #2a2a2a; }
+  .size-block { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+  .size-block .label { font-size: 0.8rem; font-weight: 600; }
+  .size-row { display: flex; gap: 1rem; align-items: end; }
+  .size-row > div { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+  .size-row .px { font-size: 0.7rem; opacity: 0.55; font-family: 'JetBrains Mono', monospace; }
+</style>
+</head>
+<body class="dark">
+  <div class="header">
+    <h1>E2E Runner Favicon — Concepts</h1>
+    <button class="toggle" onclick="document.body.classList.toggle('dark'); document.body.classList.toggle('light'); this.textContent = document.body.classList.contains('dark') ? '☀️ Light' : '🌙 Dark';">☀️ Light</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-img"><img src="concepts/concept-1.svg" alt="concept-1"></div>
+      <div class="card-label"><span class="name">concept-1</span><span class="blurb">reticle + check</span></div>
+    </div>
+    <div class="card">
+      <div class="card-img"><img src="concepts/concept-2.svg" alt="concept-2"></div>
+      <div class="card-label"><span class="name">concept-2</span><span class="blurb">scope pulse</span></div>
+    </div>
+    <div class="card">
+      <div class="card-img"><img src="concepts/concept-3.svg" alt="concept-3"></div>
+      <div class="card-label"><span class="name">concept-3</span><span class="blurb">E² monogram</span></div>
+    </div>
+    <div class="card">
+      <div class="card-img"><img src="concepts/concept-4.svg" alt="concept-4"></div>
+      <div class="card-label"><span class="name">concept-4</span><span class="blurb">LED status panel</span></div>
+    </div>
+  </div>
+
+  <h2>Favicon Size Check</h2>
+  <div class="size-strip">
+    <div class="size-block">
+      <div class="label">concept-1</div>
+      <div class="size-row">
+        <div><img src="concepts/concept-1.svg" width="64" height="64"><span class="px">64</span></div>
+        <div><img src="concepts/concept-1.svg" width="32" height="32"><span class="px">32</span></div>
+        <div><img src="concepts/concept-1.svg" width="16" height="16"><span class="px">16</span></div>
+      </div>
+    </div>
+    <div class="size-block">
+      <div class="label">concept-2</div>
+      <div class="size-row">
+        <div><img src="concepts/concept-2.svg" width="64" height="64"><span class="px">64</span></div>
+        <div><img src="concepts/concept-2.svg" width="32" height="32"><span class="px">32</span></div>
+        <div><img src="concepts/concept-2.svg" width="16" height="16"><span class="px">16</span></div>
+      </div>
+    </div>
+    <div class="size-block">
+      <div class="label">concept-3</div>
+      <div class="size-row">
+        <div><img src="concepts/concept-3.svg" width="64" height="64"><span class="px">64</span></div>
+        <div><img src="concepts/concept-3.svg" width="32" height="32"><span class="px">32</span></div>
+        <div><img src="concepts/concept-3.svg" width="16" height="16"><span class="px">16</span></div>
+      </div>
+    </div>
+    <div class="size-block">
+      <div class="label">concept-4</div>
+      <div class="size-row">
+        <div><img src="concepts/concept-4.svg" width="64" height="64"><span class="px">64</span></div>
+        <div><img src="concepts/concept-4.svg" width="32" height="32"><span class="px">32</span></div>
+        <div><img src="concepts/concept-4.svg" width="16" height="16"><span class="px">16</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -65,7 +65,7 @@ function renderWatchCards(projects){
     var detailBtn=el('button',{className:'btn sm',onclick:function(e){
       e.stopPropagation();
       S.project=p.id;$('#projectSelect').value=p.id;
-      showView('runs');
+      showView('investigate');
       refreshRuns();refreshSuites();
     }},'\uD83D\uDD0D');
 
@@ -222,7 +222,7 @@ function renderEventLog(runs){
     (function(run){
       row.addEventListener('click',function(){
         S.project=run.project_id;$('#projectSelect').value=run.project_id;
-        showView('runs');
+        showView('investigate');
         refreshRuns();
       });
     })(r);

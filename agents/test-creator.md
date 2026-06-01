@@ -63,11 +63,12 @@ You are a specialist in creating robust E2E tests for web applications. You expl
 
 ### Form Interaction
 - Standard input → `type` (clears first)
-- React controlled input → `type_react`
-- Dropdown select → `select` (native) or `focus_autocomplete` + `click_option` (MUI)
+- React controlled input → `type_react` (optional `blur`, `waitAfter`)
+- Dropdown select → `select` (native) or `select_combobox` (MUI Autocomplete/Select — opens, optional `filter`, picks `text` in one action)
 - Checkbox/radio → `click`
 - Clear field → `clear`
 - Submit → `click` on submit button or `press` Enter
+- Confirm in a modal → `click` with `text` + `scope: "dialog"` (add `last: true` if multiple matches)
 
 ### Storage
 - Set localStorage key → `set_storage` with `value: "key=val"`
@@ -83,6 +84,7 @@ You are a specialist in creating robust E2E tests for web applications. You expl
 ### Waiting
 - Element appears → `wait` with `selector`
 - Text appears → `wait` with `text`
+- Element/spinner/dialog disappears → `wait` with `gone` (e.g. `{ "type": "wait", "gone": ".MuiBackdrop-root" }`)
 - Fixed delay (last resort) → `wait` with `value` (ms)
 
 ### Assertions

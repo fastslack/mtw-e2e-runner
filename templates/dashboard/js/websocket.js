@@ -105,9 +105,39 @@ function handleWS(m){
       showToast('Run error: '+m.error,'error');
       renderLive();break;
     case 'test:frame':
-      if(S.screencastTest===m.name&&m.data){
-        var img=$('#screencastImg');
-        if(img)img.src='data:image/jpeg;base64,'+m.data;
+      if(m.data){
+        var pinned=S.screencastSel;
+        var showThis;
+        if(pinned){
+          // Pinned: only the watched test's frames.
+          showThis=pinned.runId===m.runId&&pinned.name===m.name;
+        }else if(S.screencastAuto!==false){
+          // Auto: sticky — stay on the current test until it stops running,
+          // then adopt the next one. Never interleave two tests' frames.
+          var cur=S.screencastLast;
+          var curRun=cur&&S.liveRuns[cur.runId];
+          var curT=curRun&&curRun.tests?curRun.tests[cur.name]:null;
+          var curRunning=curT&&curT.status==='running';
+          showThis=!cur||!curRunning||(cur.runId===m.runId&&cur.name===m.name);
+        }else{showThis=false}
+        if(showThis){
+          var frameSrc='data:image/jpeg;base64,'+m.data;
+          // Switching to a different test? Clear the strip so they don't pile up.
+          var changed=!pinned&&(!S.screencastLast||S.screencastLast.runId!==m.runId||S.screencastLast.name!==m.name);
+          if(changed&&S.screencastLast&&typeof resetFilmstrip==='function')resetFilmstrip();
+          var img=$('#screencastImg');
+          if(img){
+            img.src=frameSrc;
+            img.style.display='block';
+            var vp=img.closest('.screencast-viewport');if(vp)vp.classList.add('has-frame');
+            var ph2=$('#screencastPlaceholder');if(ph2)ph2.style.display='none';
+          }
+          if(!pinned){
+            S.screencastLast={runId:m.runId,name:m.name};
+            if(changed&&typeof updateScreencastUI==='function')updateScreencastUI();
+          }
+          if(typeof pushFilmFrame==='function')pushFilmFrame(frameSrc,m.name,m.runId);
+        }
       }
       break;
     case 'db:updated':

@@ -60,6 +60,12 @@ const DEFAULTS = {
   screencastMaxWidth: 800,
   screencastMaxHeight: 600,
   screencastEveryNthFrame: 1,
+  // Auto-capture a thumbnail after each action so the storyline view is fully visual.
+  // Adds ~50-100ms per action; set false in CI if you only need final/error screenshots.
+  autoCaptureSteps: true,
+  autoCaptureWidth: 480,
+  autoCaptureHeight: 300,
+  autoCaptureQuality: 60,
   anthropicApiKey: null,
   anthropicModel: 'claude-sonnet-4-5-20250929',
   authToken: null,

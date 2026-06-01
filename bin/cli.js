@@ -21,7 +21,8 @@
  *   e2e-runner issue <url> --generate     Generate test file via Claude API
  *   e2e-runner issue <url> --verify       Generate + run + report bug status
  *   e2e-runner issue <url> --prompt       Output the AI prompt (for piping)
- *   e2e-runner init                       Scaffold e2e/ in the current project
+ *   e2e-runner init                       Interactive wizard to scaffold e2e/
+ *   e2e-runner init --yes                 Scaffold with defaults (no prompts)
  *   e2e-runner --help                     Show help
  *   e2e-runner --version                  Show version
  */
@@ -43,6 +44,7 @@ import { verifyIssue } from '../src/verify.js';
 import { ensureProject, computeScreenshotHash, registerScreenshotHash } from '../src/db.js';
 import { log, colors as C } from '../src/logger.js';
 import { listModules } from '../src/module-resolver.js';
+import { runInitWizard, renderConfig, getDefaultAnswers } from '../src/wizard.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends } from '../src/learner-sqlite.js';
 import { startNeo4j, stopNeo4j, getNeo4jStatus } from '../src/neo4j-pool.js';
 import { 
@@ -118,6 +120,8 @@ function parseCLIConfig() {
       cliArgs.verificationStrictness = val;
     }
   }
+  if (getFlag('--driver')) cliArgs.cliDriverOverride = getFlag('--driver');
+  if (getFlag('--fallback-driver')) cliArgs.cliFallbackDriverOverride = getFlag('--fallback-driver');
   return cliArgs;
 }
 
@@ -175,7 +179,10 @@ ${C.bold}Usage:${C.reset}
   e2e-runner sync push                  Process sync queue (agent mode)
   e2e-runner sync pull                  Pull runs from hub (agent mode)
 
-  e2e-runner init                       Scaffold e2e/ in the current project
+  e2e-runner init                       Interactive wizard to scaffold e2e/
+  e2e-runner init --yes                 Scaffold with defaults (CI / non-interactive)
+                                          Flags: --name, --base-url, --driver,
+                                          --pool-port, --concurrency, --no-sample
 
 ${C.bold}Options:${C.reset}
   --base-url <url>         App base URL (default: http://host.docker.internal:3000)
@@ -199,6 +206,9 @@ ${C.bold}Options:${C.reset}
   --auth-login-endpoint <url>  Auto-login: POST credentials to this URL to get auth token
   --auth-token-path <path>     Dot-path to token in auth response (default: token)
   --verification-strictness <level>  Visual verification: strict, moderate (default), lenient
+  --driver <name>          Force pool driver for this run: browserless, cdp, lightpanda, obscura, steel
+                           (overrides per-test "driver" field; useful for A/B benchmarks)
+  --fallback-driver <name> Explicit fallback if no pool with --driver is reachable (overrides per-test "fallbackDriver")
 
 ${C.bold}Watch Options:${C.reset}
   --interval <time>          Run interval: 15m, 1h, 30s (required for schedule mode)
@@ -220,6 +230,21 @@ async function cmdRun() {
   const cliArgs = parseCLIConfig();
   const config = await loadConfig(cliArgs);
   config.triggeredBy = 'cli';
+
+  // Validate CLI driver overrides up-front (clearer error than waiting for first test)
+  if (config.cliDriverOverride || config.cliFallbackDriverOverride) {
+    const allowed = ['browserless', 'cdp', 'lightpanda', 'obscura', 'steel'];
+    for (const [flag, val] of [['--driver', config.cliDriverOverride], ['--fallback-driver', config.cliFallbackDriverOverride]]) {
+      if (val && !allowed.includes(val)) {
+        console.error(`${C.red}Invalid value for ${flag}: "${val}". Allowed: ${allowed.join(', ')}.${C.reset}`);
+        process.exit(1);
+      }
+    }
+    if (config.cliFallbackDriverOverride && !config.cliDriverOverride) {
+      console.error(`${C.red}--fallback-driver requires --driver.${C.reset}`);
+      process.exit(1);
+    }
+  }
   let tests = [];
   let hooks = {};
 
@@ -387,9 +412,22 @@ async function cmdPool() {
   }
 }
 
-function cmdInit() {
+async function cmdInit() {
   const cwd = process.cwd();
   const templatesDir = path.join(__dirname, '..', 'templates');
+
+  const skipWizard = hasFlag('--yes') || hasFlag('-y') || hasFlag('--non-interactive');
+  const flagOverrides = {};
+  if (getFlag('--name') && typeof getFlag('--name') === 'string') flagOverrides.projectName = getFlag('--name');
+  if (getFlag('--base-url') && typeof getFlag('--base-url') === 'string') flagOverrides.baseUrl = getFlag('--base-url');
+  if (getFlag('--driver') && typeof getFlag('--driver') === 'string') flagOverrides.driver = getFlag('--driver');
+  if (getFlag('--pool-port') && typeof getFlag('--pool-port') === 'string') flagOverrides.poolPort = parseInt(getFlag('--pool-port'), 10);
+  if (getFlag('--concurrency') && typeof getFlag('--concurrency') === 'string') flagOverrides.concurrency = parseInt(getFlag('--concurrency'), 10);
+  if (hasFlag('--no-sample')) flagOverrides.includeSampleTest = false;
+
+  const answers = skipWizard
+    ? { ...getDefaultAnswers(cwd), ...flagOverrides }
+    : await runInitWizard(cwd, flagOverrides);
 
   // Create directory structure
   const dirs = [
@@ -405,22 +443,24 @@ function cmdInit() {
     }
   }
 
-  // Copy config template
+  // Write generated config
   const configDest = path.join(cwd, 'e2e.config.js');
   if (!fs.existsSync(configDest)) {
-    fs.copyFileSync(path.join(templatesDir, 'e2e.config.js'), configDest);
+    fs.writeFileSync(configDest, renderConfig(answers));
     log('📄', 'Created e2e.config.js');
   } else {
     log('⏭️', 'e2e.config.js already exists, skipping');
   }
 
   // Copy sample test
-  const testDest = path.join(cwd, 'e2e', 'tests', 'sample.json');
-  if (!fs.existsSync(testDest)) {
-    fs.copyFileSync(path.join(templatesDir, 'sample-test.json'), testDest);
-    log('📄', 'Created e2e/tests/sample.json');
-  } else {
-    log('⏭️', 'e2e/tests/sample.json already exists, skipping');
+  if (answers.includeSampleTest) {
+    const testDest = path.join(cwd, 'e2e', 'tests', 'sample.json');
+    if (!fs.existsSync(testDest)) {
+      fs.copyFileSync(path.join(templatesDir, 'sample-test.json'), testDest);
+      log('📄', 'Created e2e/tests/sample.json');
+    } else {
+      log('⏭️', 'e2e/tests/sample.json already exists, skipping');
+    }
   }
 
   // Create .gitkeep
@@ -1138,7 +1178,7 @@ async function main() {
       break;
 
     case 'init':
-      cmdInit();
+      await cmdInit();
       break;
 
     default:

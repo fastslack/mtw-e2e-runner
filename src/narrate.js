@@ -36,14 +36,23 @@ export function narrateAction(action, result) {
       return `Typed "${masked}" into "${selector}"${time}`;
     }
 
-    case 'wait':
+    case 'wait': {
+      const goneTarget = typeof action.gone === 'string' ? action.gone : (action.gone === true ? (selector || (text ? `text "${text}"` : null)) : null);
+      if (goneTarget) return `Waited for ${goneTarget.startsWith('text ') ? goneTarget : `"${goneTarget}"`} to disappear${time}`;
       if (selector) return `Waited for "${selector}" to appear${time}`;
       if (text) return `Waited for text "${text}" to appear${time}`;
       return `Waited ${value}ms`;
+    }
 
     case 'screenshot':
       if (result.result?.screenshot) {
         return `Captured screenshot: ${result.result.screenshot}`;
+      }
+      if (result.result?.skipped) {
+        const reason = result.result.skipped === 'blank-page'
+          ? 'page was blank'
+          : 'render looked blank';
+        return `Skipped screenshot (${reason})`;
       }
       return `Captured screenshot${value ? `: ${value}` : ''}`;
 
@@ -122,6 +131,9 @@ export function narrateAction(action, result) {
 
     case 'click_option':
       return `Clicked dropdown option "${text}"${time}`;
+
+    case 'select_combobox':
+      return `Selected "${text || action.option}" from combobox${action.filter ? ` (filtered "${action.filter}")` : ''}${time}`;
 
     case 'focus_autocomplete':
       return `Focused autocomplete labeled "${text}"${time}`;
@@ -232,6 +244,7 @@ function describeIntent(action) {
     case 'type_react':            return `Type into React input "${selector}"`;
     case 'click_regex':           return `Click element matching /${text}/i`;
     case 'click_option':          return `Click option "${text}"`;
+    case 'select_combobox':       return `Select "${text || action.option}" from combobox`;
     case 'focus_autocomplete':    return `Focus autocomplete "${text}"`;
     case 'click_chip':            return `Click chip "${text}"`;
     case 'set_storage':            return `Set ${selector === 'session' ? 'sessionStorage' : 'localStorage'} key "${value?.split('=')[0] || value}"`;

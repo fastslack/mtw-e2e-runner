@@ -14,6 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { KNOWN_ACTION_TYPES } from './actions.js';
+import { KNOWN_DRIVERS } from './pool.js';
 
 /**
  * Loads all module definitions from a directory.
@@ -170,8 +171,17 @@ function resolveActions(actions, registry, contextParams = {}, visited = new Set
       const moduleActions = moduleDef.actions || [];
       const substituted = moduleActions.map(a => {
         if (a.$use) {
-          // Nested $use — pass through for recursive resolution
-          return { ...a, params: { ...mergedParams, ...a.params } };
+          // Nested $use — resolve {{param}} placeholders in the nested call's
+          // params against THIS module's scope (its merged params + defaults)
+          // so a module can forward its own params/defaults to a module it
+          // $uses. Then merge over the inherited context params as fallback.
+          const nestedParams = {};
+          for (const [k, v] of Object.entries(a.params || {})) {
+            nestedParams[k] = typeof v === 'string'
+              ? substituteParams(v, mergedParams, moduleDef.params)
+              : v;
+          }
+          return { ...a, params: { ...mergedParams, ...nestedParams } };
         }
         return substituteActionParams(a, mergedParams, moduleDef.params, moduleName);
       });
@@ -306,5 +316,28 @@ export function validateActionTypes(data, context) {
   if (unknown.length > 0) {
     const details = unknown.map(u => `"${u.type}" in ${u.location}`).join(', ');
     throw new Error(`Unknown action type(s) in ${context}: ${details}`);
+  }
+
+  // Validate per-test driver / fallbackDriver fields
+  const knownExceptAuto = [...KNOWN_DRIVERS].filter(d => d !== 'auto');
+  for (const test of data.tests || []) {
+    if (test.driver !== undefined && !knownExceptAuto.includes(test.driver)) {
+      throw new Error(
+        `Invalid driver "${test.driver}" in test "${test.name}" (${context}). ` +
+        `Allowed: ${knownExceptAuto.join(', ')}.`
+      );
+    }
+    if (test.fallbackDriver !== undefined && !knownExceptAuto.includes(test.fallbackDriver)) {
+      throw new Error(
+        `Invalid fallbackDriver "${test.fallbackDriver}" in test "${test.name}" (${context}). ` +
+        `Allowed: ${knownExceptAuto.join(', ')}.`
+      );
+    }
+    if (test.fallbackDriver !== undefined && test.driver === undefined) {
+      throw new Error(
+        `Test "${test.name}" (${context}) declares fallbackDriver without driver. ` +
+        `fallbackDriver only applies when driver is set.`
+      );
+    }
   }
 }

@@ -72,8 +72,9 @@ Use `e2e_create_test` to write test files. Use `e2e_create_module` for reusable 
 ### Key Action Patterns
 
 - **Navigation**: `goto` (full page load), `navigate` (SPA-friendly, non-blocking)
-- **Interaction**: `click` (selector or text), `type`/`fill`, `select`, `press`, `hover`, `scroll`
-- **React/MUI**: `type_react` (controlled inputs), `click_option`, `focus_autocomplete`, `click_chip`, `click_regex`
+- **Interaction**: `click` (selector or text; text mode also takes `scope:"dialog"`, `visible:true`, `last:true`), `type`/`fill`, `select`, `press`, `hover`, `scroll`
+- **React/MUI**: `type_react` (controlled inputs; optional `blur`, `waitAfter`), `click_option`, `select_combobox` (open+filter+pick MUI Autocomplete/Select in one action), `focus_autocomplete`, `click_chip`, `click_regex`
+- **Waiting**: prefer conditions over sleeps — `wait` takes `selector`/`text` (appear), `gone` (disappear, e.g. spinner/closing dialog), or `value` (fixed ms, last resort); `wait_network_idle`
 - **Assertions**: `assert_text` (page-wide), `assert_element_text` (scoped), `assert_url`, `assert_visible`, `assert_not_visible`, `assert_count`, `assert_attribute`, `assert_class`, `assert_input_value`, `assert_matches`
 - **Extraction**: `get_text` (non-assertion, returns element text), `screenshot`
 - **Advanced**: `evaluate` (run JS in browser), `assert_no_network_errors`, `clear_cookies`

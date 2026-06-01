@@ -81,10 +81,21 @@ export function createWebSocketServer(httpServer, options = {}) {
   const clients = new Set();
 
   httpServer.on('upgrade', (req, socket, head) => {
-    // Validate Origin to prevent cross-site WebSocket hijacking
+    // Validate Origin to prevent cross-site WebSocket hijacking.
+    // Allow if: no Origin (curl/scripts), explicit whitelist match, or same-origin
+    // (Origin's host == the Host header the client connected to).
     const origin = req.headers.origin;
-    if (origin && options.allowedOrigins) {
-      if (!options.allowedOrigins.includes(origin)) {
+    const host = req.headers.host;
+    if (origin) {
+      let allowed = false;
+      if (options.allowedOrigins && options.allowedOrigins.includes(origin)) allowed = true;
+      if (!allowed && host) {
+        try {
+          const u = new URL(origin);
+          if (u.host === host) allowed = true;
+        } catch { /* malformed origin */ }
+      }
+      if (!allowed) {
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;

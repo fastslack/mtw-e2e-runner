@@ -1,57 +1,229 @@
 /* ══════════════════════════════════════════════════════════════════
    Live Execution View
    ══════════════════════════════════════════════════════════════════ */
-function clearFinishedLiveRuns(){for(var k in S.liveRuns){if(S.liveRuns[k].done||!S.liveRuns[k].on)delete S.liveRuns[k]}S.screencastTest=null;renderLive()}
-function dismissLiveRun(rid){delete S.liveRuns[rid];renderLive()}
+function clearFinishedLiveRuns(){
+  for(var k in S.liveRuns){if(S.liveRuns[k].done||!S.liveRuns[k].on)delete S.liveRuns[k]}
+  S.screencastSel=null;S.screencastLast=null;
+  var im=$('#screencastImg');if(im){im.src='';im.style.display='none';var vp=im.closest('.screencast-viewport');if(vp)vp.classList.remove('has-frame')}
+  if(typeof resetFilmstrip==='function')resetFilmstrip();
+  renderLive();
+}
+function dismissLiveRun(rid){
+  if(S.screencastSel&&S.screencastSel.runId===rid)S.screencastSel=null;
+  if(S.screencastLast&&S.screencastLast.runId===rid)S.screencastLast=null;
+  delete S.liveRuns[rid];renderLive();
+}
 $('#liveClearBtn').addEventListener('click',clearFinishedLiveRuns);
 
-// Screencast state
-S.screencastTest=null;
-
-$('#screencastSelect').addEventListener('change',function(){
-  S.screencastTest=this.value||null;
-  var img=$('#screencastImg'),ph=$('#screencastPlaceholder');
-  if(S.screencastTest){img.style.display='block';ph.style.display='none';img.src=''}
-  else{img.style.display='none';ph.style.display='flex'}
-});
-
-function updateScreencastSelect(){
-  var sel=$('#screencastSelect'),panel=$('#screencastPanel');
-  var runningTests=[];
-  for(var k in S.liveRuns){var r=S.liveRuns[k];for(var n in r.tests){if(n!=='__error'&&r.tests[n].status==='running')runningTests.push(n)}}
-  // Show panel if any run is active
-  var anyActive=false;for(var k2 in S.liveRuns)if(S.liveRuns[k2].on)anyActive=true;
-  panel.style.display=anyActive?'':'none';
-  // Rebuild options
-  var prev=sel.value;
-  while(sel.options.length>1)sel.remove(1);
-  runningTests.forEach(function(n){var o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o)});
-  // Auto-select first running test if nothing selected
-  if(!S.screencastTest&&runningTests.length>0){S.screencastTest=runningTests[0];sel.value=S.screencastTest;$('#screencastImg').style.display='block';$('#screencastPlaceholder').style.display='none'}
-  else if(S.screencastTest&&runningTests.indexOf(S.screencastTest)===-1){
-    // Current test finished — pick next running or clear
-    if(runningTests.length>0){S.screencastTest=runningTests[0];sel.value=S.screencastTest}
-    else{S.screencastTest=null;sel.value='';$('#screencastImg').style.display='none';$('#screencastPlaceholder').style.display='flex';$('#screencastPlaceholder').textContent='No running tests'}
+/* Pick a test to screencast. Composite key {runId, name} so concurrent
+   runs with the same test name never collide into a single <img>. */
+function selectScreencast(runId,name){
+  if(S.screencastSel&&S.screencastSel.runId===runId&&S.screencastSel.name===name){
+    // Same test clicked again — unselect (stop watching)
+    S.screencastSel=null;
+  }else{
+    S.screencastSel={runId:runId,name:name};
+    // Clear the previous frame so we don't briefly show another test's last frame
+    var im=$('#screencastImg');if(im){im.src='';im.style.display='none'}
   }
-  else{sel.value=S.screencastTest||''}
+  renderLive();
+}
+function stopScreencast(){S.screencastSel=null;renderLive()}
+
+var _scStopBtn=$('#screencastStopBtn');
+if(_scStopBtn)_scStopBtn.addEventListener('click',stopScreencast);
+
+/* Reset the live preview + filmstrip (used when the watched test changes so
+   two tests' frames never pile up in the same feed). */
+function clearScreencastFrame(){
+  var im=$('#screencastImg');
+  if(im){im.src='';im.style.display='none';var vp=im.closest('.screencast-viewport');if(vp)vp.classList.remove('has-frame')}
+  S.screencastLast=null;
+  if(typeof resetFilmstrip==='function')resetFilmstrip();
+}
+
+/* Test chooser: "auto" follows the latest test; a specific value pins the feed
+   to that one test only. */
+(function(){
+  var sel=$('#screencastTestSelect');if(!sel)return;
+  sel.addEventListener('change',function(){
+    if(this.value==='auto'){
+      S.screencastSel=null;S.screencastAuto=true;
+    }else{
+      var i=this.value.indexOf('::');
+      S.screencastSel={runId:this.value.slice(0,i),name:this.value.slice(i+2)};
+    }
+    clearScreencastFrame();
+    renderLive();
+  });
+})();
+
+/* Keep the chooser's options in sync with the live tests — but only rebuild
+   when the set actually changes, so it doesn't clobber the open dropdown. */
+function syncScreencastSelect(){
+  var sel=$('#screencastTestSelect');if(!sel)return;
+  var items=[];
+  Object.keys(S.liveRuns).forEach(function(rid){
+    var run=S.liveRuns[rid];
+    Object.keys(run.tests||{}).forEach(function(n){
+      if(n==='__error')return;
+      items.push({key:rid+'::'+n,runId:rid,name:n,status:run.tests[n].status});
+    });
+  });
+  items.sort(function(a,b){return (a.status==='running'?0:1)-(b.status==='running'?0:1)});
+  var curKey=S.screencastSel?(S.screencastSel.runId+'::'+S.screencastSel.name):'auto';
+  var sig=curKey+'|'+items.map(function(o){return o.key+':'+o.status}).join(',');
+  if(sel.getAttribute('data-sig')===sig)return;
+  sel.setAttribute('data-sig',sig);
+  sel.textContent='';
+  sel.appendChild(el('option',{value:'auto'},'Auto — latest test'));
+  items.forEach(function(o){
+    var mark=o.status==='running'?'● ':o.status==='passed'?'✓ ':o.status==='failed'?'✕ ':'· ';
+    sel.appendChild(el('option',{value:o.key},mark+o.name));
+  });
+  sel.value=curKey;
+  if(sel.value!==curKey)sel.value='auto';
+}
+
+/* Click the live preview → open it full-size in the lightbox. */
+(function(){
+  var im=$('#screencastImg');
+  if(im)im.addEventListener('click',function(){
+    if(im.src&&im.src.indexOf('data:')===0&&typeof openModal==='function')openModal(im.src);
+  });
+})();
+
+/* Filmstrip — keep a small ring buffer of recent frames, throttled so a
+   high-rate screencast doesn't thrash the DOM. Each thumb opens full-size. */
+var SC_FILM_MAX=24, SC_FILM_THROTTLE=600;
+function pushFilmFrame(src,name,runId){
+  var now=Date.now();
+  if(now-(S._filmTs||0)<SC_FILM_THROTTLE)return;
+  S._filmTs=now;
+  S.screencastFilm.push({src:src,name:name||'',runId:runId||null,ts:now});
+  while(S.screencastFilm.length>SC_FILM_MAX)S.screencastFilm.shift();
+  renderFilmstrip();
+}
+/* Render the bottom band: recent frames in fixed slots that fit the width —
+   no horizontal scroll, so the strip stays put while frames pass through it.
+   Newest is the rightmost (marked LIVE). Any thumb opens full-size on click. */
+function renderFilmstrip(){
+  var strip=$('#screencastFilm');if(!strip)return;
+  strip.textContent='';
+  var film=S.screencastFilm||[];
+  // Pinned to one test → show only its frames (safety net against mixing).
+  if(S.screencastSel){
+    film=film.filter(function(f){return f.runId===S.screencastSel.runId&&f.name===S.screencastSel.name});
+  }
+  if(!film.length){
+    strip.appendChild(el('div',{className:'screencast-film-empty'},
+      anyLiveRunning()?'Waiting for first frame…':'No frames yet'));
+    return;
+  }
+  // Fit as many fixed-width slots as the band can show without scrolling.
+  var h=strip.clientHeight||150, gap=10;
+  var thumbW=Math.max(120,(h-28)*1.6);
+  var avail=(strip.clientWidth||900)-32;
+  var fit=Math.max(1,Math.floor((avail+gap)/(thumbW+gap)));
+  var start=Math.max(0,film.length-fit);
+  var shown=film.slice(start);
+  var live=anyLiveRunning();
+  shown.forEach(function(f,i){
+    var isLast=(i===shown.length-1);
+    var img=document.createElement('img');img.src=f.src;img.alt=f.name;img.loading='lazy';
+    var thumb=el('div',{className:'film-thumb'+(isLast&&live?' is-live':''),
+      title:(f.name||'frame')+' — click to enlarge',
+      onclick:(function(s){return function(){if(typeof openModal==='function')openModal(s)}})(f.src)},
+      [img,el('span',{className:'film-idx'},String(start+i+1))]);
+    strip.appendChild(thumb);
+  });
+}
+function resetFilmstrip(){S.screencastFilm=[];S._filmTs=0;renderFilmstrip()}
+
+function scTestStatus(sel){
+  if(!sel)return null;
+  var r=S.liveRuns[sel.runId];if(!r)return 'gone';
+  var t=r.tests&&r.tests[sel.name];if(!t)return 'gone';
+  return t.status;
+}
+
+function updateScreencastUI(){
+  var panel=$('#screencastPanel');
+  var anyActive=false;for(var k in S.liveRuns)if(S.liveRuns[k].on)anyActive=true;
+  var ctxEl=$('#screencastContext'),img=$('#screencastImg'),ph=$('#screencastPlaceholder'),stopBtn=$('#screencastStopBtn');
+  var hasFrame=img&&img.src&&img.src.indexOf('data:')===0;
+
+  var pinned=S.screencastSel;
+  var auto=!pinned&&S.screencastAuto!==false;
+
+  // Show panel while a run is active, a test is pinned, or a frame is on screen.
+  panel.style.display=(anyActive||pinned||hasFrame)?'':'none';
+
+  // Idle: nothing pinned, auto off (or nothing ever shown) and no activity.
+  if(!pinned&&!auto&&!hasFrame){
+    if(ctxEl){ctxEl.textContent='';ctxEl.className='screencast-context idle'}
+    if(stopBtn)stopBtn.style.display='none';
+    if(img)img.style.display='none';
+    if(ph){ph.style.display='flex';ph.textContent=anyActive?'Waiting for first frame…':'No tests running'}
+    return;
+  }
+
+  // Subject: the pinned test, or (auto) the test of the last frame shown.
+  var sel=pinned||S.screencastLast;
+  var status=pinned?scTestStatus(pinned):(anyActive?'running':'ended');
+  var run=sel&&S.liveRuns[sel.runId];
+  var proj=(run&&(run.project||(run.cwd?run.cwd.split('/').pop():'')))||'';
+
+  if(ctxEl){
+    ctxEl.textContent='';
+    if(proj)ctxEl.appendChild(el('span',{className:'sc-ctx-proj'},proj));
+    if(sel)ctxEl.appendChild(el('span',{className:'sc-ctx-name'},sel.name));
+    var pillTxt,pillCls;
+    if(pinned){
+      pillTxt=status==='running'?'WATCHING':status==='passed'?'ENDED · PASSED':status==='failed'?'ENDED · FAILED':'GONE';
+      pillCls=status==='running'?'running':status==='passed'?'passed':status==='failed'?'failed':'gone';
+    }else{
+      pillTxt=anyActive?'AUTO · LIVE':'AUTO · LAST FRAME';
+      pillCls=anyActive?'running':'gone';
+    }
+    ctxEl.appendChild(el('span',{className:'sc-ctx-pill '+pillCls},pillTxt));
+    ctxEl.className='screencast-context '+(((pinned&&status==='running')||(!pinned&&anyActive))?'active':'ended');
+  }
+  // Stop button only when pinned — it returns to auto-follow.
+  if(stopBtn){stopBtn.style.display=pinned?'':'none';stopBtn.title='Stop watching (return to auto-follow)'}
+
+  if(hasFrame)img.style.display='block';
+  if(ph){
+    if(hasFrame){ph.style.display='none'}
+    else{ph.style.display='flex';ph.textContent=anyActive?'Waiting for first frame…':'No frames yet'}
+  }
+  // Keep the bottom band in sync (empty hint when no frames yet).
+  if(typeof renderFilmstrip==='function')renderFilmstrip();
+  if(typeof syncScreencastSelect==='function')syncScreencastSelect();
 }
 
 function renderLive(){
   var panel=$('#livePanel'),grid=$('#liveTests'),navLive=$('#navLive'),liveEmpty=$('#liveEmpty');
   var runs=S.liveRuns;var runIds=Object.keys(runs);
 
-  if(runIds.length===0){panel.classList.remove('active');navLive.style.display='none';liveEmpty.style.display='block';$('#liveClearBtn').style.display='none';return}
+  if(runIds.length===0){
+    panel.classList.remove('active');liveEmpty.style.display='block';$('#liveClearBtn').style.display='none';
+    var lb=$('#liveBadge');lb.textContent='0';lb.className='badge idle';
+    syncTopbarLive(false,0,0);
+    return;
+  }
 
-  navLive.style.display='';liveEmpty.style.display='none';panel.classList.add('active');
+  liveEmpty.style.display='none';panel.classList.add('active');
 
   var gTotal=0,gCompleted=0,gPassed=0,gFailed=0,gActive=0,gRunning=false,gDone=true;
   runIds.forEach(function(rid){var r=runs[rid];gTotal+=r.total;gCompleted+=r.completed;gPassed+=r.passed;gFailed+=r.failed;gActive+=r.active;if(r.on)gRunning=true;if(!r.done)gDone=false});
 
   var badgeActive=0;
   runIds.forEach(function(rid){var r=runs[rid];Object.keys(r.tests).forEach(function(n){if(n!=='__error'&&r.tests[n].status==='running')badgeActive++})});
-  $('#liveBadge').textContent=gRunning?badgeActive:gCompleted;
-  $('#liveBadge').style.background=gRunning?'var(--purple-dim)':gFailed>0?'var(--red-dim)':'var(--green-dim)';
-  $('#liveBadge').style.color=gRunning?'var(--purple)':gFailed>0?'var(--red)':'var(--green)';
+  var lb2=$('#liveBadge');
+  lb2.textContent=gRunning?badgeActive:gCompleted;
+  lb2.className='badge '+(gRunning?'running':gFailed>0?'failed':'passed');
+  syncTopbarLive(gRunning,badgeActive,gFailed);
 
   $('#liveTotal').textContent=gTotal;$('#livePass').textContent=gPassed;$('#liveFail').textContent=gFailed;$('#liveActive').textContent=gActive;
   $('#liveProgressFill').style.width=(gTotal>0?gCompleted/gTotal*100:0)+'%';
@@ -146,18 +318,26 @@ function renderLive(){
         ssEl=el('div',{className:'lt-screenshots'},[toggle,ssGridEl]);
       }
 
-      // Screencast focus indicator
-      var scFocusBadge=null;
+      // Screencast watch button \u2014 only on running tests. Composite-key aware.
+      var isWatched=S.screencastSel&&S.screencastSel.runId===rid&&S.screencastSel.name===name;
+      var scWatchBtn=null;
       if(t.status==='running'){
-        var isFocused=S.screencastTest===name;
-        scFocusBadge=el('span',{className:'sc-focus-badge'+(isFocused?' active':''),title:'Watch this test',onclick:function(e){e.stopPropagation();S.screencastTest=name;$('#screencastSelect').value=name;$('#screencastImg').style.display='block';$('#screencastPlaceholder').style.display='none';renderLive()}},'\uD83C\uDFA5');
+        scWatchBtn=el('button',{
+          className:'sc-watch-btn'+(isWatched?' active':''),
+          title:isWatched?'Stop watching':'Watch this test',
+          onclick:(function(_rid,_name){return function(e){e.stopPropagation();selectScreencast(_rid,_name)}})(rid,name)
+        },[
+          el('span',{className:'sc-eye'},isWatched?'\u25C9':'\u25CB'),
+          el('span',{className:'sc-watch-label'},isWatched?'WATCHING':'WATCH')
+        ]);
       }
       var serialBadge=t.serial?el('span',{className:'serial-badge'},'Serial'):null;
       var poolBadge=t.poolUrl?el('span',{className:'pool-badge'},t.poolUrl.replace('ws://','').replace('wss://','')):null;
-      var card=el('div',{className:'live-test '+t.status+(isCollapsed?' collapsed':'')},[
+      var cardCls='live-test '+t.status+(isCollapsed?' collapsed':'')+(isWatched?' sc-watching':'');
+      var card=el('div',{className:cardCls},[
         el('div',{className:'lt-name'},[
           t.status==='running'?el('span',{className:'spinner'}):el('span',{className:'lt-icon',style:iconColor},iconText),
-          document.createTextNode(' '+name),scFocusBadge,serialBadge,poolBadge,summaryEl
+          document.createTextNode(' '+name),scWatchBtn,serialBadge,poolBadge,summaryEl
         ]),
         el('div',{className:'lt-meta'},meta),stepsEl
       ]);
@@ -177,5 +357,18 @@ function renderLive(){
     });
     grid.appendChild(testGrid);
   });
-  updateScreencastSelect();
+  updateScreencastUI();
+}
+
+/* Sync the top bar Live shortcut: greyed when idle, pulsing purple when running */
+function syncTopbarLive(running,activeCount,failedCount){
+  var pill=$('#topbarLive');if(!pill)return;
+  var count=$('#topbarLiveCount');
+  pill.classList.remove('idle','running','failed','passed');
+  if(running){pill.classList.add('running');count.textContent=activeCount}
+  else if(failedCount>0){pill.classList.add('failed');count.textContent=failedCount}
+  else if(activeCount===0&&!running){pill.classList.add('idle');count.textContent='0'}
+  else{pill.classList.add('passed');count.textContent=activeCount||0}
+  // Mirror the running count to the telemetry strip
+  if(typeof renderRunningTelemetry==='function')renderRunningTelemetry(running?activeCount:0);
 }

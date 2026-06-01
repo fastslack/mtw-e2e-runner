@@ -1,0 +1,206 @@
+/* ═══════════════════════════════════════════════════════════════════
+   VIEW · TOOLS — Module analysis, capture, analyze, agent prompts
+   ═══════════════════════════════════════════════════════════════════ */
+
+.tool-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:18px 20px 16px;
+  margin-bottom:16px;
+  position:relative;
+}
+.tool-card::before{
+  content:'';position:absolute;top:0;left:18px;width:24px;height:1px;
+  background:var(--phosphor);opacity:.5;
+}
+.tool-card-head{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:14px;margin-bottom:10px;
+}
+.tool-card-title{
+  font-family:var(--display);
+  font-size:18px;font-weight:400;letter-spacing:-.005em;
+  color:var(--text);
+  display:flex;align-items:center;gap:10px;
+}
+.tool-card-icon{
+  font-size:14px;opacity:.7;color:var(--phosphor);
+}
+.tool-card-actions{display:flex;gap:8px;align-items:center}
+.tool-card-desc{
+  font-family:var(--mono);font-size:11px;
+  color:var(--text2);
+  letter-spacing:.01em;line-height:1.55;
+  margin-bottom:14px;
+  padding-bottom:12px;
+  border-bottom:1px solid var(--border);
+}
+.tool-card-desc code{
+  font-family:var(--mono);font-size:10.5px;
+  background:var(--bg-2);
+  padding:1px 6px;border-radius:2px;
+  color:var(--phosphor);
+}
+.tool-card-body{padding-top:4px}
+
+.tool-empty{
+  font-family:var(--mono);font-size:11px;color:var(--text3);
+  padding:18px 6px;text-align:center;letter-spacing:.04em;
+}
+
+.tool-form-row{
+  display:flex;align-items:center;gap:10px;margin-bottom:10px;
+}
+.tool-form-row input[type="text"]{
+  flex:1;
+  padding:8px 12px;
+  background:var(--bg-2);border:1px solid var(--border);
+  border-radius:var(--r);
+  font-family:var(--mono);font-size:11px;
+  color:var(--text);outline:none;
+  transition:border-color .15s,background .15s;
+}
+.tool-form-row input[type="text"]:focus{
+  border-color:var(--phosphor);background:var(--surface);
+}
+.tool-form-row input[type="text"]::placeholder{color:var(--text3);font-style:italic}
+.tool-form-check{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--mono);font-size:10px;
+  color:var(--text2);letter-spacing:.06em;
+  text-transform:uppercase;font-weight:600;
+  user-select:none;cursor:pointer;
+  padding:0 4px;
+}
+.tool-form-check input{margin:0;accent-color:var(--phosphor)}
+.tool-result{
+  margin-top:10px;
+  font-family:var(--mono);font-size:11px;
+  color:var(--text2);
+}
+.tool-result.is-error{color:var(--crimson)}
+.tool-result img{
+  max-width:100%;border:1px solid var(--border);border-radius:var(--r);
+  margin-top:8px;display:block;
+}
+.tool-result pre{
+  background:var(--bg-2);border:1px solid var(--border);border-radius:var(--r);
+  padding:10px 12px;font-family:var(--mono);font-size:10.5px;
+  color:var(--text);max-height:300px;overflow:auto;
+  white-space:pre-wrap;word-break:break-word;
+}
+
+/* ─── Module analysis layout ───────────────────────────────────── */
+.mod-summary{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
+  margin-bottom:18px;
+}
+.mod-summary-cell{
+  background:var(--bg-2);border:1px solid var(--border);border-radius:var(--r);
+  padding:12px 14px;
+}
+.mod-summary-cell-lbl{
+  font-family:var(--mono);font-size:8px;font-weight:700;
+  color:var(--text3);letter-spacing:.24em;text-transform:uppercase;
+  margin-bottom:6px;
+}
+.mod-summary-cell-val{
+  font-family:var(--display);font-size:26px;font-weight:400;
+  color:var(--text);font-variant-numeric:tabular-nums;letter-spacing:-.01em;
+}
+.mod-summary-cell.warn .mod-summary-cell-val{color:var(--amber)}
+.mod-summary-cell.signal .mod-summary-cell-val{color:var(--phosphor);text-shadow:0 0 12px var(--phosphor-glow)}
+
+.mod-section-title{
+  font-family:var(--mono);font-size:9px;font-weight:700;
+  color:var(--text3);letter-spacing:.24em;text-transform:uppercase;
+  margin:20px 0 10px;
+  padding-bottom:6px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+}
+.mod-section-title .count{
+  font-family:var(--mono);font-size:10px;font-weight:500;
+  color:var(--text);background:var(--bg-2);border:1px solid var(--border);
+  padding:1px 8px;border-radius:999px;letter-spacing:.04em;
+}
+
+.mod-row{
+  display:flex;align-items:flex-start;gap:14px;
+  padding:10px 12px;
+  border:1px solid var(--border);border-radius:var(--r);
+  background:var(--bg-2);
+  margin-bottom:8px;
+}
+.mod-row.unused{border-color:rgba(255,179,71,.3);background:var(--amber-dim)}
+.mod-row-main{flex:1;min-width:0}
+.mod-row-name{
+  font-family:var(--mono);font-size:12px;color:var(--text);
+  font-weight:600;margin-bottom:4px;
+}
+.mod-row-desc{
+  font-family:var(--mono);font-size:10px;color:var(--text2);
+  margin-bottom:4px;line-height:1.45;
+}
+.mod-row-meta{
+  font-family:var(--mono);font-size:9.5px;color:var(--text3);
+  letter-spacing:.04em;
+  display:flex;gap:14px;flex-wrap:wrap;
+}
+.mod-row-usage{
+  font-family:var(--mono);font-size:10px;color:var(--phosphor);
+  font-weight:600;font-variant-numeric:tabular-nums;
+  white-space:nowrap;align-self:center;
+}
+.mod-row.unused .mod-row-usage{color:var(--amber)}
+
+.cand-row{
+  border:1px solid var(--border);border-radius:var(--r);
+  background:var(--bg-2);
+  padding:12px 14px;margin-bottom:8px;
+}
+.cand-row-head{
+  display:flex;align-items:center;gap:14px;
+  margin-bottom:8px;
+}
+.cand-name{
+  font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600;
+}
+.cand-stats{
+  margin-left:auto;
+  font-family:var(--mono);font-size:9.5px;
+  color:var(--text3);letter-spacing:.04em;
+  display:flex;gap:14px;
+}
+.cand-stats strong{color:var(--phosphor);font-variant-numeric:tabular-nums}
+.cand-actions-preview{
+  font-family:var(--mono);font-size:10px;
+  color:var(--text2);
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:8px 10px;
+  white-space:pre-wrap;word-break:break-word;
+  margin-bottom:6px;line-height:1.55;
+}
+.cand-used-by{
+  font-family:var(--mono);font-size:9.5px;color:var(--text3);
+  letter-spacing:.02em;line-height:1.6;
+}
+.cand-used-by strong{color:var(--text2);font-weight:500}
+
+/* ─── Agent prompt rows ──────────────────────────────────────── */
+.agent-prompt-row{
+  display:flex;align-items:center;gap:14px;
+  padding:10px 12px;
+  border:1px solid var(--border);border-radius:var(--r);
+  background:var(--bg-2);
+  margin-bottom:8px;
+}
+.agent-prompt-info{flex:1;display:flex;flex-direction:column;gap:2px}
+.agent-prompt-info strong{
+  font-family:var(--mono);font-size:11px;color:var(--phosphor);
+  letter-spacing:.04em;text-transform:none;
+}
+.agent-prompt-info span{
+  font-family:var(--mono);font-size:10px;color:var(--text2);
+  line-height:1.45;
+}

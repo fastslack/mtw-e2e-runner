@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <g id="icon">
+    <rect width="512" height="512" rx="80" fill="#0b0c09"/>
+    <rect x="18" y="18" width="476" height="476" rx="62" fill="none" stroke="#3a3b2c" stroke-width="3"/>
+    <g id="E" fill="#ece6d4">
+      <rect x="118" y="138" width="54" height="266" rx="6"/>
+      <rect x="118" y="138" width="210" height="54" rx="6"/>
+      <rect x="118" y="244" width="170" height="54" rx="6"/>
+      <rect x="118" y="350" width="210" height="54" rx="6"/>
+    </g>
+    <text id="superscript-2" x="380" y="216"
+          font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-weight="900"
+          font-size="170"
+          text-anchor="middle"
+          fill="#9ef26a">2</text>
+    <rect id="status-bar" x="118" y="438" width="276" height="14" rx="7" fill="#9ef26a"/>
+  </g>
+</svg>

@@ -429,6 +429,8 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDr
         narrative: a.narrative || undefined,
         error: a.error || undefined,
         actionRetries: a.actionRetries || undefined,
+        autoScreenshot: a.autoScreenshot || undefined,
+        screenshot: a.result?.screenshot || undefined,
       }));
 
       insertTest.run(
@@ -461,6 +463,15 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDr
         const actionIdx = r.actions.indexOf(a);
         insertHash.run(computeScreenshotHash(a.result.screenshot), a.result.screenshot, projectId, runDbId, r.name, actionIdx, null, 'action');
       }
+
+      // Auto-captured per-step thumbnails for the storyline view
+      (r.actions || []).forEach((a, idx) => {
+        if (a.autoScreenshot) {
+          try {
+            insertHash.run(computeScreenshotHash(a.autoScreenshot), a.autoScreenshot, projectId, runDbId, r.name, idx, null, 'step');
+          } catch { /* best effort */ }
+        }
+      });
       if (r.errorScreenshot) {
         insertHash.run(computeScreenshotHash(r.errorScreenshot), r.errorScreenshot, projectId, runDbId, r.name, null, null, 'error');
       }

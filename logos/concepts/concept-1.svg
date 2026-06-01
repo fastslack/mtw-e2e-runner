@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <filter id="phosphorGlow1" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g id="icon">
+    <rect width="512" height="512" rx="80" fill="#0b0c09"/>
+    <rect x="16" y="16" width="480" height="480" rx="64" fill="none" stroke="#2a2b20" stroke-width="2"/>
+    <g id="reticle" stroke="#9ef26a" stroke-linecap="round">
+      <line x1="256" y1="56" x2="256" y2="116" stroke-width="12"/>
+      <line x1="256" y1="396" x2="256" y2="456" stroke-width="12"/>
+      <line x1="56" y1="256" x2="116" y2="256" stroke-width="12"/>
+      <line x1="396" y1="256" x2="456" y2="256" stroke-width="12"/>
+    </g>
+    <circle cx="256" cy="256" r="156" fill="none" stroke="#3f8f1f" stroke-width="6" stroke-dasharray="4 14"/>
+    <circle cx="256" cy="256" r="156" fill="none" stroke="#9ef26a" stroke-width="2" opacity="0.35"/>
+    <path id="check" d="M 168 268 L 232 332 L 354 196"
+          fill="none" stroke="#9ef26a" stroke-width="46"
+          stroke-linecap="round" stroke-linejoin="round"
+          filter="url(#phosphorGlow1)"/>
+  </g>
+</svg>

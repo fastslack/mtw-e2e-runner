@@ -103,7 +103,7 @@ claude plugin marketplace add fastslack/mtw-e2e-runner
 claude plugin install e2e-runner@matware
 ```
 
-This gives Claude 13 MCP tools, slash commands, and specialized agents. Just say *"Run all E2E tests"* or *"Create a test for the login flow"*.
+This gives Claude 17 MCP tools, slash commands, and specialized agents. Just say *"Run all E2E tests"* or *"Create a test for the login flow"*.
 
 ### Add OpenCode (optional)
 
@@ -128,7 +128,7 @@ See [OPENCODE.md](OPENCODE.md) for details.
 
 🧪 **Zero-code tests** — JSON files that anyone on your team can read and write. No JavaScript, no compilation, no framework lock-in.
 
-🤖 **AI-powered testing** — Claude Code creates, executes, and debugs tests natively through 13 MCP tools. Ask it to "test the checkout flow" and it builds the JSON, runs it, and reports back.
+🤖 **AI-powered testing** — Claude Code creates, executes, and debugs tests natively through 17 MCP tools. Ask it to "test the checkout flow" and it builds the JSON, runs it, and reports back.
 
 🐛 **Issue-to-Test pipeline** — Paste a GitHub or GitLab issue URL. The runner fetches it, generates E2E tests, runs them, and tells you: *bug confirmed* or *not reproducible*.
 
@@ -136,7 +136,9 @@ See [OPENCODE.md](OPENCODE.md) for details.
 
 🧠 **Learning system** — Tracks test stability across runs. Detects flaky tests, unstable selectors, slow APIs, and error patterns — then surfaces actionable insights.
 
-⚡ **Parallel execution** — Run N tests simultaneously against a shared Chrome pool (browserless/chrome). Serial mode available for tests that share state.
+⚡ **Parallel execution** — Run N tests simultaneously against a shared browser pool (browserless, raw CDP, Lightpanda, Obscura, or Steel). Serial mode available for tests that share state.
+
+🎯 **Pluggable browser drivers** — Pick the engine that fits each test: real Chrome via browserless, Lightpanda or Obscura for fast lightweight runs, Steel for managed sessions. Set `driver` per test or override the whole run with `--driver`.
 
 📊 **Real-time dashboard** — Live execution view, run history with pass-rate charts, screenshot gallery with hash-based search, expandable network request logs.
 
@@ -177,9 +179,9 @@ Suite files can have numeric prefixes for ordering (`01-auth.json`, `02-dashboar
 | Action | Fields | Description |
 |--------|--------|-------------|
 | `goto` | `value` | Navigate to URL (relative to `baseUrl` or absolute) |
-| `click` | `selector` or `text` | Click by CSS selector or visible text content |
+| `click` | `selector` or `text` | Click by CSS selector or visible text content. Text mode also takes `scope: "dialog"`, `visible: true`, `last: true` |
 | `type` / `fill` | `selector`, `value` | Clear field and type text |
-| `wait` | `selector`, `text`, or `value` (ms) | Wait for element, text, or fixed delay |
+| `wait` | `selector`, `text`, `gone`, or `value` (ms) | Wait for element/text to appear, for `gone` to disappear (spinner/dialog), or fixed delay. Prefer conditions over fixed `value` sleeps |
 | `screenshot` | `value` (filename) | Capture a screenshot |
 | `select` | `selector`, `value` | Select a dropdown option |
 | `clear` | `selector` | Clear an input field |
@@ -226,9 +228,10 @@ These actions handle common patterns in React/MUI apps that normally require ver
 
 | Action | Fields | Description |
 |--------|--------|-------------|
-| `type_react` | `selector`, `value` | Type into React controlled inputs using the native value setter. Dispatches `input` + `change` events so React state updates correctly. |
+| `type_react` | `selector`, `value`, optional `blur`, `waitAfter` | Type into React controlled inputs using the native value setter. Dispatches `input` + `change` events so React state updates correctly. `blur: true` commits on blur; `waitAfter: "<ms>"` waits after (debounced autocomplete). |
 | `click_regex` | `text` (regex), optional `selector`, optional `value: "last"` | Click element whose textContent matches a regex (case-insensitive). Default: first match. Use `value: "last"` for last match. |
 | `click_option` | `text` | Click a `[role="option"]` element by text — common in autocomplete/select dropdowns. |
+| `select_combobox` | `text`, optional `selector`, `filter`, `openWait`/`filterWait`/`waitAfter` | Open a MUI Autocomplete/Select, optionally type `filter`, then click the option matching `text`. Falls back across `[role="option"]`, `.MuiAutocomplete-option`, `li.MuiMenuItem-root`. |
 | `focus_autocomplete` | `text` (label text) | Focus an autocomplete input by its label text. Supports MUI and generic `[role="combobox"]`. |
 | `click_chip` | `text` | Click a chip/tag element by text. Searches `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
 
@@ -512,6 +515,67 @@ Monitor Chrome pool health: available slots, running sessions, memory pressure.
 
 ---
 
+## Browser Drivers
+
+The runner can talk to multiple browser engines through different drivers. The default is **`auto`** — it probes each pool URL and picks the right driver per pool.
+
+| Driver | Engine | Detection probe | When to use |
+|--------|--------|-----------------|-------------|
+| `browserless` | Real Chromium via [browserless](https://www.browserless.io/) | `/pressure` returns JSON | Default. Production-grade JS execution, screencast, full Chrome behavior |
+| `cdp` | Generic CDP-compatible (raw Chrome, etc.) | `/json/version` reachable | Fallback for any CDP server that isn't one of the others |
+| `lightpanda` | [Lightpanda](https://lightpanda.io) (Zig) | `/json/version` Browser=lightpanda | ~9× faster, ~16× less memory than headless Chrome — ideal for high-volume scrape-style tests |
+| `obscura` | [Obscura](https://github.com/h4ckf0r0day/obscura) (Rust + V8) | `/json/version` Browser=obscura | ~30 MB RAM footprint, built-in anti-detection (`--stealth`), stays close to real Chrome via Puppeteer |
+| `steel` | [Steel Browser](https://steel.dev) | `/v1/sessions` returns JSON | Managed session lifecycle, REST API for orchestration |
+
+### Pick a driver per test
+
+```json
+{
+  "tests": [
+    {
+      "name": "checkout flow (heavy JS, real Chrome)",
+      "driver": "browserless",
+      "actions": [...]
+    },
+    {
+      "name": "scrape product page (lightweight)",
+      "driver": "obscura",
+      "fallbackDriver": "cdp",
+      "actions": [...]
+    }
+  ]
+}
+```
+
+`driver` is optional. If set, only pools whose detected driver matches become candidates. `fallbackDriver` is **explicit opt-in** — without it, a missing target driver fails the test with a clear message. Pool busyness does **not** trigger fallback; the runner waits inside the filtered set.
+
+### Force a driver for a whole run
+
+```bash
+e2e-runner run --all --driver obscura
+e2e-runner run --all --driver obscura --fallback-driver cdp
+```
+
+CLI overrides win over per-test fields — useful for A/B benchmarks against the same suite.
+
+### Running each driver locally
+
+```bash
+# browserless (default) — managed by `pool start`
+e2e-runner pool start
+
+# Lightpanda — pool start uses templates/docker-compose-lightpanda.yml
+e2e-runner pool start                 # with poolDriver: 'lightpanda' in config
+
+# Obscura — install the binary and run it yourself
+curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-x86_64-linux.tar.gz
+tar xzf obscura-x86_64-linux.tar.gz
+./obscura serve --port 9222 --stealth
+# then point the runner at it: poolUrls: ['http://localhost:9222'], poolDriver: 'obscura'
+```
+
+---
+
 ## Screenshot Capture
 
 Capture screenshots of any URL on demand — no test suite required:
@@ -536,7 +600,7 @@ claude plugin marketplace add fastslack/mtw-e2e-runner
 claude plugin install e2e-runner@matware
 ```
 
-This gives Claude 13 MCP tools, a workflow skill, 3 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`), and 3 specialized agents (test-analyzer, test-creator, test-improver).
+This gives Claude 17 MCP tools, a workflow skill, 4 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`, `/e2e-runner:capture`), and 3 specialized agents (test-analyzer, test-creator, test-improver).
 
 **MCP-only install** (tools only, no skill/commands/agents):
 
@@ -563,13 +627,17 @@ See [OPENCODE.md](OPENCODE.md) for details.
 | `e2e_create_test` | Create a new test JSON file |
 | `e2e_create_module` | Create a reusable module |
 | `e2e_pool_status` | Check Chrome pool health |
+| `e2e_app_pool_status` | Inspect the app environment pool (forks, ports, drivers) |
 | `e2e_screenshot` | Retrieve a screenshot by hash |
 | `e2e_capture` | Capture screenshot of any URL |
+| `e2e_analyze` | Extract page structure (interactive elements, forms, headings) and emit test scaffolds |
 | `e2e_dashboard_start` | Start web dashboard |
 | `e2e_dashboard_stop` | Stop web dashboard |
+| `e2e_dashboard_restart` | Restart the dashboard (new project dir/port, clear stale sessions) |
 | `e2e_issue` | Fetch issue and generate tests |
 | `e2e_network_logs` | Query network logs for a run |
 | `e2e_learnings` | Query stability insights |
+| `e2e_vars` | Manage SQLite-backed `{{var.KEY}}` project variables |
 | `e2e_neo4j` | Manage Neo4j knowledge graph |
 
 > Pool start/stop are CLI-only — not exposed via MCP.
@@ -679,6 +747,8 @@ e2e-runner init                       # Scaffold project
 | `--env <name>` | `default` | Environment profile |
 | `--fail-on-network-error` | `false` | Fail tests with network errors |
 | `--project-name <name>` | dir name | Project display name |
+| `--driver <name>` | _(per-test)_ | Force pool driver for the run: `browserless`, `cdp`, `lightpanda`, `obscura`, `steel` |
+| `--fallback-driver <name>` | _none_ | Explicit fallback if no pool with `--driver` is reachable |
 
 ---
 

@@ -137,6 +137,11 @@ export const TOOLS = [
   click_chip:      { type: "click_chip", text: "Active" }         — MUI Chip / tag elements
   click_icon:      { type: "click_icon", value: "edit" }          — SVG/icon by data-testid, aria-label, class
   click_in_context:{ type: "click_in_context", text: "Row text", selector: "button" } — child within container
+  click (in dialog):{ type: "click", text: "Confirm", scope: "dialog", last: true } — only [role=dialog]/MuiDialog; visible:true skips hidden; last:true picks last match
+
+**Selecting from a MUI Autocomplete/Select** — DON'T write evaluate to open+filter+pick:
+  select_combobox: { type: "select_combobox", selector: "input[role='combobox']", filter: "cardio", text: "Cardiología" }
+                   — opens the combobox, types optional filter, clicks the matching option (role=option / MuiAutocomplete-option / MuiMenuItem)
 
 **Asserting text presence/absence** — DON'T write evaluate with body.includes():
   assert_text:     { type: "assert_text", text: "Welcome" }      — text IS on page (case-sensitive). Uses: text
@@ -164,12 +169,13 @@ IMPORTANT field rules:
   navigate:        { type: "navigate", value: "/settings" }       — SPA-friendly (won't fail if no page load)
   wait:            { type: "wait", text: "Loading complete" }     — wait for text to appear in body
   wait:            { type: "wait", selector: ".results" }         — wait for element to appear
-  wait:            { type: "wait", value: "2000" }                — fixed delay (avoid when possible)
+  wait (gone):     { type: "wait", gone: ".MuiBackdrop-root" }    — wait until a selector disappears/hides (spinner, closing dialog)
+  wait:            { type: "wait", value: "2000" }                — fixed delay (last resort — prefer gone/selector/text)
   wait_network_idle: { type: "wait_network_idle", value: "500" }  — wait until no network for N ms
 
 **Form interaction** — DON'T write evaluate with native value setters (unless React):
   type:            { type: "type", selector: "#email", value: "a@b.com" } — clears + types
-  type_react:      { type: "type_react", selector: "#email", value: "a@b.com" } — for React controlled inputs
+  type_react:      { type: "type_react", selector: "#email", value: "a@b.com", waitAfter: "400" } — React controlled inputs; optional blur:true / waitAfter ms
   select:          { type: "select", selector: "select#country", value: "US" }
   clear:           { type: "clear", selector: "#search" }
   press:           { type: "press", value: "Enter" }

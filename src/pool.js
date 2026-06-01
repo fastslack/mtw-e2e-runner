@@ -4,9 +4,13 @@
  * Connectivity to browser pools and Docker Compose lifecycle.
  * Supports multiple pool drivers:
  *   - "browserless" — browserless/chrome with /pressure and /sessions HTTP API
- *   - "cdp"         — generic CDP pool (Lightpanda, raw Chrome, etc.) using /json/version health check
+ *   - "cdp"         — generic CDP pool (raw Chrome, etc.) using /json/version health check
+ *   - "lightpanda"  — Lightpanda browser (Zig-based, 9x faster, ~16x less memory) via CDP on port 9222
+ *   - "obscura"     — Obscura headless browser (Rust+V8, ~30 MB, anti-detect) via CDP on port 9222
  *   - "steel"       — Steel Browser with /v1/sessions REST API and session lifecycle
- *   - "auto"        — detect driver by probing endpoints: /pressure → browserless, /v1/sessions → steel, fallback → cdp
+ *   - "auto"        — detect driver by probing endpoints: /pressure → browserless, /v1/sessions → steel,
+ *                     /json/version with Browser=lightpanda → lightpanda, Browser=obscura → obscura,
+ *                     fallback → cdp
  */
 
 import puppeteer from 'puppeteer-core';
@@ -25,12 +29,25 @@ function sleep(ms) {
 
 // ── Driver detection cache ────────────────────────────────────────────────────
 
+/** Set of driver identifiers accepted by config, test JSON, and CLI overrides. */
+export const KNOWN_DRIVERS = new Set(['auto', 'browserless', 'cdp', 'lightpanda', 'obscura', 'steel']);
+
 /** Caches detected driver per pool URL to avoid re-probing on every status call. */
 const driverCache = new Map();
+
+/**
+ * Caches the canonical Puppeteer WS endpoint per pool URL, as advertised
+ * by /json/version → webSocketDebuggerUrl. Used by connectToPool so users
+ * can configure either http://host:port or ws://host:port for obscura,
+ * lightpanda, and generic cdp pools without needing to know the
+ * /devtools/browser suffix Obscura requires.
+ */
+const wsEndpointCache = new Map();
 
 /** Clears the driver cache (useful for tests or pool restarts). */
 export function clearDriverCache() {
   driverCache.clear();
+  wsEndpointCache.clear();
 }
 
 /** Returns the cached driver for a pool URL, or null if not yet detected. */
@@ -38,9 +55,16 @@ export function getCachedDriver(poolUrl) {
   return driverCache.get(poolUrl) || null;
 }
 
+/** Returns the cached webSocketDebuggerUrl for a pool URL, or null. */
+export function getCachedWsEndpoint(poolUrl) {
+  return wsEndpointCache.get(poolUrl) || null;
+}
+
 /**
  * Detects the pool driver by probing HTTP endpoints.
- * Probe order: /pressure (browserless) → /v1/sessions (steel) → fallback (cdp).
+ * Probe order: /pressure (browserless) → /v1/sessions (steel) →
+ *              /json/version with Browser=lightpanda → lightpanda, Browser=obscura → obscura,
+ *              fallback → cdp.
  */
 async function detectPoolDriver(poolUrl) {
   if (driverCache.has(poolUrl)) return driverCache.get(poolUrl);
@@ -71,18 +95,89 @@ async function detectPoolDriver(poolUrl) {
     }
   } catch { /* not steel */ }
 
-  // Fallback: generic CDP
+  // Probe Lightpanda / Obscura / generic CDP: /json/version
+  // Capture webSocketDebuggerUrl so connectToPool can use the canonical
+  // ws:// endpoint regardless of how the user spelled poolUrl.
+  try {
+    const res = await fetch(`${httpUrl}/json/version`, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.webSocketDebuggerUrl === 'string' && data.webSocketDebuggerUrl) {
+        wsEndpointCache.set(poolUrl, rewriteWsHost(data.webSocketDebuggerUrl, poolUrl));
+      }
+      const browser = typeof data.Browser === 'string' ? data.Browser.toLowerCase() : '';
+      if (browser.includes('lightpanda')) {
+        driverCache.set(poolUrl, 'lightpanda');
+        return 'lightpanda';
+      }
+      if (browser.includes('obscura')) {
+        driverCache.set(poolUrl, 'obscura');
+        return 'obscura';
+      }
+      // /json/version answered with a Browser field but it isn't one we
+      // specifically recognize — treat as generic CDP.
+      driverCache.set(poolUrl, 'cdp');
+      return 'cdp';
+    }
+  } catch { /* not CDP-family or network error */ }
+
+  // Fallback: generic CDP (assume ws:// endpoint as-is)
   driverCache.set(poolUrl, 'cdp');
   return 'cdp';
 }
 
 /**
+ * Some CDP servers (notably Obscura when bound to 0.0.0.0) advertise an
+ * internal host in webSocketDebuggerUrl that does not match the URL the
+ * client used. Rewrite host:port to match the original poolUrl so the
+ * resulting ws:// is reachable from this machine.
+ */
+function rewriteWsHost(wsUrl, poolUrl) {
+  try {
+    const ws = new URL(wsUrl);
+    const ref = new URL(poolUrl.replace(/^ws/, 'http'));
+    ws.hostname = ref.hostname;
+    if (ref.port) ws.port = ref.port;
+    return ws.toString();
+  } catch {
+    return wsUrl;
+  }
+}
+
+/**
+ * Returns a Puppeteer-ready ws:// endpoint for a CDP-family pool URL.
+ * Uses the cache when available; otherwise probes /json/version on demand.
+ * Falls back to coercing the input http://→ws:// if discovery fails.
+ */
+async function resolveCdpWsEndpoint(poolUrl) {
+  const cached = wsEndpointCache.get(poolUrl);
+  if (cached) return cached;
+
+  const httpUrl = poolUrl.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+  try {
+    const res = await fetch(`${httpUrl}/json/version`, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.webSocketDebuggerUrl === 'string' && data.webSocketDebuggerUrl) {
+        const ws = rewriteWsHost(data.webSocketDebuggerUrl, poolUrl);
+        wsEndpointCache.set(poolUrl, ws);
+        return ws;
+      }
+    }
+  } catch { /* fall through to coercion */ }
+
+  // No discovery — assume the input is already a usable ws endpoint.
+  return poolUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+}
+
+/**
  * Resolves the effective driver string.
- * Maps config values: 'auto' → detect, 'lightpanda' → 'cdp', explicit → pass through.
+ * Maps config values: 'auto' → detect, explicit → cache and pass through.
  */
 async function resolveDriver(poolUrl, poolDriver) {
   if (!poolDriver || poolDriver === 'auto') return detectPoolDriver(poolUrl);
-  if (poolDriver === 'lightpanda') return 'cdp';
+  // Cache explicit driver so status calls and connect calls share the same value
+  driverCache.set(poolUrl, poolDriver);
   return poolDriver;
 }
 
@@ -111,7 +206,7 @@ function getCdpSessionCount(poolUrl) {
   return cdpSessions.get(poolUrl)?.size || 0;
 }
 
-async function getPoolStatusViaCDP(poolUrl, maxSessions) {
+async function getPoolStatusViaCDP(poolUrl, maxSessions, driverName = 'cdp') {
   const httpUrl = poolUrl.replace('ws://', 'http://').replace('wss://', 'https://');
   try {
     const res = await fetch(`${httpUrl}/json/version`, { signal: AbortSignal.timeout(3000) });
@@ -124,7 +219,7 @@ async function getPoolStatusViaCDP(poolUrl, maxSessions) {
       maxConcurrent: maxSessions,
       queued: 0,
       sessions: [],
-      driver: 'cdp',
+      driver: driverName,
     };
   } catch (error) {
     return {
@@ -134,7 +229,7 @@ async function getPoolStatusViaCDP(poolUrl, maxSessions) {
       maxConcurrent: maxSessions,
       queued: 0,
       sessions: [],
-      driver: 'cdp',
+      driver: driverName,
     };
   }
 }
@@ -143,9 +238,13 @@ async function getPoolStatusViaCDP(poolUrl, maxSessions) {
 
 async function getPoolStatusViaBrowserless(poolUrl) {
   const httpUrl = poolUrl.replace('ws://', 'http://').replace('wss://', 'https://');
+  // FIX: add timeout. Without it, a hung browserless HTTP response (TCP
+  // open but no body) makes `fetch` wait indefinitely, which freezes
+  // `selectPool()` and looks downstream like a 0ms test timeout. Other
+  // drivers (CDP, Steel) already use AbortSignal.timeout(3000); match it.
   const [pressureRes, sessionsRes] = await Promise.all([
-    fetch(`${httpUrl}/pressure`),
-    fetch(`${httpUrl}/sessions`),
+    fetch(`${httpUrl}/pressure`, { signal: AbortSignal.timeout(3000) }),
+    fetch(`${httpUrl}/sessions`, { signal: AbortSignal.timeout(3000) }),
   ]);
 
   const pressure = pressureRes.ok ? await pressureRes.json() : null;
@@ -299,10 +398,19 @@ export async function connectToPool(poolUrl, retries = 3, delay = 2000) {
     return connectToSteelPool(poolUrl, retries, delay);
   }
 
+  // For CDP-family drivers, resolve the canonical webSocketDebuggerUrl from
+  // /json/version so users can configure either http://host:port or
+  // ws://host:port without knowing the driver-specific path
+  // (Obscura requires /devtools/browser; browserless does not).
+  let wsEndpoint = poolUrl;
+  if (driver === 'obscura' || driver === 'lightpanda' || driver === 'cdp') {
+    wsEndpoint = await resolveCdpWsEndpoint(poolUrl);
+  }
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       return await puppeteer.connect({
-        browserWSEndpoint: poolUrl,
+        browserWSEndpoint: wsEndpoint,
         timeout: 30000,
       });
     } catch (error) {
@@ -331,14 +439,40 @@ export async function disconnectFromPool(browser, poolUrl) {
 /** Generates docker-compose.yml and starts the pool */
 export function startPool(config, cwd = null) {
   cwd = cwd || process.cwd();
+  const driver = config.poolDriver || 'auto';
+
+  // Obscura is a single Rust binary — no official image, no compose. Print install/run guidance.
+  if (driver === 'obscura') {
+    const port = config.poolPort || 9222;
+    log('ℹ️', 'Obscura is a local binary, not a Docker pool. Install it once:');
+    log('  ', '  # Linux x86_64');
+    log('  ', '  curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-x86_64-linux.tar.gz');
+    log('  ', '  tar xzf obscura-x86_64-linux.tar.gz');
+    log('  ', '  # macOS Apple Silicon');
+    log('  ', '  curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-aarch64-macos.tar.gz');
+    log('  ', '  # macOS Intel');
+    log('  ', '  curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-x86_64-macos.tar.gz');
+    log('  ', '  # Arch Linux (AUR)');
+    log('  ', '  yay -S obscura-browser');
+    log('ℹ️', `Then run it (in another shell): obscura serve --port ${port} --stealth`);
+    log('ℹ️', `Set poolUrls in e2e.config.js (any of these works):`);
+    log('  ', `  ['http://127.0.0.1:${port}']                     # auto-discovers ws endpoint`);
+    log('  ', `  ['ws://127.0.0.1:${port}/devtools/browser']       # explicit ws endpoint`);
+    log('  ', `Or export CHROME_POOL_URL=http://127.0.0.1:${port}`);
+    return;
+  }
+
   const poolDir = path.join(cwd, '.e2e-pool');
 
   if (!fs.existsSync(poolDir)) {
     fs.mkdirSync(poolDir, { recursive: true });
   }
 
-  // Read template and interpolate variables
-  const templatePath = path.join(__dirname, '..', 'templates', 'docker-compose.yml');
+  // Select template based on poolDriver
+  const templateFile = driver === 'lightpanda'
+    ? 'docker-compose-lightpanda.yml'
+    : 'docker-compose.yml';
+  const templatePath = path.join(__dirname, '..', 'templates', templateFile);
   let template = fs.readFileSync(templatePath, 'utf-8');
   template = template.replace(/\$\{PORT\}/g, String(config.poolPort || 3333));
   template = template.replace(/\$\{MAX_SESSIONS\}/g, String(config.maxSessions || 5));
@@ -355,14 +489,22 @@ export function startPool(config, cwd = null) {
     }
   }
 
-  log('🐳', 'Starting Chrome Pool...');
+  const label = driver === 'lightpanda' ? 'Lightpanda Pool' : 'Chrome Pool';
+  log('🐳', `Starting ${label}...`);
   execFileSync('docker', ['compose', '-f', composePath, 'up', '-d'], { stdio: 'inherit' });
-  log('✅', `Chrome Pool started on port ${config.poolPort || 3333}`);
+  log('✅', `${label} started on port ${config.poolPort || 3333}`);
 }
 
 /** Stops the pool */
 export function stopPool(config, cwd = null) {
   cwd = cwd || process.cwd();
+  const driver = config.poolDriver || 'auto';
+
+  if (driver === 'obscura') {
+    log('ℹ️', 'Obscura runs as a local process — stop it with Ctrl-C in its own shell.');
+    return;
+  }
+
   const composePath = path.join(cwd, '.e2e-pool', 'docker-compose.yml');
   if (!fs.existsSync(composePath)) {
     log('⚠️', '.e2e-pool/docker-compose.yml not found');
@@ -383,7 +525,7 @@ export function restartPool(config, cwd = null) {
 /**
  * Gets pool status using the appropriate driver.
  * @param {string} poolUrl - WebSocket URL of the pool
- * @param {object} [options] - { poolDriver: 'auto'|'browserless'|'lightpanda'|'cdp'|'steel', maxSessions: number }
+ * @param {object} [options] - { poolDriver: 'auto'|'browserless'|'cdp'|'lightpanda'|'obscura'|'steel', maxSessions: number }
  */
 export async function getPoolStatus(poolUrl, options = {}) {
   const { poolDriver = 'auto', maxSessions = 10 } = options;
@@ -394,8 +536,8 @@ export async function getPoolStatus(poolUrl, options = {}) {
     return getPoolStatusViaSteel(poolUrl, maxSessions);
   }
 
-  if (driver === 'cdp') {
-    return getPoolStatusViaCDP(poolUrl, maxSessions);
+  if (driver === 'lightpanda' || driver === 'obscura' || driver === 'cdp') {
+    return getPoolStatusViaCDP(poolUrl, maxSessions, driver);
   }
 
   // Browserless driver

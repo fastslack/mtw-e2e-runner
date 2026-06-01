@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════════════
-   Keyboard Shortcuts (Updated: 1=Watch, 2=Tests, 3=Runs, 4=Live)
+   Keyboard Shortcuts (1=Overview, 2=Live, 3=Run, 4=Investigate, 5=Insights)
    ══════════════════════════════════════════════════════════════════ */
 document.addEventListener('keydown',function(e){
   var tag=document.activeElement.tagName;
@@ -20,16 +20,17 @@ document.addEventListener('keydown',function(e){
     return;
   }
   if(e.key==='?'){$('#kbModal').classList.toggle('open');return}
-  var viewMap={'1':'watch','2':'tests','3':'runs','4':'live'};
+  var viewMap={'1':'overview','2':'live','3':'run','4':'investigate','5':'insights'};
   if(viewMap[e.key]){showView(viewMap[e.key]);return}
   if(e.key==='r'){
-    if(S.view==='watch')refreshWatch();
-    else if(S.view==='tests'){refreshSuites();refreshVariables()}
-    else if(S.view==='runs'){refreshRuns();refreshScreenshots();refreshLearnings()}
+    if(S.view==='overview')refreshWatch();
+    else if(S.view==='run'){refreshSuites();refreshVariables()}
+    else if(S.view==='investigate'){refreshRuns();refreshScreenshots();if(typeof refreshNetwork==='function')refreshNetwork()}
+    else if(S.view==='insights')refreshLearnings();
     else if(S.view==='live')renderLive();
     return;
   }
-  if(S.view==='runs'&&(e.key==='j'||e.key==='k')){
+  if(S.view==='investigate'&&(e.key==='j'||e.key==='k')){
     var visible=_allRunRows.filter(function(item){return item.tr.style.display!=='none'});
     if(!visible.length)return;
     if(e.key==='j')S.highlightedRunIdx=Math.min(S.highlightedRunIdx+1,visible.length-1);
@@ -37,7 +38,7 @@ document.addEventListener('keydown',function(e){
     visible.forEach(function(item,i){if(i===S.highlightedRunIdx){item.tr.classList.add('selected');item.tr.scrollIntoView({block:'nearest'})}else item.tr.classList.remove('selected')});
     return;
   }
-  if(S.view==='runs'&&e.key==='Enter'){
+  if(S.view==='investigate'&&e.key==='Enter'){
     var visible2=_allRunRows.filter(function(item){return item.tr.style.display!=='none'});
     if(S.highlightedRunIdx>=0&&S.highlightedRunIdx<visible2.length){visible2[S.highlightedRunIdx].tr.click()}
     return;

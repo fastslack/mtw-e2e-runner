@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="greenLEDGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#9ef26a" stop-opacity="0.9"/>
+      <stop offset="0.6" stop-color="#9ef26a" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#9ef26a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="greenLEDBody" cx="0.4" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#d4ff9e"/>
+      <stop offset="0.5" stop-color="#9ef26a"/>
+      <stop offset="1" stop-color="#3f8f1f"/>
+    </radialGradient>
+  </defs>
+  <g id="icon">
+    <rect width="512" height="512" rx="80" fill="#0b0c09"/>
+    <rect x="18" y="18" width="476" height="476" rx="64" fill="none" stroke="#3a3b2c" stroke-width="2"/>
+    <g id="panel">
+      <rect x="170" y="64" width="172" height="44" rx="6" fill="#15160f" stroke="#2a2b20" stroke-width="2"/>
+      <text x="256" y="96"
+            font-family="'JetBrains Mono', 'Courier New', monospace"
+            font-weight="700"
+            font-size="26"
+            text-anchor="middle"
+            letter-spacing="8"
+            fill="#ece6d4">TEST</text>
+    </g>
+    <g id="leds">
+      <circle cx="256" cy="180" r="44" fill="#1c0808"/>
+      <circle cx="256" cy="180" r="32" fill="#3a0e0e"/>
+      <circle cx="256" cy="180" r="44" fill="none" stroke="#2a0b0b" stroke-width="4"/>
+      <circle cx="256" cy="288" r="44" fill="#1c1208"/>
+      <circle cx="256" cy="288" r="32" fill="#3a2810"/>
+      <circle cx="256" cy="288" r="44" fill="none" stroke="#2a1c0b" stroke-width="4"/>
+      <circle cx="256" cy="396" r="110" fill="url(#greenLEDGlow)"/>
+      <circle cx="256" cy="396" r="44" fill="url(#greenLEDBody)"/>
+      <circle cx="256" cy="396" r="44" fill="none" stroke="#3f8f1f" stroke-width="4"/>
+      <circle cx="246" cy="386" r="10" fill="#f5f8e8" opacity="0.6"/>
+    </g>
+  </g>
+</svg>

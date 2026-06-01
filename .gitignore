@@ -12,3 +12,9 @@ e2e/screenshots/
 e2e/tests/
 
 docs/screenshots/*.tmp
+
+e2e/screenshots/*.png
+e2e/screenshots/report.json
+
+# Local Claude Code session state
+.claude/

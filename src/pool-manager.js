@@ -11,7 +11,7 @@
  * subsequent calls factor in connections that are in-flight.
  */
 
-import { getPoolStatus, connectToPool } from './pool.js';
+import { getPoolStatus, connectToPool, getCachedDriver } from './pool.js';
 import { log, colors as C } from './logger.js';
 
 function sleep(ms) {
@@ -199,6 +199,51 @@ export async function selectPool(poolUrls, pollIntervalMs = 2000, maxWaitMs = 60
 
   // All unreachable — return first and let connectToPool error
   return poolUrls[0];
+}
+
+/**
+ * Filters pool URLs to those whose detected driver matches `driver`,
+ * with explicit opt-in fallback to `fallbackDriver`.
+ *
+ * Probes all pools once via getAllPoolStatuses() to warm the per-URL driver cache,
+ * then filters by getCachedDriver(url). Pools that are unreachable have a null
+ * detected driver and are excluded.
+ *
+ * Throws if no pool matches the requested driver and no usable fallback exists.
+ * Pool busyness is NOT a fallback trigger — selectPool() handles capacity waits
+ * inside the filtered set.
+ *
+ * @param {string[]} poolUrls
+ * @param {string} driver - Required driver name (e.g. 'obscura')
+ * @param {string|null} fallbackDriver - Explicit fallback driver, or null/undefined for hard error
+ * @param {object} options - { poolDriver, maxSessions } passed to getPoolStatus
+ * @returns {Promise<{urls: string[], driver: string, usedFallback: boolean}>}
+ */
+export async function resolvePoolsForTest(poolUrls, driver, fallbackDriver, options = {}) {
+  // Warm driver cache for all reachable pools
+  await getAllPoolStatuses(poolUrls, options);
+
+  const matching = poolUrls.filter(url => getCachedDriver(url) === driver);
+  if (matching.length > 0) {
+    return { urls: matching, driver, usedFallback: false };
+  }
+
+  if (fallbackDriver) {
+    const fallbackMatching = poolUrls.filter(url => getCachedDriver(url) === fallbackDriver);
+    if (fallbackMatching.length > 0) {
+      log('⚠️', `${C.yellow}No pool with driver=${driver}, falling back to ${fallbackDriver}${C.reset}`);
+      return { urls: fallbackMatching, driver: fallbackDriver, usedFallback: true };
+    }
+    throw new Error(
+      `No pool available for driver "${driver}" and fallback driver "${fallbackDriver}" also unavailable. ` +
+      `Reachable pools: ${poolUrls.map(u => `${u}=${getCachedDriver(u) || 'unreachable'}`).join(', ')}`
+    );
+  }
+
+  throw new Error(
+    `No pool available for driver "${driver}" and no fallbackDriver specified. ` +
+    `Reachable pools: ${poolUrls.map(u => `${u}=${getCachedDriver(u) || 'unreachable'}`).join(', ')}`
+  );
 }
 
 /** Convenience: selectPool + connectToPool in one call. */

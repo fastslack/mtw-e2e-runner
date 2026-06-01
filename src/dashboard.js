@@ -16,12 +16,13 @@ import { createRequire } from 'module';
 import { createWebSocketServer } from './websocket.js';
 import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool } from './pool-manager.js';
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
+import { runModuleAnalysis } from './module-analysis.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
 import { listProjects as dbListProjects, listProjectsWithSparklines as dbListProjectsWithSparklines, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot, getActionHealthScores } from './learner-sqlite.js';
-import { compareImages } from './visual-diff.js';
+import { compareImages, isBlankImage } from './visual-diff.js';
 import { handleSyncRoutes } from './sync/hub-routes.js';
 import { migrateSyncSchema } from './sync/schema.js';
 
@@ -89,11 +90,16 @@ export async function startDashboard(config) {
     const url = new URL(req.url, `http://localhost:${port}`);
     const pathname = url.pathname;
 
-    // CORS — restrict to same-origin (localhost on dashboard port)
+    // CORS — allow same-origin (Origin's host matches the Host header)
+    // and the explicit whitelist (localhost/127.0.0.1 on dashboard port).
     const allowedOrigins = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
     const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
+    if (origin) {
+      let allowOrigin = allowedOrigins.includes(origin);
+      if (!allowOrigin && req.headers.host) {
+        try { allowOrigin = new URL(origin).host === req.headers.host; } catch { /* */ }
+      }
+      if (allowOrigin) res.setHeader('Access-Control-Allow-Origin', origin);
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Mcp-Session-Id');
@@ -356,6 +362,28 @@ export async function startDashboard(config) {
         return;
       }
 
+      // API: DB — scan a project's screenshots for blank (uniform-color) images
+      const blankScanMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/screenshots\/blank-scan$/);
+      if (blankScanMatch) {
+        try {
+          const projectId = parseInt(blankScanMatch[1], 10);
+          const dir = dbGetProjectScreenshotsDir(projectId);
+          if (!dir || !fs.existsSync(dir)) { jsonResponse(res, { blanks: [], scanned: 0 }); return; }
+          // Only PNGs are decodable; other formats are skipped (never flagged).
+          const files = fs.readdirSync(dir).filter(f => /\.png$/i.test(f)).sort();
+          const blanks = [];
+          for (const f of files) {
+            const fp = path.join(dir, f);
+            const r = isBlankImage(fp);
+            if (r.blank) blanks.push({ name: f, path: fp, color: r.color, brightness: r.brightness });
+          }
+          jsonResponse(res, { blanks, scanned: files.length });
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
       // API: DB — project suites list
       const projectSuitesMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/suites$/);
       if (projectSuitesMatch) {
@@ -458,6 +486,68 @@ export async function startDashboard(config) {
         return;
       }
 
+      // API: Tools — proxy to MCP tool handlers
+      // Generic helper: resolve projectId from POST body → cwd, then call dispatchTool.
+      if (pathname.startsWith('/api/tool/') && req.method === 'POST') {
+        const tool = pathname.replace('/api/tool/', '');
+        const map = { capture: 'e2e_capture', analyze: 'e2e_analyze', 'issue-verify': 'e2e_issue' };
+        const mcpName = map[tool];
+        if (!mcpName) { jsonResponse(res, { error: 'Unknown tool: ' + tool }, 400); return; }
+        let body = '';
+        let oversize = false;
+        req.on('data', chunk => { body += chunk; if (body.length > MAX_BODY) { oversize = true; req.destroy(); } });
+        req.on('end', async () => {
+          if (oversize) { jsonResponse(res, { error: 'Payload too large' }, 413); return; }
+          try {
+            const args = body ? JSON.parse(body) : {};
+            if (args.projectId) {
+              const pcwd = dbGetProjectCwd(parseInt(args.projectId, 10));
+              if (pcwd) args.cwd = pcwd;
+              delete args.projectId;
+            }
+            if (tool === 'issue-verify') args.mode = 'verify';
+            const result = await dispatchTool(mcpName, args);
+            // dispatchTool returns MCP-style { content:[{type,text}], isError? }.
+            // Convert to a friendlier shape for the dashboard.
+            let payload = result;
+            if (result && Array.isArray(result.content)) {
+              const text = result.content.map(c => c.text || '').join('\n');
+              let parsed = null; try { parsed = JSON.parse(text); } catch { /* */ }
+              payload = parsed || { text };
+              if (result.isError) payload.error = payload.error || payload.text || 'Tool returned error';
+            }
+            jsonResponse(res, payload);
+          } catch (error) {
+            jsonResponse(res, { error: error.message }, 500);
+          }
+        });
+        return;
+      }
+
+      // API: Tools — module analysis
+      // Reads all tests + modules in a project, finds repeated 3-8-action
+      // subsequences that appear in 2+ tests (extraction candidates), and
+      // counts current module usage. Returns a report ready for the
+      // dashboard to display + a prompt the user can paste into Claude Code
+      // to ask the test-improver agent for deeper analysis.
+      const modAnalysisMatch = pathname.match(/^\/api\/tools\/module-analysis\/(\d+)$/);
+      if (modAnalysisMatch) {
+        try {
+          const projectId = parseInt(modAnalysisMatch[1], 10);
+          const cwd = dbGetProjectCwd(projectId);
+          const testsDir = dbGetProjectTestsDir(projectId);
+          if (!cwd || !testsDir || !fs.existsSync(testsDir)) {
+            jsonResponse(res, { error: 'Project tests directory not found' }, 404);
+            return;
+          }
+          const modulesDir = path.join(cwd, 'e2e', 'modules');
+          jsonResponse(res, runModuleAnalysis(testsDir, modulesDir, projectId));
+        } catch (error) {
+          jsonResponse(res, { error: error.message }, 500);
+        }
+        return;
+      }
+
       // API: DB — project variables (set/upsert)
       if (projectVarsMatch && req.method === 'PUT') {
         let body = '';
@@ -542,6 +632,47 @@ export async function startDashboard(config) {
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
         }
+        return;
+      }
+
+      // API: delete screenshots — { paths: [...] }, each validated against known dirs
+      if (pathname === '/api/screenshots/delete' && req.method === 'POST') {
+        let body = '';
+        let oversize = false;
+        req.on('data', chunk => { body += chunk; if (body.length > MAX_BODY) { oversize = true; req.destroy(); } });
+        req.on('end', () => {
+          if (oversize) { jsonResponse(res, { error: 'Payload too large' }, 413); return; }
+          try {
+            const { paths } = body ? JSON.parse(body) : {};
+            if (!Array.isArray(paths) || !paths.length) { jsonResponse(res, { error: 'Missing paths array' }, 400); return; }
+            // Build the allow-list of directories deletions may touch.
+            const allowedDirs = [path.resolve(config.screenshotsDir)];
+            try {
+              for (const p of dbListProjects()) {
+                const dir = p.screenshots_dir || path.join(p.cwd, 'e2e', 'screenshots');
+                allowedDirs.push(path.resolve(dir));
+              }
+            } catch { /* db may be unavailable */ }
+            let deleted = 0;
+            const failed = [];
+            for (const raw of paths) {
+              try {
+                if (typeof raw !== 'string' || !path.isAbsolute(raw)) { failed.push({ path: raw, error: 'Invalid path' }); continue; }
+                const real = fs.realpathSync(raw);
+                const inAllowed = allowedDirs.some(dir => real.startsWith(dir + path.sep) || real === dir);
+                if (!inAllowed) { failed.push({ path: raw, error: 'Access denied' }); continue; }
+                if (!/\.(png|jpg|jpeg|gif|webp)$/i.test(real)) { failed.push({ path: raw, error: 'Not an image' }); continue; }
+                fs.unlinkSync(real);
+                deleted++;
+              } catch (e) {
+                failed.push({ path: raw, error: e.message });
+              }
+            }
+            jsonResponse(res, { deleted, failed });
+          } catch (error) {
+            jsonResponse(res, { error: error.message }, 500);
+          }
+        });
         return;
       }
 

@@ -67,8 +67,8 @@ function renderRunsHealthBanner(){
         el('div',{className:'hb-lbl'},'Top Error ('+h.topErrorPattern.count+'x)')
       ]));
     }
-    banner.appendChild(el('div',{className:'hb-link',onclick:function(){var lb=$('#runsTabLearnings');if(lb)lb.click()}},[
-      el('span',null,'\u2192 View Learnings')
+    banner.appendChild(el('div',{className:'hb-link',onclick:function(){showView('insights')}},[
+      el('span',null,'\u2192 View Insights')
     ]));
   }).catch(function(){});
 }
@@ -275,53 +275,121 @@ function loadDetailInline(id,detailTr){
         body.appendChild(errDiv);
       }
 
-      // Actions panel
+      // Storyline \u2014 unified per-step cards with thumbnails, narrative, duration bar
       if(r.actions&&r.actions.length){
         var passCount=r.actions.filter(function(a){return a.success}).length;
         var failCount=r.actions.length-passCount;
-        var actHead=el('div',{className:'rd-net-head'},[
+        var maxDur=Math.max.apply(null,r.actions.map(function(a){return a.duration||0}).concat([1]));
+        var hashes=r.screenshotHashes||{};
+
+        // "Play replay" button \u2014 only shown if at least one step has a screenshot
+        var hasFrames=r.actions.some(function(a){return a.autoScreenshot||a.screenshot})||(!r.success&&r.errorScreenshot);
+        var replayBtn=hasFrames?el('button',{
+          className:'rd-replay-btn',
+          title:'Replay step-by-step',
+          onclick:function(e){e.stopPropagation();openReplay(r.actions,r)}
+        },'\u25B6 Replay'):null;
+        var slHead=el('div',{className:'rd-net-head open'},[
           el('span',{className:'net-arrow'},'\u25B6'),
-          el('span',{className:'net-title'},'Actions'),
+          el('span',{className:'net-title'},'Storyline'),
           el('div',{className:'net-stats'},[
             el('span',{className:'net-stat'},[document.createTextNode('Steps: '),el('strong',null,String(r.actions.length))]),
-            failCount?el('span',{className:'net-stat has-err'},[document.createTextNode('Failed: '),el('strong',null,String(failCount))]):null
-          ])
+            failCount?el('span',{className:'net-stat has-err'},[document.createTextNode('Failed: '),el('strong',null,String(failCount))]):null,
+            el('span',{className:'net-stat'},[document.createTextNode('Passed: '),el('strong',null,String(passCount))])
+          ]),
+          replayBtn
         ]);
-        var actBody=el('div',{className:'rd-net-body',style:'padding:8px 14px'});
-        r.actions.forEach(function(a){
+        var slBody=el('div',{className:'storyline'});
+
+        r.actions.forEach(function(a,idx){
+          var stepNum=String(idx+1).padStart(2,'0');
           var label=a.narrative||a.type;
           var durText=a.duration!=null?dur(a.duration):'';
-          var retryBadge=null;
-          if(a.actionRetries&&a.actionRetries>0){
-            retryBadge=el('span',{className:'badge flaky',style:'font-size:9px;padding:1px 5px'},'\u21BB x'+a.actionRetries);
-          }
-          actBody.appendChild(el('div',{className:'lt-step'},[
-            el('span',{className:'step-icon '+(a.success?'ok':'fail')},a.success?'\u2714':'\u2718'),
-            el('span',{className:'step-detail',style:'flex:1'},label),
-            retryBadge,
-            el('span',{className:'step-dur'},durText)
-          ]));
-        });
-        actHead.addEventListener('click',function(){actHead.classList.toggle('open')});
-        body.appendChild(el('div',{className:'rd-net-panel'},[actHead,actBody]));
-      }
+          var durPct=a.duration?Math.max(2,Math.round((a.duration/maxDur)*100)):0;
+          var stateCls=a.success?'pass':'fail';
+          var icon=a.success?'\u2714':'\u2718';
 
-      // Screenshots
-      var shots=[];
-      var hashes=r.screenshotHashes||{};
-      (r.screenshots||[]).forEach(function(p){shots.push({path:p,label:p.split('/').pop(),type:'screenshot',hash:hashes[p]||null})});
-      if(r.errorScreenshot){shots.push({path:r.errorScreenshot,label:r.errorScreenshot.split('/').pop(),type:'error',hash:hashes[r.errorScreenshot]||null})}
-      if(shots.length){
-        var shotsWrap=el('div',{className:'rd-shots'});
-        shots.forEach(function(s){
-          var src='/api/image?path='+encodeURIComponent(s.path);
-          var img=document.createElement('img');img.src=src;img.alt=s.label;img.loading='lazy';
-          var capEl=el('div',{className:'rd-shot-cap'},[el('span',{className:'cap-name'},s.label)]);
-          if(s.hash){capEl.appendChild(createHashBadge(s.hash))}
-          else{(function(c,fp){ssHash(fp).then(function(h){c.appendChild(createHashBadge(h))})})(capEl,s.path)}
-          shotsWrap.appendChild(el('div',{className:'rd-shot'+(s.type==='error'?' err-shot':''),onclick:function(e){e.stopPropagation();openModal(src)}},[img,capEl]));
+          // Thumbnail: prefer autoScreenshot, fall back to action's own screenshot
+          var thumbPath=a.autoScreenshot||a.screenshot||null;
+          var thumb;
+          if(thumbPath){
+            var src='/api/image?path='+encodeURIComponent(thumbPath);
+            var img=document.createElement('img');
+            img.src=src;img.alt=label;img.loading='lazy';
+            thumb=el('div',{className:'sl-thumb',onclick:function(e){e.stopPropagation();openModal(src)}},[img]);
+          }else{
+            thumb=el('div',{className:'sl-thumb sl-thumb-empty',title:'No screenshot for this step'},[el('span',null,'\u25A1')]);
+          }
+
+          // Param chips (selector / text / value)
+          var chips=el('div',{className:'sl-chips'});
+          if(a.selector)chips.appendChild(el('span',{className:'sl-chip sl-chip-sel'},[el('span',{className:'sl-chip-k'},'sel'),el('span',{className:'sl-chip-v'},a.selector)]));
+          if(a.text)chips.appendChild(el('span',{className:'sl-chip'},[el('span',{className:'sl-chip-k'},'text'),el('span',{className:'sl-chip-v'},String(a.text))]));
+          if(a.value!=null&&a.value!=='')chips.appendChild(el('span',{className:'sl-chip'},[el('span',{className:'sl-chip-k'},'val'),el('span',{className:'sl-chip-v'},String(a.value))]));
+
+          var retryBadge=(a.actionRetries&&a.actionRetries>0)?el('span',{className:'sl-retry'},'\u21BB '+a.actionRetries):null;
+
+          var hashBadge=null;
+          if(thumbPath){
+            if(hashes[thumbPath]){hashBadge=createHashBadge(hashes[thumbPath])}
+            else{(function(holder,fp){ssHash(fp).then(function(h){if(h)holder.appendChild(createHashBadge(h))})})}
+          }
+
+          var titleRow=el('div',{className:'sl-title'},[
+            el('span',{className:'sl-num'},stepNum),
+            el('span',{className:'sl-icon '+stateCls},icon),
+            el('span',{className:'sl-type'},a.type),
+            el('span',{className:'sl-narr'},label),
+            retryBadge,
+            el('span',{className:'sl-dur'},durText)
+          ]);
+
+          var durBar=el('div',{className:'sl-bar'},[el('div',{className:'sl-bar-fill '+stateCls,style:'width:'+durPct+'%'})]);
+
+          var info=el('div',{className:'sl-info'},[
+            titleRow,
+            chips.children.length?chips:null,
+            durBar
+          ]);
+
+          var card=el('div',{className:'sl-step '+stateCls},[thumb,info]);
+
+          if(!a.success&&a.error){
+            var errBlock=el('div',{className:'sl-err'},[
+              el('span',{className:'sl-err-tag'},'ERROR'),
+              el('span',{className:'sl-err-msg'},String(a.error))
+            ]);
+            card.appendChild(errBlock);
+          }
+
+          slBody.appendChild(card);
         });
-        body.appendChild(shotsWrap);
+
+        // Final failure context card (uses test-level errorScreenshot if present)
+        if(!r.success&&r.errorScreenshot){
+          var errSrc='/api/image?path='+encodeURIComponent(r.errorScreenshot);
+          var errImg=document.createElement('img');errImg.src=errSrc;errImg.alt='Failure context';errImg.loading='lazy';
+          var errCard=el('div',{className:'sl-step sl-final-err'},[
+            el('div',{className:'sl-thumb sl-thumb-err',onclick:function(e){e.stopPropagation();openModal(errSrc)}},[errImg]),
+            el('div',{className:'sl-info'},[
+              el('div',{className:'sl-title'},[
+                el('span',{className:'sl-num'},'\u26A0'),
+                el('span',{className:'sl-icon fail'},'\u2718'),
+                el('span',{className:'sl-narr sl-final-msg'},'Page state at failure')
+              ]),
+              r.error?el('div',{className:'sl-err'},[el('span',{className:'sl-err-tag'},'TEST FAILED'),el('span',{className:'sl-err-msg'},String(r.error))]):null
+            ])
+          ]);
+          slBody.appendChild(errCard);
+        }
+
+        slHead.addEventListener('click',function(){slHead.classList.toggle('open');slBody.classList.toggle('hidden')});
+        body.appendChild(el('div',{className:'rd-net-panel rd-storyline-panel'},[slHead,slBody]));
+      } else if(r.errorScreenshot){
+        // No actions but we have an error screenshot \u2014 show it standalone
+        var errSrcOnly='/api/image?path='+encodeURIComponent(r.errorScreenshot);
+        var errImgOnly=document.createElement('img');errImgOnly.src=errSrcOnly;errImgOnly.loading='lazy';
+        body.appendChild(el('div',{className:'sl-final-err-standalone',onclick:function(e){e.stopPropagation();openModal(errSrcOnly)}},[errImgOnly]));
       }
 
       // Console logs
@@ -401,10 +469,62 @@ function refreshScreenshots(){
       var img=document.createElement('img');img.src=src;img.alt=f.name;img.loading='lazy';
       var capEl=el('div',{className:'cap'},[el('span',{className:'cap-name'},f.name)]);
       (function(c,fp){ssHash(fp).then(function(h){c.appendChild(createHashBadge(h))})})(capEl,f.path);
-      gal.appendChild(el('div',{className:'gallery-item',onclick:function(){openModal(src)}},[img,capEl]));
+      gal.appendChild(el('div',{className:'gallery-item','data-path':f.path,onclick:function(){openModal(src)}},[img,capEl]));
     });
+    resetBlankBar();
   }).catch(function(){});
 }
+
+/* ── Blank screenshot scan / delete ── */
+function resetBlankBar(){
+  var bar=$('#ssBlankBar');if(bar)bar.hidden=true;
+  $$('#screenshotGallery .gallery-item.blank-flagged').forEach(function(it){it.classList.remove('blank-flagged')});
+  S.blankPaths=null;
+}
+function scanBlankScreenshots(){
+  if(!S.project){showToast('Select a project first','error');return}
+  var btn=$('#ssScanBlankBtn');btn.disabled=true;var prev=btn.textContent;btn.textContent='Scanning…';
+  api('/api/db/projects/'+S.project+'/screenshots/blank-scan').then(function(data){
+    btn.disabled=false;btn.textContent=prev;
+    var blanks=(data&&data.blanks)||[];
+    $$('#screenshotGallery .gallery-item.blank-flagged').forEach(function(it){it.classList.remove('blank-flagged')});
+    if(!blanks.length){
+      S.blankPaths=null;$('#ssBlankBar').hidden=true;
+      showToast('No blank images found ('+((data&&data.scanned)||0)+' scanned)','info');
+      return;
+    }
+    S.blankPaths=blanks.map(function(b){return b.path});
+    var found=0;
+    S.blankPaths.forEach(function(p){
+      var item=$('#screenshotGallery .gallery-item[data-path="'+(window.CSS&&CSS.escape?CSS.escape(p):p)+'"]');
+      if(item){item.classList.add('blank-flagged');found++}
+    });
+    $('#ssBlankMsg').textContent=blanks.length+' blank image'+(blanks.length===1?'':'s')+' of '+data.scanned+' scanned';
+    $('#ssBlankBar').hidden=false;
+  }).catch(function(){
+    btn.disabled=false;btn.textContent=prev;
+    showToast('Blank scan failed','error');
+  });
+}
+function deleteBlankScreenshots(){
+  if(!S.blankPaths||!S.blankPaths.length)return;
+  var btn=$('#ssBlankDeleteBtn');btn.disabled=true;var prev=btn.textContent;btn.textContent='Deleting…';
+  fetch('/api/screenshots/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:S.blankPaths})})
+    .then(function(r){return r.json()}).then(function(res){
+      btn.disabled=false;btn.textContent=prev;
+      if(res&&res.error){showToast('Delete failed: '+res.error,'error');return}
+      var n=res.deleted||0,failed=(res.failed&&res.failed.length)||0;
+      showToast('Deleted '+n+' blank image'+(n===1?'':'s')+(failed?(' · '+failed+' failed'):''),failed?'error':'success');
+      resetBlankBar();
+      refreshScreenshots();
+    }).catch(function(){
+      btn.disabled=false;btn.textContent=prev;
+      showToast('Delete failed','error');
+    });
+}
+$('#ssScanBlankBtn').addEventListener('click',scanBlankScreenshots);
+$('#ssBlankDeleteBtn').addEventListener('click',deleteBlankScreenshots);
+$('#ssBlankCancelBtn').addEventListener('click',resetBlankBar);
 
 function searchByHash(){
   var container=$('#ssSearchResult');
@@ -674,3 +794,225 @@ $('#btnExportLearnings').addEventListener('click',function(){
 /* ── Modal ── */
 function openModal(src){$('#modalImg').src=src;$('#modal').classList.add('open')}
 $('#modal').addEventListener('click',function(){$('#modal').classList.remove('open')});
+
+/* ══════════════════════════════════════════════════════════════════
+   Screenshot Replay Player — plays a run's per-step screenshots
+   as a video. Pulls frames from r.actions[].autoScreenshot|screenshot.
+   ══════════════════════════════════════════════════════════════════ */
+var REPLAY={frames:[],idx:0,playing:false,speed:1,timer:null,frameMs:1000};
+
+function buildReplayFrames(actions,run){
+  var frames=[];
+  (actions||[]).forEach(function(a,i){
+    var path=a.autoScreenshot||a.screenshot||null;
+    frames.push({
+      idx:i,
+      path:path,
+      src:path?'/api/image?path='+encodeURIComponent(path):null,
+      type:a.type||'',
+      narr:a.narrative||a.type||'',
+      duration:a.duration||0,
+      success:!!a.success,
+    });
+  });
+  if(run&&!run.success&&run.errorScreenshot){
+    frames.push({
+      idx:frames.length,
+      path:run.errorScreenshot,
+      src:'/api/image?path='+encodeURIComponent(run.errorScreenshot),
+      type:'failure',
+      narr:'Page state at failure',
+      duration:0,
+      success:false,
+    });
+  }
+  return frames;
+}
+
+function openReplay(actions,run){
+  REPLAY.frames=buildReplayFrames(actions,run);
+  if(!REPLAY.frames.length){showToast&&showToast('No screenshots to replay','warn');return}
+  REPLAY.idx=0;REPLAY.playing=false;
+  $('#replayModal').classList.add('open');
+  $('#replayModal').setAttribute('aria-hidden','false');
+  renderReplayFrame();
+  // Auto-start playback for the "video" feel
+  toggleReplayPlay(true);
+}
+
+function closeReplay(){
+  stopReplayTimer();
+  $('#replayModal').classList.remove('open');
+  $('#replayModal').setAttribute('aria-hidden','true');
+  // Free image src to avoid lingering downloads
+  $('#replayImg').src='';
+}
+
+function renderReplayFrame(){
+  var f=REPLAY.frames[REPLAY.idx];if(!f)return;
+  var modal=$('#replayModal');
+  var img=$('#replayImg');
+  if(f.src){
+    modal.classList.remove('empty');
+    if(img.src!==location.origin+f.src&&img.src!==f.src)img.src=f.src;
+  }else{
+    modal.classList.add('empty');
+    img.src='';
+  }
+  $('#replayStepNum').textContent=(REPLAY.idx+1)+' / '+REPLAY.frames.length;
+  $('#replayStepType').textContent=f.type;
+  $('#replayStepNarr').textContent=f.narr;
+  var pct=REPLAY.frames.length>1?(REPLAY.idx/(REPLAY.frames.length-1))*100:100;
+  $('#replayProgressFill').style.width=pct+'%';
+}
+
+function scheduleNextReplayFrame(){
+  stopReplayTimer();
+  if(!REPLAY.playing)return;
+  if(REPLAY.idx>=REPLAY.frames.length-1){toggleReplayPlay(false);return}
+  // Uniform pacing: 1 frame per second at 1x, scaled by speed.
+  var ms=REPLAY.frameMs/REPLAY.speed;
+  REPLAY.timer=setTimeout(function(){
+    REPLAY.idx++;
+    renderReplayFrame();
+    scheduleNextReplayFrame();
+  },ms);
+}
+
+function stopReplayTimer(){if(REPLAY.timer){clearTimeout(REPLAY.timer);REPLAY.timer=null}}
+
+function toggleReplayPlay(forceState){
+  REPLAY.playing=typeof forceState==='boolean'?forceState:!REPLAY.playing;
+  // If we're at the last frame and user hits play, restart from 0
+  if(REPLAY.playing&&REPLAY.idx>=REPLAY.frames.length-1){REPLAY.idx=0;renderReplayFrame()}
+  var btn=$('#replayPlay');if(btn)btn.innerHTML=REPLAY.playing?'❙❙':'▶';
+  if(REPLAY.playing)scheduleNextReplayFrame();else stopReplayTimer();
+}
+
+function stepReplay(delta){
+  stopReplayTimer();
+  REPLAY.idx=Math.max(0,Math.min(REPLAY.frames.length-1,REPLAY.idx+delta));
+  renderReplayFrame();
+  if(REPLAY.playing)scheduleNextReplayFrame();
+}
+
+function setReplaySpeed(s){
+  REPLAY.speed=s;
+  document.querySelectorAll('.replay-speed-btn').forEach(function(b){
+    b.classList.toggle('active',parseFloat(b.dataset.speed)===s);
+  });
+  if(REPLAY.playing){stopReplayTimer();scheduleNextReplayFrame()}
+}
+
+// Wire up controls
+$('#replayPlay').addEventListener('click',function(){toggleReplayPlay()});
+$('#replayPrev').addEventListener('click',function(){stepReplay(-1)});
+$('#replayNext').addEventListener('click',function(){stepReplay(1)});
+$('#replayClose').addEventListener('click',closeReplay);
+document.querySelectorAll('.replay-speed-btn').forEach(function(b){
+  b.addEventListener('click',function(){setReplaySpeed(parseFloat(b.dataset.speed))});
+});
+document.addEventListener('keydown',function(e){
+  if(!$('#replayModal').classList.contains('open'))return;
+  if(e.key==='Escape'){closeReplay()}
+  else if(e.key===' '){e.preventDefault();toggleReplayPlay()}
+  else if(e.key==='ArrowLeft'){stepReplay(-1)}
+  else if(e.key==='ArrowRight'){stepReplay(1)}
+});
+// Click on stage advances; click outside the image closes
+$('#replayModal').addEventListener('click',function(e){
+  if(e.target&&e.target.id==='replayModal')closeReplay();
+});
+
+// Expose to the renderer below so the storyline header can wire its button
+window.openReplay=openReplay;
+
+/* ══════════════════════════════════════════════════════════════════
+   Network tab — cross-run network query (Investigate › Network)
+   ══════════════════════════════════════════════════════════════════ */
+function refreshNetwork(){
+  var box=$('#netResults');var empty=$('#networkEmpty');
+  if(!box)return;
+  box.textContent='';
+  box.appendChild(el('div',{style:'padding:20px;text-align:center;color:var(--text3);font-size:11px'},'Loading...'));
+  var runsUrl=S.project?'/api/db/projects/'+S.project+'/runs':'/api/db/runs';
+  api(runsUrl).then(function(runs){
+    if(!Array.isArray(runs)||runs.length===0){
+      box.textContent='';if(empty)empty.style.display='block';return;
+    }
+    if(empty)empty.style.display='none';
+    var top=runs.slice(0,30);
+    var promises=top.map(function(r){
+      return api('/api/db/runs/'+r.id+'/network-logs').catch(function(){return []}).then(function(logs){
+        return {run:r,logs:Array.isArray(logs)?logs:[]};
+      });
+    });
+    Promise.all(promises).then(function(results){renderNetworkResults(box,results)});
+  }).catch(function(){box.textContent='';if(empty)empty.style.display='block'});
+}
+
+function renderNetworkResults(box,results){
+  var statusFilter=$('#netStatusFilter')?$('#netStatusFilter').value:'errors';
+  var urlFilter=($('#netUrlFilter')?$('#netUrlFilter').value:'').toLowerCase().trim();
+  var rows=[];
+  results.forEach(function(r){
+    r.logs.forEach(function(n){
+      var s=n.status||0;
+      var keep=true;
+      if(statusFilter==='errors')keep=s>=400||s===0;
+      else if(statusFilter==='slow')keep=(n.duration||0)>=1000;
+      if(keep&&urlFilter&&(n.url||'').toLowerCase().indexOf(urlFilter)<0)keep=false;
+      if(keep)rows.push({run:r.run,n:n});
+    });
+  });
+  box.textContent='';
+  if(rows.length===0){
+    box.appendChild(el('div',{style:'padding:30px;text-align:center;color:var(--text3);font-size:11px'},'No matching network records.'));
+    return;
+  }
+  rows.sort(function(a,b){return (b.n.duration||0)-(a.n.duration||0)});
+  var head=el('div',{className:'net-row net-head'},[
+    el('span',{className:'net-col-run'},'Run'),
+    el('span',{className:'net-col-method'},'Method'),
+    el('span',{className:'net-col-status'},'Status'),
+    el('span',{className:'net-col-url'},'URL'),
+    el('span',{className:'net-col-dur'},'Duration')
+  ]);
+  box.appendChild(head);
+  rows.slice(0,200).forEach(function(rr){
+    var n=rr.n;var s=n.status||0;
+    var sCls=s===0?'s5xx':s<300?'s2xx':s<400?'s3xx':s<500?'s4xx':'s5xx';
+    var mCls=(n.method||'GET').toLowerCase();
+    var row=el('div',{className:'net-row clickable',onclick:function(){
+      showView('investigate');
+      var btn=document.querySelector('.tab-btn[data-tab="runsTabHistory"]');if(btn)btn.click();
+    }},[
+      el('span',{className:'net-col-run'},'#'+rr.run.id),
+      el('span',{className:'net-col-method m-'+mCls},n.method||'GET'),
+      el('span',{className:'net-col-status st-'+sCls},String(s||'ERR')),
+      el('span',{className:'net-col-url',title:n.url||''},n.url||''),
+      el('span',{className:'net-col-dur'},dur(n.duration||0))
+    ]);
+    box.appendChild(row);
+  });
+  if(rows.length>200){
+    box.appendChild(el('div',{style:'padding:10px;text-align:center;color:var(--text3);font-size:11px'},'Showing 200 of '+rows.length+' results'));
+  }
+}
+
+(function(){
+  var btn=$('#btnRefreshNetwork');if(btn)btn.addEventListener('click',refreshNetwork);
+  var sel=$('#netStatusFilter');if(sel)sel.addEventListener('change',refreshNetwork);
+  var inp=$('#netUrlFilter');
+  if(inp){
+    var deb;
+    inp.addEventListener('input',function(){clearTimeout(deb);deb=setTimeout(refreshNetwork,200)});
+  }
+  // Lazy: only fetch first time the Network tab is clicked
+  var netTabBtn=document.querySelector('.tab-btn[data-tab="investigateTabNetwork"]');
+  if(netTabBtn){
+    netTabBtn.addEventListener('click',function(){
+      if(!netTabBtn.dataset.loaded){netTabBtn.dataset.loaded='1';refreshNetwork()}
+    });
+  }
+})();

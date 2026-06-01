@@ -13,7 +13,7 @@ Complete catalog of all action types supported by @matware/e2e-runner.
 
 | Action | Fields | Description |
 |--------|--------|-------------|
-| `click` | `selector` OR `text` | Click by CSS selector or by visible text content. Text search covers: `button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6, dd, dt`. |
+| `click` | `selector` OR `text` | Click by CSS selector or by visible text content. Text search covers: `button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6, dd, dt`. Optional text-mode refinements: `scope: "dialog"` (only match inside an open `[role="dialog"]`/`.MuiDialog-root`), `visible: true` (skip hidden/zero-size matches — implied by `scope:dialog`), `last: true` (click the LAST match instead of the first). Prefer these over hand-rolled `evaluate` button-by-text scans. |
 | `type` / `fill` | `selector`, `value` | Triple-clicks to select all, then Backspace to clear, then types with 20ms delay per character. |
 | `select` | `selector`, `value` | Select an `<option>` value in a `<select>` element. |
 | `clear` | `selector` | Triple-click + Backspace to clear an input field. |
@@ -25,9 +25,10 @@ Complete catalog of all action types supported by @matware/e2e-runner.
 
 | Action | Fields | Description |
 |--------|--------|-------------|
-| `type_react` | `selector`, `value` | Types into React controlled inputs using native value setter. Dispatches `input` + `change` events so React state updates. Supports `<input>` and `<textarea>`. |
+| `type_react` | `selector`, `value`, `blur` (optional), `waitAfter` (optional ms) | Types into React controlled inputs using native value setter. Focuses, then dispatches `input` + `change` events so React state updates. Supports `<input>` and `<textarea>`. `blur: true` commits on blur (for fields that validate on blur); `waitAfter: "<ms>"` waits after (e.g. for debounced autocomplete). Prefer over inline `setNativeValue` evaluates. |
 | `click_regex` | `text` (regex), `selector` (optional), `value` (`"last"` optional) | Click element whose textContent matches regex (case-insensitive). Default: first match. `value: "last"` for last match. `selector` scopes the search. |
 | `click_option` | `text` | Click a `[role="option"]` element by text — for autocomplete/select dropdowns. Waits for option to appear. |
+| `select_combobox` | `selector` (optional, default `input[role='combobox']`), `text` (option to pick), `filter` (optional typed text), `openWait`/`filterWait`/`waitAfter` (optional ms) | Open a MUI Autocomplete/Select, optionally type `filter` to narrow, then click the option matching `text` (case-insensitive substring). Falls back across `[role="option"]`, `.MuiAutocomplete-option`, `li.MuiMenuItem-root`. Replaces the verbose open-input + setNativeValue + scan-options `evaluate` pattern. |
 | `focus_autocomplete` | `text` (label text) | Focus an autocomplete input by label. Supports MUI `.MuiAutocomplete-root` and `[role="combobox"]`. |
 | `click_chip` | `text` | Click a chip/tag element by text. Searches `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
 
@@ -75,7 +76,7 @@ Complete catalog of all action types supported by @matware/e2e-runner.
 |--------|--------|-------------|
 | `get_text` | `selector` | Returns `{ value: textContent.trim() }`. Non-assertion — never fails. |
 | `screenshot` | `value` (filename, optional) | Captures screenshot. Filename gets timestamp suffix for uniqueness. |
-| `wait` | `selector` OR `text` OR `value` (ms) | Wait for selector, text on page, or fixed delay. |
+| `wait` | `selector` OR `text` OR `gone` OR `value` (ms) | Prefer **conditions over fixed sleeps**: `{ selector }` waits for it to appear, `{ text }` waits for text to appear, **`{ gone: "<css>" }`** waits until a selector disappears/hides (spinner, closing dialog), `{ gone: true, selector|text }` is the explicit form, `{ value: "<ms>" }` is a fixed delay (last resort). Replacing `wait` sleeps with `gone`/`selector` makes suites faster and less flaky. |
 | `wait_network_idle` | `value` (idle ms, default 500), `timeout` (max wait ms, default 30000) | Waits for all network requests to complete. Uses Puppeteer's `page.waitForNetworkIdle()`. Useful after SPA page transitions or data loading. |
 | `evaluate` | `value` (JS code) | Run JavaScript in browser context. See **Strict Evaluate** below. |
 | `clear_cookies` | `value` (origin, optional) | Clears cookies, localStorage, sessionStorage for origin. |
@@ -107,8 +108,25 @@ Delay between retries: `actionRetryDelay` config (default 500ms).
 ### React input + autocomplete flow
 ```json
 { "type": "focus_autocomplete", "text": "Category" },
-{ "type": "type_react", "selector": "#category-input", "value": "Electr" },
+{ "type": "type_react", "selector": "#category-input", "value": "Electr", "waitAfter": "400" },
 { "type": "click_option", "text": "Electronics" }
+```
+
+### MUI combobox in one action (open + filter + pick)
+```json
+{ "type": "select_combobox", "selector": "[data-cy='specialty'] input", "filter": "cardio", "text": "Cardiología" }
+```
+
+### Condition waits instead of fixed sleeps (faster, less flaky)
+```json
+{ "type": "click", "text": "Guardar" },
+{ "type": "wait", "gone": ".MuiBackdrop-root" },
+{ "type": "wait", "selector": "[data-testid='saved-banner']" }
+```
+
+### Click a button inside an open dialog (no evaluate needed)
+```json
+{ "type": "click", "text": "Iniciar encuentro", "scope": "dialog", "last": true }
 ```
 
 ### Regex click (last match)

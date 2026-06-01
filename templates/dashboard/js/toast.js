@@ -18,7 +18,7 @@ function showToast(message,type,timeout){
 function showEnrichedToast(message,type){
   var container=$('#toastContainer');
   var icons={success:'\u2714',error:'\u2718',info:'\u2139'};
-  var t=el('div',{className:'toast clickable '+type,onclick:function(){showView('runs');var lb=$('#runsTabLearnings');if(lb)lb.click()}},[
+  var t=el('div',{className:'toast clickable '+type,onclick:function(){showView('insights')}},[
     el('span',null,icons[type]||''),
     el('span',null,message)
   ]);
