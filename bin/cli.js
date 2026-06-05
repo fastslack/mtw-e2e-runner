@@ -287,9 +287,32 @@ async function cmdRun() {
     process.exit(1);
   }
 
-  // Verify pool connectivity
+  // Verify pool connectivity — auto-start the Docker-managed pool if none is
+  // reachable, so first-time users don't need a separate `pool start` step.
   log('🔌', `Checking Chrome Pool${poolUrls.length > 1 ? 's' : ''}...`);
-  const pressure = await waitForAnyPool(poolUrls, 30000, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
+  const driverOpts = { poolDriver: config.poolDriver, maxSessions: config.maxSessions };
+  const _driver = config.poolDriver || 'auto';
+  const _dockerManaged = ['auto', 'browserless', 'lightpanda'].includes(_driver);
+  const _autoStart = config.autoStartPool !== false;
+  let pressure;
+  try {
+    pressure = await waitForAnyPool(poolUrls, 5000, driverOpts);
+  } catch {
+    if (_autoStart && _dockerManaged) {
+      log('🐳', `${C.dim}No pool detected — starting Chrome pool via Docker...${C.reset}`);
+      try {
+        startPool(config);
+      } catch (se) {
+        console.error(`${C.red}Could not auto-start the Chrome pool: ${se.message}${C.reset}`);
+        console.error(`${C.dim}Is Docker running? You can also start it manually: ${C.cyan}e2e-runner pool start${C.reset}`);
+        process.exit(1);
+      }
+      pressure = await waitForAnyPool(poolUrls, 45000, driverOpts);
+    } else {
+      console.error(`${C.red}No Chrome Pool available.${C.reset} Driver "${_driver}" is not Docker-managed — start your browser endpoint, then re-run.`);
+      process.exit(1);
+    }
+  }
   log('✅', `Pool ready (${pressure.running}/${pressure.maxConcurrent} sessions, queued: ${pressure.queued})`);
 
   // Wire up live progress to dashboard if running
@@ -495,9 +518,9 @@ ${C.bold}${C.green}E2E structure created!${C.reset}
 
 ${C.bold}Next steps:${C.reset}
   1. Edit ${C.cyan}e2e.config.js${C.reset} with your app URL
-  2. Edit ${C.cyan}e2e/tests/sample.json${C.reset} with your tests
-  3. Start the pool: ${C.cyan}e2e-runner pool start${C.reset}
-  4. Run your tests: ${C.cyan}e2e-runner run --all${C.reset}
+  2. Run your tests: ${C.cyan}e2e-runner run --all${C.reset}  ${C.dim}(starts Chrome automatically)${C.reset}
+
+${C.dim}That's it — the runner spins up the Chrome pool for you on first run.${C.reset}
 `);
 }
 

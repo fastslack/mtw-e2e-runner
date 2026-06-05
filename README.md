@@ -27,83 +27,124 @@
 
 ---
 
-**E2E Runner** is a zero-code browser testing framework where tests are plain JSON files — no Playwright scripts, no Cypress boilerplate, no test framework to learn. Define what to click, type, and assert, and the runner executes it in parallel against a shared Chrome pool.
+**E2E Runner** lets you test your web app without writing test code. Tests are plain JSON — and you don't even have to write that yourself: **just ask Claude Code.**
 
-But what makes it truly different is its **deep AI integration**. With a built-in [MCP server](https://modelcontextprotocol.io/), Claude Code can create tests from a conversation, run them, read the results, capture screenshots, and even visually verify that pages look correct — all without leaving the chat. Paste a GitHub issue URL and get a runnable test back. That's the workflow.
+## 🎬 Write a test by asking — then watch it run
 
-### This is a test
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/demo-live.gif" alt="Live dashboard streaming screenshots as a test suite runs" width="820" />
+  <br/><sub><em>The live dashboard while a suite runs — every step streams a screenshot into the feed, in real time.</em></sub>
+</p>
+
+With the built-in [MCP server](https://modelcontextprotocol.io/), creating a test is a conversation — no docs, no syntax to memorize:
+
+> **You:** *Create an E2E test for the login flow and run it.*
+>
+> **Claude Code:** *writes the test, runs it in a real browser, and reports back —*
+> ✅ `login-flow` passed in 2.3s · screenshot saved · no network errors.
+
+Behind the scenes Claude just wrote and ran this. A test is **just JSON** — an ordered list of what a user does:
 
 ```json
 [
-  {
-    "name": "login-flow",
-    "actions": [
-      { "type": "goto", "value": "/login" },
-      { "type": "type", "selector": "#email", "value": "user@test.com" },
-      { "type": "type", "selector": "#password", "value": "secret" },
-      { "type": "click", "text": "Sign In" },
-      { "type": "assert_text", "text": "Welcome back" },
-      { "type": "screenshot", "value": "logged-in.png" }
-    ]
-  }
+  { "name": "login-flow", "actions": [
+    { "type": "goto", "value": "/login" },
+    { "type": "type", "selector": "#email", "value": "user@test.com" },
+    { "type": "type", "selector": "#password", "value": "secret" },
+    { "type": "click", "text": "Sign In" },
+    { "type": "assert_text", "text": "Welcome back" },
+    { "type": "screenshot", "value": "logged-in.png" }
+  ]}
 ]
 ```
 
-No imports. No `describe`/`it`. No compilation step. Just a JSON file that describes what a user does — and the runner makes it happen.
+No imports, no `describe`/`it`, no build step. If you can read it you can write it — or just ask.
 
----
-
-## Agent Skills
-
-Install E2E testing skills for any coding agent (Claude Code, Cursor, Codex, Copilot, and [40+ more](https://github.com/vercel-labs/skills#supported-agents)):
-
-```bash
-npx skills add fastslack/mtw-e2e-runner
-```
-
-This gives your agent the knowledge to create, run, and debug JSON-driven E2E tests — no documentation reading required.
-
-> Browse all available skills at [skills.sh](https://skills.sh)
-
----
-
-## Getting Started
-
-**Prerequisites:** Node.js >= 20, Docker running, your app on a known port.
-
-### Quickstart
-
-```bash
-npm install --save-dev @matware/e2e-runner
-npx e2e-runner init          # creates e2e/tests/ with a sample test
-npx e2e-runner pool start    # starts Chrome in Docker
-npx e2e-runner run --all     # runs the sample test
-```
-
-Or do it all in one command:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/scripts/quickstart.sh | bash
-```
-
-After setup, edit `e2e.config.js` to set your app's port:
-
-```js
-export default {
-  baseUrl: 'http://host.docker.internal:3000', // change 3000 to your port
-};
-```
-
-> **Why `host.docker.internal`?** Chrome runs inside Docker and can't reach `localhost` on your machine. This hostname bridges the gap. On Linux (Docker Engine, not Desktop), you may need `--add-host=host.docker.internal:host-gateway` or use your LAN IP directly.
-
-### Add Claude Code (optional)
+**Connect it to Claude Code (2 commands):**
 
 ```bash
 claude plugin marketplace add fastslack/mtw-e2e-runner
 claude plugin install e2e-runner@matware
 ```
 
-This gives Claude 17 MCP tools, slash commands, and specialized agents. Just say *"Run all E2E tests"* or *"Create a test for the login flow"*.
+Now say *"create a test for X and run it"* — Claude gets 17 MCP tools, slash commands, and specialized agents.
+
+> Using a different agent (Cursor, Codex, Copilot, [40+ more](https://github.com/vercel-labs/skills#supported-agents))? Install the skill: `npx skills add fastslack/mtw-e2e-runner`
+
+---
+
+## Install — it's tiny
+
+```bash
+npm install --save-dev @matware/e2e-runner
+npx e2e-runner init        # scaffolds e2e/ with a sample test + config
+```
+
+Then pick how to run the browser. **You don't need Docker** unless you want the parallel pool:
+
+### Option 1 · Use the Chrome you already have — no Docker ⭐
+
+Launch any Chromium browser with a debugging port, then point the runner at it:
+
+```bash
+google-chrome --headless=new --remote-debugging-port=9222 &   # or brave / chromium / msedge
+CHROME_POOL_URL=http://localhost:9222 POOL_DRIVER=cdp npx e2e-runner run --all
+```
+
+Or bake it into `e2e.config.js` so you never repeat it:
+
+```js
+export default {
+  baseUrl: 'http://localhost:3000',     // your app — plain localhost, no docker hostname
+  poolUrls: ['http://localhost:9222'],
+  poolDriver: 'cdp',
+};
+```
+
+Nothing to install beyond npm, and `baseUrl` is just `localhost` (the browser is on your machine).
+
+### Option 2 · Obscura — one tiny binary, no Docker
+
+A single ~30 MB binary with built-in anti-detection. Install once, run it, point the runner at it:
+
+```bash
+obscura serve --port 9222 --stealth &
+CHROME_POOL_URL=http://localhost:9222 POOL_DRIVER=obscura npx e2e-runner run --all
+```
+
+`npx e2e-runner pool start` (with `poolDriver: 'obscura'` in your config) prints the exact install command for your OS.
+
+### Option 3 · Docker pool — parallel, for CI & big suites
+
+A shared, queue-managed Chrome pool that runs many tests at once:
+
+```bash
+npx e2e-runner run --all     # the first run auto-starts the Docker pool for you
+```
+
+Requires Docker. Set `baseUrl: 'http://host.docker.internal:3000'` so the containerized Chrome can reach your app.
+
+<details>
+<summary><strong>Why <code>host.docker.internal</code> (Docker option only)?</strong></summary>
+
+With the Docker pool, Chrome runs inside a container, so `localhost` there means the container — not your machine. `host.docker.internal` bridges to your host. On Linux (Docker Engine, not Docker Desktop) add `--add-host=host.docker.internal:host-gateway`, or use your LAN IP. Options 1 & 2 don't have this — the browser is local, so plain `localhost` just works.
+</details>
+
+### Write your first test
+
+Open `e2e/tests/sample.json` — a flow is an ordered list of actions:
+
+```json
+[
+  { "name": "homepage loads", "actions": [
+    { "type": "goto", "value": "/" },
+    { "type": "assert_text", "text": "Welcome" },
+    { "type": "screenshot", "value": "home.png" }
+  ]}
+]
+```
+
+Run it with `npx e2e-runner run --all`. Results — pass/fail, timing, screenshots, network errors — print to your terminal and to the [web dashboard](#web-dashboard) if it's open.
 
 ### Add OpenCode (optional)
 

@@ -10,7 +10,6 @@
   },
   "bin": {
     "e2e-runner": "bin/cli.js",
-    "@matware/e2e-runner": "bin/cli.js",
     "e2e-runner-mcp": "bin/mcp-server.js"
   },
   "files": [
@@ -53,7 +52,8 @@
     "puppeteer-core": "^24.0.0"
   },
   "scripts": {
-    "build:dashboard": "node templates/build-dashboard.js"
+    "build:dashboard": "node templates/build-dashboard.js",
+    "prepublishOnly": "node templates/build-dashboard.js"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -491,7 +491,22 @@ export function startPool(config, cwd = null) {
 
   const label = driver === 'lightpanda' ? 'Lightpanda Pool' : 'Chrome Pool';
   log('🐳', `Starting ${label}...`);
-  execFileSync('docker', ['compose', '-f', composePath, 'up', '-d'], { stdio: 'inherit' });
+  const containerMatch = template.match(/container_name:\s*(\S+)/);
+  const containerName = containerMatch ? containerMatch[1].trim() : null;
+  try {
+    execFileSync('docker', ['compose', '-f', composePath, 'up', '-d'], { stdio: 'inherit' });
+  } catch (err) {
+    // Most common failure: a stopped container with the same name lingers from a
+    // previous run, so `up -d` errors with "container name is already in use".
+    // Recover by removing the stale container and recreating cleanly.
+    if (containerName) {
+      log('🔁', `Recovering: removing stale container ${containerName} and retrying...`);
+      try { execFileSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' }); } catch { /* may not exist */ }
+      execFileSync('docker', ['compose', '-f', composePath, 'up', '-d'], { stdio: 'inherit' });
+    } else {
+      throw err;
+    }
+  }
   log('✅', `${label} started on port ${config.poolPort || 3333}`);
 }
 
