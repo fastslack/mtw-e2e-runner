@@ -21,10 +21,6 @@
   <a href="https://skills.sh"><img src="https://img.shields.io/badge/skills.sh-e2e--testing-ff6600" alt="Agent Skills" /></a>
 </p>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-live-running.png" alt="E2E Runner Dashboard - Live Execution" width="800" />
-</p>
-
 ---
 
 **E2E Runner** lets you test your web app without writing test code. Tests are plain JSON — and you don't even have to write that yourself: **just ask Claude Code.**
