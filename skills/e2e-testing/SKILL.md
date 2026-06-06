@@ -9,7 +9,7 @@ description: Create, run, and debug JSON-driven E2E browser tests with Chrome po
 
 `@matware/e2e-runner` is a JSON-driven E2E test runner. Tests are defined as JSON files with sequential browser actions — no JavaScript test code. Tests run in parallel against a Chrome pool (browserless/chrome via Docker) using Puppeteer.
 
-**Key capabilities:** 13 MCP tools for running tests, creating test files, capturing screenshots, analyzing network traffic, verifying GitHub/GitLab issues, and querying a learning system for stability insights.
+**Key capabilities:** 17 MCP tools for running tests, creating test files, capturing screenshots, analyzing network traffic, verifying GitHub/GitLab issues, and querying a learning system for stability insights.
 
 ## Prerequisites
 

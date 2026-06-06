@@ -375,6 +375,20 @@ export function getScreenshotHashes(filePaths) {
   return result;
 }
 
+/** Batch lookup with metadata: given an array of file paths, returns
+ *  { [path]: { hash, testName, type } } for paths registered in screenshot_hashes. */
+export function getScreenshotMetaByPaths(filePaths) {
+  if (!filePaths || filePaths.length === 0) return {};
+  const d = getDb();
+  const stmt = d.prepare('SELECT hash, file_path, test_name, screenshot_type FROM screenshot_hashes WHERE file_path = ?');
+  const result = {};
+  for (const fp of filePaths) {
+    const row = stmt.get(fp);
+    if (row) result[fp] = { hash: row.hash, testName: row.test_name || null, type: row.screenshot_type || null };
+  }
+  return result;
+}
+
 /** Save a run + its test results in a single transaction. Returns the run's DB id. */
 export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDriver) {
   const d = getDb();
@@ -430,6 +444,7 @@ export function saveRun(projectId, report, runId, suiteName, triggeredBy, poolDr
         error: a.error || undefined,
         actionRetries: a.actionRetries || undefined,
         autoScreenshot: a.autoScreenshot || undefined,
+        dataCapture: a.dataCapture || undefined,
         screenshot: a.result?.screenshot || undefined,
       }));
 

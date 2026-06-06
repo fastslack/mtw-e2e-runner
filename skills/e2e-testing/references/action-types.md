@@ -134,24 +134,6 @@ Delay between retries: `actionRetryDelay` config (default 500ms).
 { "type": "click_regex", "text": "add to cart", "selector": "button", "value": "last" }
 ```
 
-### Form validation assertions
-```json
-{ "type": "assert_attribute", "selector": "input#email", "value": "type=email" },
-{ "type": "assert_attribute", "selector": "button.submit", "value": "disabled" },
-{ "type": "assert_class", "selector": ".nav-item:first-child", "value": "active" },
-{ "type": "assert_input_value", "selector": "#email", "value": "user@example.com" },
-{ "type": "assert_matches", "selector": ".phone", "value": "\\d{3}-\\d{3}-\\d{4}" },
-{ "type": "assert_count", "selector": ".table-row", "value": ">3" }
-```
-
-### Storage operations
-```json
-{ "type": "set_storage", "value": "authToken=eyJhbGciOiJIUzI1NiJ9..." },
-{ "type": "assert_storage", "value": "authToken" },
-{ "type": "set_storage", "value": "theme=dark", "selector": "session" },
-{ "type": "assert_storage", "value": "theme=dark", "selector": "session" }
-```
-
 ### Icon, menu, and contextual clicks
 ```json
 { "type": "click_icon", "value": "edit" },

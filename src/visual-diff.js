@@ -32,11 +32,12 @@ function readChunks(buf) {
   return chunks;
 }
 
-function decodePNG(filePath) {
-  const buf = fs.readFileSync(filePath);
+function decodePNG(input) {
+  // Accepts a file path or an in-memory PNG Buffer (capture-time checks).
+  const buf = Buffer.isBuffer(input) ? input : fs.readFileSync(input);
 
-  if (buf.compare(PNG_SIGNATURE, 0, 8, 0, 8) !== 0) {
-    throw new Error(`Not a valid PNG file: ${filePath}`);
+  if (buf.length < 8 || buf.compare(PNG_SIGNATURE, 0, 8, 0, 8) !== 0) {
+    throw new Error(`Not a valid PNG file: ${Buffer.isBuffer(input) ? '<buffer>' : input}`);
   }
 
   const chunks = readChunks(buf);
@@ -458,19 +459,19 @@ function buildMaskLookup(regions, imgWidth, imgHeight) {
  * frame. Non-PNG or undecodable files are reported as not-blank so they are
  * never deleted by mistake.
  *
- * @param {string} filePath
+ * @param {string|Buffer} input — PNG file path, or an in-memory PNG buffer
  * @param {{tolerance?:number, maxOutlierFraction?:number, maxSamples?:number}} [opts]
  * @returns {{blank:boolean, color?:{r:number,g:number,b:number}, brightness?:number,
  *            width?:number, height?:number, outlierFraction?:number, error?:string}}
  */
-export function isBlankImage(filePath, opts = {}) {
+export function isBlankImage(input, opts = {}) {
   const tolerance = opts.tolerance ?? 10;
   const maxOutlierFraction = opts.maxOutlierFraction ?? 0.005; // ≤0.5% off-color pixels
   const maxSamples = opts.maxSamples ?? 120000;
 
   let img;
   try {
-    img = decodePNG(filePath);
+    img = decodePNG(input);
   } catch (error) {
     return { blank: false, error: error.message };
   }

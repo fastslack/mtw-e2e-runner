@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 import { connectToPool, getCachedDriver, disconnectFromPool } from './pool.js';
 import { getPoolUrls, selectPool, releasePending, resolvePoolsForTest } from './pool-manager.js';
 import { forkAppInstance, destroyFork, isAppPoolEnabled } from './app-pool.js';
@@ -28,9 +29,17 @@ function sleep(ms) {
  * Captures once in memory, writes to disk AND returns base64 so callers
  * can stream the same frame through the live preview WebSocket.
  * Skips silently on any error so it never breaks a test run.
+ *
+ * Content dedup: when the captured frame is byte-identical to the previous
+ * step's frame (tracked per-test via dedupState), reuses the existing file
+ * instead of writing a duplicate, and skips re-streaming the live frame.
+ *
+ * Raw data responses (JSON/plain-text endpoints rendered by Chrome's viewer
+ * as a white page with a single <pre>) are NOT screenshotted — the body is
+ * saved as a minified .json sidecar instead and returned as { dataPath }.
  */
 const NO_AUTO_CAPTURE_TYPES = new Set(['screenshot', 'close_tab']);
-async function tryAutoCaptureStep(page, action, idx, testName, effectiveConfig, alreadyCaptured) {
+async function tryAutoCaptureStep(page, action, idx, testName, effectiveConfig, alreadyCaptured, dedupState) {
   if (!effectiveConfig.autoCaptureSteps) return null;
   if (NO_AUTO_CAPTURE_TYPES.has(action?.type)) return null;
   if (alreadyCaptured) return null;
@@ -40,6 +49,31 @@ async function tryAutoCaptureStep(page, action, idx, testName, effectiveConfig, 
   if (!(await pageHasRenderableContent(page))) return null;
   try {
     const safeName = String(testName).replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+    // Raw JSON/text response? Save the body as data, not as a white JPEG.
+    const rawBody = await page.evaluate(() => {
+      const ct = document.contentType || '';
+      const b = document.body;
+      const lonePre = !!(b && b.children.length === 1 && b.children[0].tagName === 'PRE' && b.children[0].children.length === 0);
+      if ((ct && ct !== 'text/html') || lonePre) return (b && b.innerText) || '';
+      return null;
+    }).catch(() => null);
+    if (rawBody !== null) {
+      let text = rawBody.trim();
+      if (!text) return null;
+      try { text = JSON.stringify(JSON.parse(text)); } catch { /* not JSON — keep raw text */ }
+      const dataBuf = Buffer.from(text, 'utf8');
+      const dataHash = crypto.createHash('sha1').update(dataBuf).digest('hex');
+      if (dedupState && dedupState.hash === dataHash && dedupState.path) {
+        return { dataPath: dedupState.path, deduped: true };
+      }
+      const dataPath = path.join(effectiveConfig.screenshotsDir, `step-${safeName}-${String(idx).padStart(3, '0')}-${Date.now()}.json`);
+      fs.writeFileSync(dataPath, dataBuf);
+      if (dedupState) {
+        dedupState.hash = dataHash;
+        dedupState.path = dataPath;
+      }
+      return { dataPath };
+    }
     const filename = `step-${safeName}-${String(idx).padStart(3, '0')}-${Date.now()}.jpg`;
     const filepath = path.join(effectiveConfig.screenshotsDir, filename);
     const buf = await page.screenshot({
@@ -49,7 +83,16 @@ async function tryAutoCaptureStep(page, action, idx, testName, effectiveConfig, 
       encoding: 'binary',
     });
     if (looksLikeBlankCapture(buf, 'jpeg')) return null;
+    const contentHash = crypto.createHash('sha1').update(buf).digest('hex');
+    if (dedupState && dedupState.hash === contentHash && dedupState.path) {
+      // Same frame as the previous step — reuse the file, don't re-stream
+      return { path: dedupState.path, base64: null, deduped: true };
+    }
     fs.writeFileSync(filepath, buf);
+    if (dedupState) {
+      dedupState.hash = contentHash;
+      dedupState.path = filepath;
+    }
     return { path: filepath, base64: buf.toString('base64') };
   } catch {
     return null;
@@ -356,15 +399,24 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       await executeHookActions(page, hooks.beforeEach, effectiveConfig);
     }
 
-    // Auto-capture baseline screenshot if test has "expect" (BEFORE actions)
+    // Auto-capture baseline screenshot if test has "expect" (BEFORE actions).
+    // Blank frames (about:blank, white unrendered page) are not saved —
+    // they have no comparison value and pollute screenshotsDir.
     if (test.expect && page) {
       try {
-        const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
-        const baselinePath = path.join(effectiveConfig.screenshotsDir, `baseline-${safeName}-${Date.now()}.png`);
-        await page.screenshot({ path: baselinePath, fullPage: true });
-        result.baselineScreenshot = baselinePath;
+        const baseBuf = await page.screenshot({ fullPage: true });
+        if (!looksLikeBlankCapture(baseBuf, 'png')) {
+          const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+          const baselinePath = path.join(effectiveConfig.screenshotsDir, `baseline-${safeName}-${Date.now()}.png`);
+          fs.writeFileSync(baselinePath, baseBuf);
+          result.baselineScreenshot = baselinePath;
+        }
       } catch { /* page may not be ready */ }
     }
+
+    // Tracks the last auto-captured frame (content hash + path) so identical
+    // consecutive step screenshots reuse the same file instead of duplicating
+    const stepCaptureState = { hash: null, path: null };
 
     for (let i = 0; i < test.actions.length; i++) {
       const action = test.actions[i];
@@ -492,14 +544,15 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             actionResult = await executeAction(page, action, effectiveConfig);
           }
           const actionDuration = Date.now() - actionStart;
-          const autoShot = await tryAutoCaptureStep(page, action, i, test.name, effectiveConfig, !!actionResult?.screenshot);
+          const autoShot = await tryAutoCaptureStep(page, action, i, test.name, effectiveConfig, !!actionResult?.screenshot, stepCaptureState);
           const actionEntry = {
             ...action,
             success: true,
             duration: actionDuration,
             result: actionResult,
           };
-          if (autoShot) actionEntry.autoScreenshot = autoShot.path;
+          if (autoShot?.path) actionEntry.autoScreenshot = autoShot.path;
+          if (autoShot?.dataPath) actionEntry.dataCapture = autoShot.dataPath;
           if (attempt > 0) actionEntry.actionRetries = attempt;
           actionEntry.narrative = narrateAction(action, actionEntry);
           result.actions.push(actionEntry);
@@ -516,14 +569,15 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             continue;
           }
           const actionDuration = Date.now() - actionStart;
-          const autoShot = await tryAutoCaptureStep(page, action, i, test.name, effectiveConfig, false);
+          const autoShot = await tryAutoCaptureStep(page, action, i, test.name, effectiveConfig, false, stepCaptureState);
           const failedEntry = {
             ...action,
             success: false,
             duration: actionDuration,
             error: error.message,
           };
-          if (autoShot) failedEntry.autoScreenshot = autoShot.path;
+          if (autoShot?.path) failedEntry.autoScreenshot = autoShot.path;
+          if (autoShot?.dataPath) failedEntry.dataCapture = autoShot.dataPath;
           if (maxActionRetries > 0) failedEntry.actionRetries = attempt;
           failedEntry.narrative = narrateAction(action, failedEntry);
           result.actions.push(failedEntry);
@@ -540,14 +594,18 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
       throw new Error(`Network errors detected (failOnNetworkError=true): ${result.networkErrors.length} error(s): ${summary}`);
     }
 
-    // Auto-capture verification screenshot if test has "expect"
+    // Auto-capture verification screenshot if test has "expect".
+    // Blank frames are skipped (not saved) — same guard as the baseline.
     if (test.expect && page) {
       result.expect = test.expect;
       try {
         const safeName = test.name.replace(/[^a-zA-Z0-9_\-. ]/g, '_');
-        const verifyPath = path.join(effectiveConfig.screenshotsDir, `verify-${safeName}-${Date.now()}.png`);
-        await page.screenshot({ path: verifyPath, fullPage: true });
-        result.verificationScreenshot = verifyPath;
+        const verifyBuf = await page.screenshot({ fullPage: true });
+        if (!looksLikeBlankCapture(verifyBuf, 'png')) {
+          const verifyPath = path.join(effectiveConfig.screenshotsDir, `verify-${safeName}-${Date.now()}.png`);
+          fs.writeFileSync(verifyPath, verifyBuf);
+          result.verificationScreenshot = verifyPath;
+        }
 
         // Auto visual comparison: compare baseline vs verification screenshot
         if (result.baselineScreenshot && result.verificationScreenshot) {

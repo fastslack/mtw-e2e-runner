@@ -59,6 +59,12 @@ export function narrateAction(action, result) {
     case 'assert_text':
       return `Verified text "${text}" is present on page${time}`;
 
+    case 'assert_no_text':
+      return `Verified text "${text}" is NOT present on page${time}`;
+
+    case 'assert_text_in':
+      return `Verified "${selector}" contains text "${text}"${value === 'exact' ? ' (exact)' : ''}${time}`;
+
     case 'assert_url':
       return `Verified URL contains "${value}"${time}`;
 
@@ -186,6 +192,15 @@ export function narrateAction(action, result) {
       return `Visual comparison against "${value}": ${pct}${time}`;
     }
 
+    case 'gql': {
+      const query = (value || '').replace(/\s+/g, ' ').trim();
+      const snippet = query.length > 60 ? query.slice(0, 57) + '...' : query;
+      return `Executed GraphQL: ${snippet}${selector ? ' (asserted response)' : ''}${time}`;
+    }
+
+    case 'wait_network_idle':
+      return `Waited for network idle (${value || 500}ms)${time}`;
+
     case 'open_tab':
       return `Opened new tab${text ? ` "${text}"` : ''} → ${value}${time}`;
 
@@ -223,6 +238,8 @@ function describeIntent(action) {
       return           `Wait ${value}ms`;
     case 'screenshot': return 'Capture screenshot';
     case 'assert_text':           return `Assert text "${text}" present`;
+    case 'assert_no_text':        return `Assert text "${text}" NOT present`;
+    case 'assert_text_in':        return `Assert "${selector}" contains "${text}"`;
     case 'assert_url':            return `Assert URL contains "${value}"`;
     case 'assert_visible':        return `Assert "${selector}" visible`;
     case 'assert_count':          return `Assert "${selector}" count = ${value}`;
@@ -259,6 +276,8 @@ function describeIntent(action) {
     case 'click_in_context':       return `Click "${selector}" in context of "${text}"`;
     case 'evaluate':   return 'Execute JS';
     case 'assert_visual':           return `Visual compare against "${value}"`;
+    case 'gql':                    return 'Execute GraphQL query';
+    case 'wait_network_idle':      return 'Wait for network idle';
     case 'open_tab':               return `Open new tab → ${value}`;
     case 'switch_tab':             return `Switch to tab "${value}"`;
     case 'close_tab':              return `Close tab${value ? ` "${value}"` : ''}`;

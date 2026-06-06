@@ -309,7 +309,8 @@ function loadDetailInline(id,detailTr){
           var stateCls=a.success?'pass':'fail';
           var icon=a.success?'\u2714':'\u2718';
 
-          // Thumbnail: prefer autoScreenshot, fall back to action's own screenshot
+          // Thumbnail: prefer autoScreenshot, fall back to action's own screenshot.
+          // Data-capture steps (raw JSON saved instead of a screenshot) get a {} thumb.
           var thumbPath=a.autoScreenshot||a.screenshot||null;
           var thumb;
           if(thumbPath){
@@ -317,6 +318,10 @@ function loadDetailInline(id,detailTr){
             var img=document.createElement('img');
             img.src=src;img.alt=label;img.loading='lazy';
             thumb=el('div',{className:'sl-thumb',onclick:function(e){e.stopPropagation();openModal(src)}},[img]);
+          }else if(a.dataCapture){
+            (function(dc){
+              thumb=el('div',{className:'sl-thumb sl-thumb-json',title:'Raw JSON response \u2014 click to view',onclick:function(e){e.stopPropagation();openJsonModal(dc)}},[el('span',null,'{\u2009}')]);
+            })(a.dataCapture);
           }else{
             thumb=el('div',{className:'sl-thumb sl-thumb-empty',title:'No screenshot for this step'},[el('span',null,'\u25A1')]);
           }
@@ -326,6 +331,12 @@ function loadDetailInline(id,detailTr){
           if(a.selector)chips.appendChild(el('span',{className:'sl-chip sl-chip-sel'},[el('span',{className:'sl-chip-k'},'sel'),el('span',{className:'sl-chip-v'},a.selector)]));
           if(a.text)chips.appendChild(el('span',{className:'sl-chip'},[el('span',{className:'sl-chip-k'},'text'),el('span',{className:'sl-chip-v'},String(a.text))]));
           if(a.value!=null&&a.value!=='')chips.appendChild(el('span',{className:'sl-chip'},[el('span',{className:'sl-chip-k'},'val'),el('span',{className:'sl-chip-v'},String(a.value))]));
+          if(a.dataCapture)(function(dc){
+            chips.appendChild(el('span',{className:'sl-chip sl-chip-json',title:'Raw JSON response saved for this step \u2014 click to view',onclick:function(e){e.stopPropagation();openJsonModal(dc)}},[
+              el('span',{className:'sl-chip-k'},'JSON'),
+              el('span',{className:'sl-chip-v'},dc.split('/').pop())
+            ]));
+          })(a.dataCapture);
 
           var retryBadge=(a.actionRetries&&a.actionRetries>0)?el('span',{className:'sl-retry'},'\u21BB '+a.actionRetries):null;
 
@@ -456,6 +467,15 @@ function loadDetailInline(id,detailTr){
 }
 
 /* ── Screenshots ── */
+/* Session memory: which test groups the user expanded (survives refreshes, not reloads) */
+var SS_EXPANDED={};
+function buildGalleryItem(f){
+  var src='/api/image?path='+encodeURIComponent(f.path);
+  var img=document.createElement('img');img.src=src;img.alt=f.name;img.loading='lazy';
+  var capEl=el('div',{className:'cap'},[el('span',{className:'cap-name'},f.name)]);
+  (function(c,fp){ssHash(fp).then(function(h){c.appendChild(createHashBadge(h))})})(capEl,f.path);
+  return el('div',{className:'gallery-item','data-path':f.path,onclick:function(){openModal(src)}},[img,capEl]);
+}
 function refreshScreenshots(){
   var gal=$('#screenshotGallery'),empty=$('#screenshotsEmpty');
   gal.textContent='';
@@ -464,12 +484,50 @@ function refreshScreenshots(){
     if(!Array.isArray(files)||!files.length){empty.style.display='block';empty.querySelector('p').textContent='No screenshots for this project.';$('#badgeScreenshots').textContent='0';return}
     empty.style.display='none';
     $('#badgeScreenshots').textContent=files.length;
+    /* Group by test name; files without one go to a trailing "Other" bucket */
+    var groups={},order=[];
     files.forEach(function(f){
-      var src='/api/image?path='+encodeURIComponent(f.path);
-      var img=document.createElement('img');img.src=src;img.alt=f.name;img.loading='lazy';
-      var capEl=el('div',{className:'cap'},[el('span',{className:'cap-name'},f.name)]);
-      (function(c,fp){ssHash(fp).then(function(h){c.appendChild(createHashBadge(h))})})(capEl,f.path);
-      gal.appendChild(el('div',{className:'gallery-item','data-path':f.path,onclick:function(){openModal(src)}},[img,capEl]));
+      var key=f.testName||'__other__';
+      if(!groups[key]){groups[key]=[];order.push(key)}
+      groups[key].push(f);
+    });
+    function fileTs(f){var m=f.name.match(/(\d{10,})\.[a-z]+$/i);return m?parseInt(m[1],10):0}
+    order.sort(function(a,b){
+      if(a==='__other__')return 1;
+      if(b==='__other__')return -1;
+      var ma=0,mb=0;
+      groups[a].forEach(function(f){var t=fileTs(f);if(t>ma)ma=t});
+      groups[b].forEach(function(f){var t=fileTs(f);if(t>mb)mb=t});
+      return mb-ma;
+    });
+    order.forEach(function(key){
+      var items=groups[key],label=key==='__other__'?'Other':key;
+      var grid=el('div',{className:'gallery'});
+      var materialized=false;
+      function materialize(){
+        if(materialized)return;materialized=true;
+        items.forEach(function(f){grid.appendChild(buildGalleryItem(f))});
+      }
+      var expanded=!!SS_EXPANDED[key];
+      var body=el('div',{className:'gallery-group-body'},[grid]);
+      var group=el('div',{className:'gallery-group'+(expanded?' open':'')},[]);
+      var header=el('div',{className:'gallery-group-header',onclick:function(){
+        expanded=!expanded;
+        if(expanded){SS_EXPANDED[key]=true;materialize()}else{delete SS_EXPANDED[key]}
+        group.classList.toggle('open',expanded);
+        if(expanded)body.removeAttribute('hidden');else body.setAttribute('hidden','');
+      }},[
+        el('span',{className:'gg-arrow'},'▶'),
+        el('span',{className:'gg-name'},label),
+        el('span',{className:'gg-count'},items.length+' shot'+(items.length===1?'':'s')),
+        el('span',{className:'gg-blank-badge',hidden:''},''),
+      ]);
+      group.appendChild(header);
+      group.appendChild(body);
+      if(expanded){materialize()}else{body.setAttribute('hidden','')}
+      /* Expose to the blank-scan so it can materialize collapsed groups on demand */
+      group._ssItems=items;group._ssMaterialize=materialize;
+      gal.appendChild(group);
     });
     resetBlankBar();
   }).catch(function(){});
@@ -479,6 +537,7 @@ function refreshScreenshots(){
 function resetBlankBar(){
   var bar=$('#ssBlankBar');if(bar)bar.hidden=true;
   $$('#screenshotGallery .gallery-item.blank-flagged').forEach(function(it){it.classList.remove('blank-flagged')});
+  $$('#screenshotGallery .gg-blank-badge').forEach(function(b){b.textContent='';b.setAttribute('hidden','')});
   S.blankPaths=null;
 }
 function scanBlankScreenshots(){
@@ -494,10 +553,18 @@ function scanBlankScreenshots(){
       return;
     }
     S.blankPaths=blanks.map(function(b){return b.path});
-    var found=0;
+    /* Materialize collapsed groups that contain blanks, flag items, badge the headers */
+    var blankSet={};S.blankPaths.forEach(function(p){blankSet[p]=true});
+    $$('#screenshotGallery .gallery-group').forEach(function(g){
+      var inGroup=(g._ssItems||[]).filter(function(it){return blankSet[it.path]}).length;
+      if(!inGroup)return;
+      if(g._ssMaterialize)g._ssMaterialize();
+      var badge=g.querySelector('.gg-blank-badge');
+      if(badge){badge.textContent=inGroup+' blank'+(inGroup===1?'':'s');badge.removeAttribute('hidden')}
+    });
     S.blankPaths.forEach(function(p){
       var item=$('#screenshotGallery .gallery-item[data-path="'+(window.CSS&&CSS.escape?CSS.escape(p):p)+'"]');
-      if(item){item.classList.add('blank-flagged');found++}
+      if(item)item.classList.add('blank-flagged');
     });
     $('#ssBlankMsg').textContent=blanks.length+' blank image'+(blanks.length===1?'':'s')+' of '+data.scanned+' scanned';
     $('#ssBlankBar').hidden=false;
@@ -792,8 +859,26 @@ $('#btnExportLearnings').addEventListener('click',function(){
 });
 
 /* ── Modal ── */
-function openModal(src){$('#modalImg').src=src;$('#modal').classList.add('open')}
+function openModal(src){
+  $('#modalImg').src=src;$('#modalImg').removeAttribute('hidden');
+  $('#modalJson').setAttribute('hidden','');
+  $('#modal').classList.add('open');
+}
+function openJsonModal(filePath){
+  fetch('/api/image?path='+encodeURIComponent(filePath)).then(function(r){
+    if(!r.ok)throw new Error('not found');
+    return r.text();
+  }).then(function(text){
+    $('#modalImg').setAttribute('hidden','');
+    var pre=$('#modalJson');
+    pre.textContent=prettyJson(text);
+    pre.removeAttribute('hidden');
+    $('#modal').classList.add('open');
+  }).catch(function(){showToast('Could not load JSON capture','error')});
+}
 $('#modal').addEventListener('click',function(){$('#modal').classList.remove('open')});
+/* Allow selecting/copying JSON text without closing the modal */
+$('#modalJson').addEventListener('click',function(e){e.stopPropagation()});
 
 /* ══════════════════════════════════════════════════════════════════
    Screenshot Replay Player — plays a run's per-step screenshots

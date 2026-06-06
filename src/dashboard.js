@@ -18,7 +18,7 @@ import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool } from './pool-man
 import { runTestsParallel, loadAllSuites, loadTestSuite, listSuites } from './runner.js';
 import { runModuleAnalysis } from './module-analysis.js';
 import { generateReport, generateJUnitXML, saveReport, persistRun, loadHistory, loadHistoryRun } from './reporter.js';
-import { listProjects as dbListProjects, listProjectsWithSparklines as dbListProjectsWithSparklines, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
+import { listProjects as dbListProjects, listProjectsWithSparklines as dbListProjectsWithSparklines, getProjectRuns as dbGetProjectRuns, getRunDetail as dbGetRunDetail, getAllRuns as dbGetAllRuns, getRunCount as dbGetRunCount, getProjectScreenshotsDir as dbGetProjectScreenshotsDir, getProjectTestsDir as dbGetProjectTestsDir, getProjectCwd as dbGetProjectCwd, lookupScreenshotHash as dbLookupScreenshotHash, getScreenshotMetaByPaths as dbGetScreenshotMetaByPaths, ensureProject as dbEnsureProject, getNetworkLogs as dbGetNetworkLogs, listVariables as dbListVariables, setVariable as dbSetVariable, deleteVariable as dbDeleteVariable, closeDb } from './db.js';
 import { loadConfig } from './config.js';
 import { log, colors as C } from './logger.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getHealthSnapshot, getActionHealthScores } from './learner-sqlite.js';
@@ -36,6 +36,25 @@ const { version: VERSION } = _require('../package.json');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Blank-PNG verdicts cached per path+size+mtime so the gallery listing
+// doesn't re-decode every PNG on each request. Non-PNG files are never
+// flagged (isBlankImage fails open on undecodable input).
+const blankVerdictCache = new Map();
+function isBlankScreenshotCached(filePath) {
+  if (!/\.png$/i.test(filePath)) return false;
+  try {
+    const st = fs.statSync(filePath);
+    const key = `${filePath}:${st.size}:${st.mtimeMs}`;
+    if (blankVerdictCache.has(key)) return blankVerdictCache.get(key);
+    const blank = isBlankImage(filePath).blank;
+    if (blankVerdictCache.size > 5000) blankVerdictCache.clear();
+    blankVerdictCache.set(key, blank);
+    return blank;
+  } catch {
+    return false;
+  }
+}
 
 /** Starts the dashboard server */
 export async function startDashboard(config) {
@@ -344,7 +363,9 @@ export async function startDashboard(config) {
         return;
       }
 
-      // API: DB — project screenshots list
+      // API: DB — project screenshots list (blank PNGs are hidden — they
+      // have no debug value and only waste gallery space; the blank-scan
+      // endpoint still finds them on disk for bulk deletion)
       const projectScreenshotsMatch = pathname.match(/^\/api\/db\/projects\/(\d+)\/screenshots$/);
       if (projectScreenshotsMatch) {
         try {
@@ -355,7 +376,30 @@ export async function startDashboard(config) {
             return;
           }
           const files = fs.readdirSync(dir).filter(f => /\.(png|jpg|jpeg|gif|webp)$/i.test(f)).sort();
-          jsonResponse(res, files.map(f => ({ name: f, path: path.join(dir, f) })));
+          const visible = files.filter(f => !isBlankScreenshotCached(path.join(dir, f)));
+          const fullPaths = visible.map(f => path.join(dir, f));
+          const meta = dbGetScreenshotMetaByPaths(fullPaths);
+          // Filenames embed the SANITIZED test name (runner's safeName); build a map
+          // back to the real name from DB-known entries so legacy files (no DB row)
+          // land in the same group as their DB-registered siblings
+          const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_\-. ]/g, '_');
+          const sanitizedToReal = {};
+          for (const m of Object.values(meta)) {
+            if (m.testName) sanitizedToReal[sanitize(m.testName)] = m.testName;
+          }
+          jsonResponse(res, visible.map(f => {
+            const fp = path.join(dir, f);
+            const m = meta[fp];
+            // Fallback for files predating DB metadata: parse the test name out of
+            // runner-generated filenames (step-/error-/baseline-/verify-/current-/diff-<test>-<ts>.<ext>)
+            let testName = m?.testName || null;
+            let type = m?.type || null;
+            if (!testName) {
+              const fm = f.match(/^(step|error|baseline|verify|current|diff)-(.+?)(?:-\d{3})?-\d{10,}\.(?:png|jpe?g|gif|webp)$/i);
+              if (fm) { type = type || fm[1].toLowerCase(); testName = sanitizedToReal[fm[2]] || fm[2]; }
+            }
+            return { name: f, path: fp, testName, type };
+          }));
         } catch (error) {
           jsonResponse(res, { error: error.message }, 500);
         }
@@ -758,9 +802,10 @@ export async function startDashboard(config) {
           return;
         }
         const ext = path.extname(realPath).toLowerCase();
-        const mimeTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+        // .json covers step data captures (raw API responses saved instead of screenshots)
+        const mimeTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.json': 'application/json' };
         if (!mimeTypes[ext]) {
-          jsonResponse(res, { error: 'Not an image' }, 400);
+          jsonResponse(res, { error: 'Unsupported file type' }, 400);
           return;
         }
         res.writeHead(200, { 'Content-Type': mimeTypes[ext], 'Cache-Control': 'no-store' });

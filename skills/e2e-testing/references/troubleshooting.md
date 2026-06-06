@@ -193,32 +193,8 @@ The `KNOWN_ACTION_TYPES` Set in `src/actions.js` is the single source of truth. 
 
 ## Screenshot Hashes
 
-Every screenshot captured during a run is assigned a short hash (`ss:a3f2b1c9`) — the first 8 hex chars of the SHA-256 of its file path. Hashes are deterministic and computed identically on the server (Node `crypto`) and in the browser (Web Crypto API).
-
-**Flow**: screenshot saved on disk → `saveRun()` registers hash in SQLite `screenshot_hashes` table → dashboard shows `[ss:XXXXXXXX]` badge (click to copy) → user pastes hash in Claude Code → `e2e_screenshot` MCP tool looks up hash, reads file, returns the image.
-
-- Hashes are registered inside the `saveRun()` transaction (covers action, error, verification, and baseline screenshots)
-- The `ss:` prefix is optional when calling `e2e_screenshot` — stripped during lookup
-- Dashboard computes hashes client-side (Web Crypto) for the Live view (before `persistRun()` writes to DB)
-- Run detail API (`/api/db/runs/:id`) includes `screenshotHashes` map per test result
-- Dashboard endpoint `/api/screenshot-hash/:hash` serves the image by hash
-- Dashboard Screenshots view has a **search bar** — type a hash to find and display the screenshot
+Every screenshot gets a short hash like `ss:a3f2b1c9` (deterministic, from its file path). The dashboard shows it as a click-to-copy badge; paste it (the `ss:` prefix is optional) and `e2e_screenshot` returns the image. The dashboard Screenshots view also has a hash search bar.
 
 ## Web Dashboard
 
-**`src/dashboard.js`** — HTTP server, REST API, WebSocket broadcast, pool polling.
-**`templates/dashboard.html`** — SPA, dark theme, vanilla JS, safe DOM (textContent + createEl helper).
-
-**Features:**
-- Live test execution with WebSocket updates
-- Run history with inline detail expansion
-- Screenshots gallery with hash badges and hash search
-- Network request logs with clickable expandable rows (full request/response detail)
-- Pool status monitoring
-- Multi-project support via project selector
-- Variables tab with masked values, inline edit, add, and delete
-
-**CLI:** `e2e-runner dashboard [--port 8484]`
-**MCP tools:** `e2e_dashboard_start`, `e2e_dashboard_stop`
-
-Config defaults: `dashboardPort: 8484`, `maxHistoryRuns: 100`
+Start with `e2e_dashboard_start` (or `e2e-runner dashboard [--port 8484]`), stop with `e2e_dashboard_stop`. Provides live execution (WebSocket), run history, screenshot gallery + hash search, expandable network logs, pool status, multi-project selector, and a variables tab.

@@ -35,6 +35,7 @@ import { loadConfig } from '../src/config.js';
 import { startPool, stopPool, restartPool, connectToPool } from '../src/pool.js';
 import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool, selectPool } from '../src/pool-manager.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
+import { looksLikeBlankCapture } from '../src/actions.js';
 import { generateReport, saveReport, printReport, persistRun, printInsights } from '../src/reporter.js';
 import { startDashboard } from '../src/dashboard.js';
 import { startWatch } from '../src/watch.js';
@@ -152,6 +153,7 @@ ${C.bold}Usage:${C.reset}
   e2e-runner capture <url> --selector <sel>  Wait for selector before capture
   e2e-runner capture <url> --delay <ms> Wait before capturing
   e2e-runner capture <url> --filename <name> Custom filename
+  e2e-runner capture <url> --force      Save even if the frame is blank
 
   e2e-runner issue <url>                Fetch issue and show details
   e2e-runner issue <url> --generate     Generate test file via Claude API
@@ -546,7 +548,7 @@ async function cmdDashboard() {
 async function cmdCapture() {
   const url = args[1];
   if (!url || url.startsWith('--')) {
-    console.error(`${C.red}Usage: e2e-runner capture <url> [--filename <name>] [--full-page] [--selector <sel>] [--delay <ms>]${C.reset}`);
+    console.error(`${C.red}Usage: e2e-runner capture <url> [--filename <name>] [--full-page] [--selector <sel>] [--delay <ms>] [--force]${C.reset}`);
     process.exit(1);
   }
 
@@ -592,7 +594,16 @@ async function cmdCapture() {
 
     const screenshotPath = path.join(config.screenshotsDir, filename);
     const fullPage = hasFlag('--full-page');
-    await page.screenshot({ path: screenshotPath, fullPage });
+    const captureBuf = await page.screenshot({ fullPage });
+
+    // Blank frame (uniform color — page never rendered): skip the save
+    // unless the user explicitly forces it.
+    if (!hasFlag('--force') && looksLikeBlankCapture(captureBuf, 'png')) {
+      log('⚠️', `${C.yellow}Capture skipped:${C.reset} page rendered a blank (uniform-color) frame — nothing saved. Use ${C.dim}--force${C.reset} to save anyway.`);
+      console.log('');
+      return;
+    }
+    fs.writeFileSync(screenshotPath, captureBuf);
 
     // Register hash in SQLite
     const cwd = process.cwd();

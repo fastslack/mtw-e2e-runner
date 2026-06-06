@@ -28,6 +28,7 @@ import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHeal
 import { queryGraph } from './learner-neo4j.js';
 import { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
 import { getAppPoolStatus, isAppPoolEnabled } from './app-pool.js';
+import { looksLikeBlankCapture } from './actions.js';
 
 /**
  * Resolves auth token from config: uses static authToken if set,
@@ -103,7 +104,7 @@ export const TOOLS = [
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
     },
@@ -117,7 +118,7 @@ export const TOOLS = [
       properties: {
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
     },
@@ -125,66 +126,19 @@ export const TOOLS = [
   {
     name: 'e2e_create_test',
     description:
-      `Create a new E2E test JSON file. IMPORTANT: prefer built-in actions over evaluate blocks.
+      `Create a new E2E test JSON file. Prefer built-in actions over evaluate — more robust and readable. Full catalog: the e2e-testing skill / references/action-types.md.
 
-## Action selection guide (use instead of evaluate)
+Action cheat-sheet:
+- Click: click (by text), click_regex, click_menu_item, click_option, click_chip, click_icon, click_in_context; in a dialog use click with scope:"dialog" (+ last/visible).
+- Select (MUI): select_combobox (open+optional filter+pick), select, focus_autocomplete.
+- Assert text: assert_text (present), assert_no_text (absent), assert_text_in (scoped regex), assert_element_text, assert_matches.
+- Assert elements (selector, NOT text): assert_visible, assert_not_visible, assert_count, assert_attribute, assert_input_value, assert_url.
+- Nav/wait: goto, navigate (SPA), wait {text|selector|gone|value(ms)}, wait_network_idle.
+- Form: type, type_react (React inputs; optional blur/waitAfter), clear, press.
 
-**Clicking elements by text** — DON'T write evaluate to find+click elements:
-  click:           { type: "click", text: "Submit" }              — searches button, a, [role=tab], span, etc.
-  click_regex:     { type: "click_regex", text: "save|guardar" }  — regex match, case-insensitive
-  click_menu_item: { type: "click_menu_item", text: "Delete" }    — [role=menuitem], .MenuItem, etc.
-  click_option:    { type: "click_option", text: "Option A" }     — [role=option] in dropdowns
-  click_chip:      { type: "click_chip", text: "Active" }         — MUI Chip / tag elements
-  click_icon:      { type: "click_icon", value: "edit" }          — SVG/icon by data-testid, aria-label, class
-  click_in_context:{ type: "click_in_context", text: "Row text", selector: "button" } — child within container
-  click (in dialog):{ type: "click", text: "Confirm", scope: "dialog", last: true } — only [role=dialog]/MuiDialog; visible:true skips hidden; last:true picks last match
+Field rules: assert_text/assert_no_text use "text" (whole page); assert_visible/assert_not_visible use "selector"; for text absence use assert_no_text. Use evaluate only for computed styles, complex logic, GraphQL (window.__e2eGql), or app state.
 
-**Selecting from a MUI Autocomplete/Select** — DON'T write evaluate to open+filter+pick:
-  select_combobox: { type: "select_combobox", selector: "input[role='combobox']", filter: "cardio", text: "Cardiología" }
-                   — opens the combobox, types optional filter, clicks the matching option (role=option / MuiAutocomplete-option / MuiMenuItem)
-
-**Asserting text presence/absence** — DON'T write evaluate with body.includes():
-  assert_text:     { type: "assert_text", text: "Welcome" }      — text IS on page (case-sensitive). Uses: text
-  assert_no_text:  { type: "assert_no_text", text: "Error" }     — text is NOT on page. Uses: text
-  assert_text_in:  { type: "assert_text_in", selector: "[class*='Drawer']", text: "profesional|doctor" }
-                   — scoped regex in container (case-insensitive default). Uses: selector + text (+ value:"exact")
-
-**Asserting elements** — DON'T write evaluate to count or check visibility:
-  assert_visible:      { type: "assert_visible", selector: ".modal" }           — Uses: selector (NOT text)
-  assert_not_visible:  { type: "assert_not_visible", selector: ".loader" }      — Uses: selector (NOT text)
-  assert_count:        { type: "assert_count", selector: "input", value: ">= 2" } — Uses: selector + value
-  assert_element_text: { type: "assert_element_text", selector: "h1", text: "Dashboard" } — Uses: selector + text
-  assert_matches:      { type: "assert_matches", selector: ".date", value: "\\\\d{2}/\\\\d{2}" } — Uses: selector + value (regex)
-  assert_attribute:    { type: "assert_attribute", selector: "button", value: "disabled" } — Uses: selector + value
-  assert_url:          { type: "assert_url", value: "/dashboard" }              — Uses: value
-  assert_input_value:  { type: "assert_input_value", selector: "#email", value: "@" } — Uses: selector + value
-
-IMPORTANT field rules:
-  - assert_text / assert_no_text: use "text" field only (checks full page body)
-  - assert_visible / assert_not_visible: use "selector" field only (CSS selector, NOT text)
-  - To verify text absence: use assert_no_text (NOT assert_not_visible with text)
-
-**Navigation & waiting** — DON'T write evaluate with setTimeout polling:
-  goto:            { type: "goto", value: "/login" }              — full page navigation
-  navigate:        { type: "navigate", value: "/settings" }       — SPA-friendly (won't fail if no page load)
-  wait:            { type: "wait", text: "Loading complete" }     — wait for text to appear in body
-  wait:            { type: "wait", selector: ".results" }         — wait for element to appear
-  wait (gone):     { type: "wait", gone: ".MuiBackdrop-root" }    — wait until a selector disappears/hides (spinner, closing dialog)
-  wait:            { type: "wait", value: "2000" }                — fixed delay (last resort — prefer gone/selector/text)
-  wait_network_idle: { type: "wait_network_idle", value: "500" }  — wait until no network for N ms
-
-**Form interaction** — DON'T write evaluate with native value setters (unless React):
-  type:            { type: "type", selector: "#email", value: "a@b.com" } — clears + types
-  type_react:      { type: "type_react", selector: "#email", value: "a@b.com", waitAfter: "400" } — React controlled inputs; optional blur:true / waitAfter ms
-  select:          { type: "select", selector: "select#country", value: "US" }
-  clear:           { type: "clear", selector: "#search" }
-  press:           { type: "press", value: "Enter" }
-  focus_autocomplete: { type: "focus_autocomplete", text: "City" } — focus MUI Autocomplete by label
-
-**When evaluate IS appropriate**: computed styles, complex conditional logic, GraphQL via window.__e2eGql, math calculations, reading window/app state.
-
-## Modules
-Use { "$use": "module-name", "params": {...} } to reference reusable modules from e2e/modules/. Modules compose — a module can $use other modules. Check e2e_list to see available modules for the project.`,
+Modules: { "$use": "module-name", "params": {...} } references reusable modules in e2e/modules/ (they compose). Run e2e_list to see available modules.`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -239,7 +193,7 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
       required: ['name', 'tests'],
@@ -254,7 +208,7 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
       properties: {
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
     },
@@ -301,7 +255,7 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
     },
@@ -327,7 +281,7 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
     },
@@ -364,7 +318,7 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
       required: ['url'],
@@ -412,7 +366,7 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
       required: ['url'],
@@ -464,7 +418,7 @@ Use { "$use": "module-name", "params": {...} } to reference reusable modules fro
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
       required: ['url'],
@@ -539,7 +493,7 @@ Good module candidates: auth setup, page navigation, tab clicking, opening sideb
         },
         cwd: {
           type: 'string',
-          description: 'Absolute path to the project root directory. Claude Code should pass its current working directory.',
+          description: 'Project root directory (defaults to the current working directory).',
         },
       },
       required: ['query'],
@@ -2017,7 +1971,18 @@ async function handleCapture(args) {
     }
 
     const screenshotPath = path.join(config.screenshotsDir, filename);
-    await page.screenshot({ path: screenshotPath, fullPage: !!args.fullPage });
+    const data = await page.screenshot({ fullPage: !!args.fullPage });
+
+    // Blank frame (uniform color — page never rendered): don't save it,
+    // report what happened instead of returning a useless white PNG.
+    if (looksLikeBlankCapture(data, 'png')) {
+      return {
+        content: [
+          { type: 'text', text: `Capture skipped: ${args.url} rendered a blank (uniform-color) frame — nothing saved. The page likely failed to render (auth redirect, JS error, or slow load); try a longer delay or a selector to wait for.` },
+        ],
+      };
+    }
+    fs.writeFileSync(screenshotPath, data);
 
     // Register hash in SQLite
     const cwd = args.cwd || process.cwd();
@@ -2026,8 +1991,6 @@ async function handleCapture(args) {
     const hash = computeScreenshotHash(screenshotPath);
     registerScreenshotHash(hash, screenshotPath, projectId, null);
 
-    // Read image for response
-    const data = fs.readFileSync(screenshotPath);
     const base64 = data.toString('base64');
 
     return {

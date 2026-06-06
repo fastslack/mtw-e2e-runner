@@ -9,7 +9,7 @@
 
 import path from 'path';
 import fs from 'fs';
-import { assertVisualMatch } from './visual-diff.js';
+import { assertVisualMatch, isBlankImage } from './visual-diff.js';
 
 /**
  * Returns false when the page has nothing useful to capture — used to
@@ -50,7 +50,17 @@ export const BLANK_JPEG_BYTE_THRESHOLD = 8000;
 export function looksLikeBlankCapture(buf, format = 'png') {
   if (!Buffer.isBuffer(buf)) return false;
   const threshold = format === 'jpeg' ? BLANK_JPEG_BYTE_THRESHOLD : BLANK_PNG_BYTE_THRESHOLD;
-  return buf.length < threshold;
+  if (buf.length < threshold) return true;
+  // Byte size alone misses larger near-uniform frames (e.g. a white page
+  // whose PNG still compresses above 20 KB). For PNGs we can decode and
+  // check pixel uniformity directly — ≥98% of sampled pixels within
+  // tolerance of the mean color means there is nothing worth keeping.
+  // JPEGs (step captures) can't be decoded without deps, so they keep
+  // the byte heuristic only. Fails open on decode errors.
+  if (format === 'png') {
+    return isBlankImage(buf, { tolerance: 12, maxOutlierFraction: 0.02 }).blank;
+  }
+  return false;
 }
 
 /** All recognized action types — single source of truth for validation. */

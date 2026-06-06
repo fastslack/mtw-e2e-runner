@@ -69,7 +69,23 @@ Now say *"create a test for X and run it"* — Claude gets 17 MCP tools, slash c
 
 ---
 
-## Install — it's tiny
+## 📖 Contents
+
+|   | Section | What's inside |
+|---|---------|---------------|
+| 🚀 | **[Install &amp; first test](#install)** | npm setup · run with your own Chrome (no Docker), Obscura, or a Docker pool |
+| ✨ | **[What you get](#features)** | feature overview at a glance |
+| ✍️ | **[Writing tests](#writing-tests)** | test format · full action catalog · retries · serial · modules · auth · hooks |
+| 🤖 | **[AI integration](#ai)** | Claude Code · OpenCode · 17 MCP tools · visual verification · issue-to-test |
+| 📊 | **[Dashboard &amp; insights](#dashboard)** | live dashboard · learning system · network logs · screenshot capture |
+| 🌐 | **[Browser drivers](#drivers)** | browserless · cdp · lightpanda · obscura · steel |
+| ⚙️ | **[CLI, config &amp; CI](#reference)** | commands · flags · `e2e.config.js` · GitHub Actions · programmatic API |
+
+---
+
+<a name="install"></a>
+
+## 🚀 Install — it's tiny
 
 ```bash
 npm install --save-dev @matware/e2e-runner
@@ -110,7 +126,7 @@ CHROME_POOL_URL=http://localhost:9222 POOL_DRIVER=obscura npx e2e-runner run --a
 
 `npx e2e-runner pool start` (with `poolDriver: 'obscura'` in your config) prints the exact install command for your OS.
 
-### Option 3 · Docker pool — parallel, for CI & big suites
+### Option 3 · Docker pool — parallel, for CI &amp; big suites
 
 A shared, queue-managed Chrome pool that runs many tests at once:
 
@@ -123,7 +139,10 @@ Requires Docker. Set `baseUrl: 'http://host.docker.internal:3000'` so the contai
 <details>
 <summary><strong>Why <code>host.docker.internal</code> (Docker option only)?</strong></summary>
 
-With the Docker pool, Chrome runs inside a container, so `localhost` there means the container — not your machine. `host.docker.internal` bridges to your host. On Linux (Docker Engine, not Docker Desktop) add `--add-host=host.docker.internal:host-gateway`, or use your LAN IP. Options 1 & 2 don't have this — the browser is local, so plain `localhost` just works.
+<br/>
+
+With the Docker pool, Chrome runs inside a container, so `localhost` there means the container — not your machine. `host.docker.internal` bridges to your host. On Linux (Docker Engine, not Docker Desktop) add `--add-host=host.docker.internal:host-gateway`, or use your LAN IP. Options 1 &amp; 2 don't have this — the browser is local, so plain `localhost` just works.
+
 </details>
 
 ### Write your first test
@@ -140,9 +159,12 @@ Open `e2e/tests/sample.json` — a flow is an ordered list of actions:
 ]
 ```
 
-Run it with `npx e2e-runner run --all`. Results — pass/fail, timing, screenshots, network errors — print to your terminal and to the [web dashboard](#web-dashboard) if it's open.
+Run it with `npx e2e-runner run --all`. Results — pass/fail, timing, screenshots, network errors — print to your terminal and to the [web dashboard](#dashboard) if it's open.
 
-### Add OpenCode (optional)
+<details>
+<summary><strong>Add OpenCode</strong> (optional)</summary>
+
+<br/>
 
 ```bash
 cp node_modules/@matware/e2e-runner/opencode.json ./
@@ -151,17 +173,13 @@ mkdir -p .opencode && cp -r node_modules/@matware/e2e-runner/.opencode/* .openco
 
 See [OPENCODE.md](OPENCODE.md) for details.
 
-### What's next?
-
-- [Test Format](#test-format) — learn the full action vocabulary
-- [Claude Code Integration](#claude-code-integration) — set up AI-powered testing
-- [Visual Verification](#visual-verification) — describe expected pages in plain English
-- [Issue-to-Test](#issue-to-test) — turn bug reports into executable tests
-- [Web Dashboard](#web-dashboard) — monitor tests in real time
+</details>
 
 ---
 
-## What you get
+<a name="features"></a>
+
+## ✨ What you get
 
 🧪 **Zero-code tests** — JSON files that anyone on your team can read and write. No JavaScript, no compilation, no framework lock-in.
 
@@ -191,7 +209,16 @@ See [OPENCODE.md](OPENCODE.md) for details.
 
 ---
 
-## Test Format
+<a name="writing-tests"></a>
+
+## ✍️ Writing tests
+
+Everything about authoring tests — the file format, the full action vocabulary, retries, state isolation, and reuse. Expand what you need:
+
+<details>
+<summary><strong>Test format &amp; file layout</strong></summary>
+
+<br/>
 
 Each `.json` file in `e2e/tests/` contains an array of tests. Each test has a `name` and sequential `actions`:
 
@@ -211,7 +238,12 @@ Each `.json` file in `e2e/tests/` contains an array of tests. Each test has a `n
 
 Suite files can have numeric prefixes for ordering (`01-auth.json`, `02-dashboard.json`). The `--suite` flag matches with or without the prefix, so `--suite auth` finds `01-auth.json`.
 
-### Available Actions
+</details>
+
+<details>
+<summary><strong>Action catalog</strong> — navigation, input &amp; interaction</summary>
+
+<br/>
 
 | Action | Fields | Description |
 |--------|--------|-------------|
@@ -229,7 +261,23 @@ Suite files can have numeric prefixes for ordering (`01-auth.json`, `02-dashboar
 | `navigate` | `value` | Browser navigation (`back`, `forward`, `reload`) |
 | `clear_cookies` | — | Clear all cookies for the current page |
 
-### Assertions
+**Click by text** — when `click` uses `text` instead of `selector`, it searches across common interactive and content elements:
+
+```
+button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
+[role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6
+```
+
+```json
+{ "type": "click", "text": "Sign In" }
+```
+
+</details>
+
+<details>
+<summary><strong>Assertions</strong> — verify text, elements, URLs, counts &amp; network</summary>
+
+<br/>
 
 | Action | Fields | Description |
 |--------|--------|-------------|
@@ -246,20 +294,12 @@ Suite files can have numeric prefixes for ordering (`01-auth.json`, `02-dashboar
 | `assert_no_network_errors` | — | Fail if any network requests failed (e.g. `ERR_CONNECTION_REFUSED`) |
 | `get_text` | `selector` | Extract element text (non-assertion, never fails). Result: `{ value: "..." }` |
 
-### Click by Text
+</details>
 
-When `click` uses `text` instead of `selector`, it searches across common interactive and content elements:
+<details>
+<summary><strong>Framework-aware actions</strong> — React/MUI without <code>evaluate</code> boilerplate</summary>
 
-```
-button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
-[role="listitem"], div[class*="cursor"], span, li, td, th, label, p, h1-h6
-```
-
-```json
-{ "type": "click", "text": "Sign In" }
-```
-
-### Framework-Aware Actions
+<br/>
 
 These actions handle common patterns in React/MUI apps that normally require verbose `evaluate` boilerplate:
 
@@ -280,13 +320,14 @@ These actions handle common patterns in React/MUI apps that normally require ver
 { "type": "type_react", "selector": "#search", "value": "term" }
 ```
 
----
+</details>
 
-## Retries
+<details>
+<summary><strong>Retries &amp; flaky detection</strong></summary>
 
-### Test-Level Retry
+<br/>
 
-Retry an entire test on failure. Set globally via config or per-test:
+**Test-level retry** — retry an entire test on failure. Set globally via config or per-test:
 
 ```json
 { "name": "flaky-test", "retries": 3, "timeout": 15000, "actions": [...] }
@@ -294,9 +335,7 @@ Retry an entire test on failure. Set globally via config or per-test:
 
 Tests that pass after retry are flagged as **flaky** in the report and learning system.
 
-### Action-Level Retry
-
-Retry a single action without rerunning the entire test. Useful for timing-sensitive clicks and waits:
+**Action-level retry** — retry a single action without rerunning the entire test. Useful for timing-sensitive clicks and waits:
 
 ```json
 { "type": "click", "selector": "#dynamic-btn", "retries": 3 }
@@ -305,9 +344,12 @@ Retry a single action without rerunning the entire test. Useful for timing-sensi
 
 Set globally: `actionRetries` in config, `--action-retries <n>` CLI, or `ACTION_RETRIES` env var. Delay between retries: `actionRetryDelay` (default 500ms).
 
----
+</details>
 
-## Serial Tests
+<details>
+<summary><strong>Serial tests</strong> — for tests that share state</summary>
+
+<br/>
 
 Tests that share state (e.g., two tests modifying the same record) can race when running in parallel. Mark them as serial:
 
@@ -318,9 +360,12 @@ Tests that share state (e.g., two tests modifying the same record) can race when
 
 Serial tests run one at a time **after** all parallel tests finish — preventing interference without slowing down independent tests.
 
----
+</details>
 
-## Testing Authenticated Apps
+<details>
+<summary><strong>Testing authenticated apps</strong></summary>
+
+<br/>
 
 The simplest approach — log in via the UI like a real user:
 
@@ -359,9 +404,12 @@ Each test runs in a **fresh browser context**, so auth state is automatically cl
 
 > **More strategies:** Cookie-based auth, HTTP header injection, OAuth/SSO bypasses, reusable auth modules, and role-based testing — see [docs/authentication.md](docs/authentication.md)
 
----
+</details>
 
-## Reusable Modules
+<details>
+<summary><strong>Reusable modules</strong> — extract common flows with <code>$use</code></summary>
+
+<br/>
 
 Extract common flows into parameterized modules:
 
@@ -398,9 +446,35 @@ Use in tests:
 
 Modules support parameter validation (required params fail fast), conditional blocks (`{{#param}}...{{/param}}`), nested composition, and cycle detection.
 
----
+</details>
 
-## Exclude Patterns
+<details>
+<summary><strong>Hooks</strong> — beforeAll / beforeEach / afterEach / afterAll</summary>
+
+<br/>
+
+Run actions at lifecycle points. Define globally in config or per-suite:
+
+```json
+{
+  "hooks": {
+    "beforeAll": [{ "type": "goto", "value": "/setup" }],
+    "beforeEach": [{ "type": "goto", "value": "/" }],
+    "afterEach": [{ "type": "screenshot", "value": "after.png" }],
+    "afterAll": []
+  },
+  "tests": [...]
+}
+```
+
+> **Important:** `beforeAll` runs on a separate browser page that is closed before tests start. Use `beforeEach` for state that tests need (cookies, localStorage, auth tokens).
+
+</details>
+
+<details>
+<summary><strong>Exclude patterns</strong> — skip drafts from <code>--all</code></summary>
+
+<br/>
 
 Skip exploratory or draft tests from `--all` runs:
 
@@ -413,9 +487,84 @@ export default {
 
 Individual suite runs (`--suite`) are not affected by exclude patterns.
 
+</details>
+
 ---
 
-## Visual Verification
+<a name="ai"></a>
+
+## 🤖 AI integration
+
+The whole point: your agent writes, runs, and verifies tests for you.
+
+<details>
+<summary><strong>Claude Code</strong> — plugin install &amp; MCP-only install</summary>
+
+<br/>
+
+```bash
+claude plugin marketplace add fastslack/mtw-e2e-runner
+claude plugin install e2e-runner@matware
+```
+
+This gives Claude 17 MCP tools, a workflow skill, 4 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`, `/e2e-runner:capture`), and 3 specialized agents (test-analyzer, test-creator, test-improver).
+
+**MCP-only install** (tools only, no skill/commands/agents):
+
+```bash
+claude mcp add --transport stdio --scope user e2e-runner \
+  -- npx -y -p @matware/e2e-runner e2e-runner-mcp
+```
+
+</details>
+
+<details>
+<summary><strong>OpenCode</strong></summary>
+
+<br/>
+
+```bash
+cp node_modules/@matware/e2e-runner/opencode.json ./
+mkdir -p .opencode && cp -r node_modules/@matware/e2e-runner/.opencode/* .opencode/
+```
+
+See [OPENCODE.md](OPENCODE.md) for details.
+
+</details>
+
+<details>
+<summary><strong>The 17 MCP tools</strong></summary>
+
+<br/>
+
+| Tool | Description |
+|------|-------------|
+| `e2e_run` | Run tests (all, by suite, or by file) |
+| `e2e_list` | List available test suites |
+| `e2e_create_test` | Create a new test JSON file |
+| `e2e_create_module` | Create a reusable module |
+| `e2e_pool_status` | Check Chrome pool health |
+| `e2e_app_pool_status` | Inspect the app environment pool (forks, ports, drivers) |
+| `e2e_screenshot` | Retrieve a screenshot by hash |
+| `e2e_capture` | Capture screenshot of any URL |
+| `e2e_analyze` | Extract page structure (interactive elements, forms, headings) and emit test scaffolds |
+| `e2e_dashboard_start` | Start web dashboard |
+| `e2e_dashboard_stop` | Stop web dashboard |
+| `e2e_dashboard_restart` | Restart the dashboard (new project dir/port, clear stale sessions) |
+| `e2e_issue` | Fetch issue and generate tests |
+| `e2e_network_logs` | Query network logs for a run |
+| `e2e_learnings` | Query stability insights |
+| `e2e_vars` | Manage SQLite-backed `{{var.KEY}}` project variables |
+| `e2e_neo4j` | Manage Neo4j knowledge graph |
+
+> Pool start/stop are CLI-only — not exposed via MCP.
+
+</details>
+
+<details>
+<summary><strong>Visual verification</strong> — describe the page, AI judges it</summary>
+
+<br/>
 
 Describe what the page should look like — AI judges pass/fail from screenshots:
 
@@ -432,9 +581,12 @@ Describe what the page should look like — AI judges pass/fail from screenshots
 
 After test actions complete, the runner auto-captures a verification screenshot. The MCP response includes the screenshot hash — Claude Code retrieves it and visually verifies against your `expect` description. No API key required.
 
----
+</details>
 
-## Issue-to-Test
+<details>
+<summary><strong>Issue-to-test</strong> — turn a bug report into a runnable test</summary>
+
+<br/>
 
 Turn GitHub and GitLab issues into executable E2E tests. Paste an issue URL and get runnable tests — automatically.
 
@@ -463,13 +615,68 @@ In Claude Code, just ask:
 
 **Auth:** GitHub requires `gh` CLI, GitLab requires `glab` CLI. Self-hosted GitLab is supported.
 
+</details>
+
 ---
 
-## Learning System
+<a name="dashboard"></a>
 
-The runner learns from every test run — building knowledge about your test suite over time.
+## 📊 Dashboard &amp; insights
 
-Query insights via the `e2e_learnings` MCP tool:
+```bash
+e2e-runner dashboard                  # Start on default port 8484
+e2e-runner dashboard --port 9090      # Custom port
+```
+
+<details>
+<summary><strong>Web dashboard tour</strong> — live view, history, gallery, pool status</summary>
+
+<br/>
+
+**Live execution** — monitor tests in real-time with step-by-step progress, durations, and active worker count.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-live-running.png" alt="Dashboard - Live test execution" width="800" />
+</p>
+
+**Test suites** — browse all suites across projects. Run a single suite or all tests with one click.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-suites.png" alt="Dashboard - Test suites grid" width="800" />
+</p>
+
+**Run history** — track pass-rate trends with the built-in chart. Click any row to expand full detail.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-runs.png" alt="Dashboard - Run history" width="800" />
+</p>
+
+**Run detail** — PASS/FAIL badges, screenshot thumbnails with copyable hashes (`ss:77c28b5a`), formatted console errors, and network request logs.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-run-detail.png" alt="Dashboard - Run detail" width="800" />
+</p>
+
+**Screenshot gallery** — browse all captured screenshots with hash search (action, error, and verification captures).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-screenshots-gallery.png" alt="Dashboard - Screenshot gallery" width="800" />
+</p>
+
+**Pool status** — Chrome pool health: available slots, running sessions, memory pressure.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-pool-status.png" alt="Dashboard - Pool status" width="800" />
+</p>
+
+</details>
+
+<details>
+<summary><strong>Learning system</strong> — flaky tests, unstable selectors, slow APIs</summary>
+
+<br/>
+
+The runner learns from every test run — building knowledge about your test suite over time. Query insights via the `e2e_learnings` MCP tool:
 
 | Query | Returns |
 |-------|---------|
@@ -484,75 +691,75 @@ Query insights via the `e2e_learnings` MCP tool:
 | `page:<path>` | Drill-down history for a specific page |
 | `selector:<value>` | Drill-down history for a specific selector |
 
-**Storage & export:**
+**Storage &amp; export:**
 - SQLite (`~/.e2e-runner/dashboard.db`) — default, zero setup
 - Neo4j knowledge graph — optional, for relationship-based analysis. Manage via `e2e_neo4j` MCP tool or `docker compose`
 - Markdown report (`e2e/learnings.md`) — auto-generated after each run
 
 **Test narration:** Each test run generates a human-readable narrative of what happened step by step, visible in the CLI output and the dashboard.
 
----
+</details>
 
-## Web Dashboard
+<details>
+<summary><strong>Network error handling</strong> — assertions, global flag, full logging</summary>
 
-Real-time UI for running tests, viewing results, screenshots, and network logs.
+<br/>
 
-```bash
-e2e-runner dashboard                  # Start on default port 8484
-e2e-runner dashboard --port 9090      # Custom port
+**Explicit assertion** — place `assert_no_network_errors` after critical page loads:
+
+```json
+{ "type": "goto", "value": "/dashboard" },
+{ "type": "wait", "selector": ".loaded" },
+{ "type": "assert_no_network_errors" }
 ```
 
-### Live Execution
+**Global flag** — set `failOnNetworkError: true` to automatically fail any test with network errors:
 
-Monitor tests in real-time with step-by-step progress, durations, and active worker count.
+```bash
+e2e-runner run --all --fail-on-network-error
+```
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-live-running.png" alt="Dashboard - Live test execution" width="800" />
-</p>
+When disabled (default), the runner still collects and reports network errors — the MCP response includes a warning when tests pass but have network errors.
 
-### Test Suites
+**Full network logging** — all XHR/fetch requests are captured with URL, method, status, duration, request/response headers, and response body (truncated at 50KB). Viewable in the dashboard with expandable request detail rows.
 
-Browse all test suites across multiple projects. Run a single suite or all tests with one click.
+MCP drill-down flow:
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-suites.png" alt="Dashboard - Test suites grid" width="800" />
-</p>
+```
+1. e2e_run          → compact networkSummary + runDbId
+2. e2e_network_logs(runDbId)                     → all requests (url, method, status, duration)
+3. e2e_network_logs(runDbId, errorsOnly: true)   → only failed requests
+4. e2e_network_logs(runDbId, includeHeaders: true) → with headers
+5. e2e_network_logs(runDbId, includeBodies: true)  → full request/response bodies
+```
 
-### Run History
+The `e2e_run` response stays compact (~5KB) regardless of how many requests were captured. Use `e2e_network_logs` with the returned `runDbId` to drill into details on demand.
 
-Track pass rate trends with the built-in chart. Click any row to expand full detail with per-test results, screenshot hashes, and errors.
+</details>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-runs.png" alt="Dashboard - Run history" width="800" />
-</p>
+<details>
+<summary><strong>Screenshot capture</strong> — snapshot any URL on demand</summary>
 
-### Run Detail
+<br/>
 
-Expanded view with PASS/FAIL badges, screenshot thumbnails with copyable hashes (`ss:77c28b5a`), formatted console errors, and network request logs.
+Capture screenshots of any URL on demand — no test suite required:
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-run-detail.png" alt="Dashboard - Run detail" width="800" />
-</p>
+```bash
+e2e-runner capture https://example.com
+e2e-runner capture https://example.com --full-page --selector ".loaded" --delay 2000
+```
 
-### Screenshot Gallery
+Via MCP, the `e2e_capture` tool supports `authToken` and `authStorageKey` for authenticated pages — it injects the token into localStorage before navigating.
 
-Browse all captured screenshots with hash search. Includes action screenshots, error screenshots, and verification captures.
+Every screenshot gets a deterministic hash (`ss:a3f2b1c9`). Use `e2e_screenshot` to retrieve any screenshot by hash — it returns the image with metadata (test name, step, type).
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-screenshots-gallery.png" alt="Dashboard - Screenshot gallery" width="800" />
-</p>
-
-### Pool Status
-
-Monitor Chrome pool health: available slots, running sessions, memory pressure.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/fastslack/mtw-e2e-runner/main/docs/screenshots/blog-dashboard-pool-status.png" alt="Dashboard - Pool status" width="800" />
-</p>
+</details>
 
 ---
 
-## Browser Drivers
+<a name="drivers"></a>
+
+## 🌐 Browser drivers
 
 The runner can talk to multiple browser engines through different drivers. The default is **`auto`** — it probes each pool URL and picks the right driver per pool.
 
@@ -564,7 +771,10 @@ The runner can talk to multiple browser engines through different drivers. The d
 | `obscura` | [Obscura](https://github.com/h4ckf0r0day/obscura) (Rust + V8) | `/json/version` Browser=obscura | ~30 MB RAM footprint, built-in anti-detection (`--stealth`), stays close to real Chrome via Puppeteer |
 | `steel` | [Steel Browser](https://steel.dev) | `/v1/sessions` returns JSON | Managed session lifecycle, REST API for orchestration |
 
-### Pick a driver per test
+<details>
+<summary><strong>Pick a driver per test / force one per run</strong></summary>
+
+<br/>
 
 ```json
 {
@@ -586,16 +796,19 @@ The runner can talk to multiple browser engines through different drivers. The d
 
 `driver` is optional. If set, only pools whose detected driver matches become candidates. `fallbackDriver` is **explicit opt-in** — without it, a missing target driver fails the test with a clear message. Pool busyness does **not** trigger fallback; the runner waits inside the filtered set.
 
-### Force a driver for a whole run
+Force a driver for a whole run (CLI overrides win over per-test fields — useful for A/B benchmarks):
 
 ```bash
 e2e-runner run --all --driver obscura
 e2e-runner run --all --driver obscura --fallback-driver cdp
 ```
 
-CLI overrides win over per-test fields — useful for A/B benchmarks against the same suite.
+</details>
 
-### Running each driver locally
+<details>
+<summary><strong>Running each driver locally</strong></summary>
+
+<br/>
 
 ```bash
 # browserless (default) — managed by `pool start`
@@ -611,137 +824,18 @@ tar xzf obscura-x86_64-linux.tar.gz
 # then point the runner at it: poolUrls: ['http://localhost:9222'], poolDriver: 'obscura'
 ```
 
----
-
-## Screenshot Capture
-
-Capture screenshots of any URL on demand — no test suite required:
-
-```bash
-e2e-runner capture https://example.com
-e2e-runner capture https://example.com --full-page --selector ".loaded" --delay 2000
-```
-
-Via MCP, the `e2e_capture` tool supports `authToken` and `authStorageKey` for authenticated pages — it injects the token into localStorage before navigating.
-
-Every screenshot gets a deterministic hash (`ss:a3f2b1c9`). Use `e2e_screenshot` to retrieve any screenshot by hash — it returns the image with metadata (test name, step, type).
+</details>
 
 ---
 
-## AI Integration
+<a name="reference"></a>
 
-### Claude Code
+## ⚙️ CLI, config &amp; CI
 
-```bash
-claude plugin marketplace add fastslack/mtw-e2e-runner
-claude plugin install e2e-runner@matware
-```
+<details>
+<summary><strong>CLI commands</strong></summary>
 
-This gives Claude 17 MCP tools, a workflow skill, 4 slash commands (`/e2e-runner:run`, `/e2e-runner:create-test`, `/e2e-runner:verify-issue`, `/e2e-runner:capture`), and 3 specialized agents (test-analyzer, test-creator, test-improver).
-
-**MCP-only install** (tools only, no skill/commands/agents):
-
-```bash
-claude mcp add --transport stdio --scope user e2e-runner \
-  -- npx -y -p @matware/e2e-runner e2e-runner-mcp
-```
-
-### OpenCode
-
-```bash
-cp node_modules/@matware/e2e-runner/opencode.json ./
-mkdir -p .opencode && cp -r node_modules/@matware/e2e-runner/.opencode/* .opencode/
-```
-
-See [OPENCODE.md](OPENCODE.md) for details.
-
-### MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `e2e_run` | Run tests (all, by suite, or by file) |
-| `e2e_list` | List available test suites |
-| `e2e_create_test` | Create a new test JSON file |
-| `e2e_create_module` | Create a reusable module |
-| `e2e_pool_status` | Check Chrome pool health |
-| `e2e_app_pool_status` | Inspect the app environment pool (forks, ports, drivers) |
-| `e2e_screenshot` | Retrieve a screenshot by hash |
-| `e2e_capture` | Capture screenshot of any URL |
-| `e2e_analyze` | Extract page structure (interactive elements, forms, headings) and emit test scaffolds |
-| `e2e_dashboard_start` | Start web dashboard |
-| `e2e_dashboard_stop` | Stop web dashboard |
-| `e2e_dashboard_restart` | Restart the dashboard (new project dir/port, clear stale sessions) |
-| `e2e_issue` | Fetch issue and generate tests |
-| `e2e_network_logs` | Query network logs for a run |
-| `e2e_learnings` | Query stability insights |
-| `e2e_vars` | Manage SQLite-backed `{{var.KEY}}` project variables |
-| `e2e_neo4j` | Manage Neo4j knowledge graph |
-
-> Pool start/stop are CLI-only — not exposed via MCP.
-
----
-
-## Network Error Handling
-
-### Explicit Assertion
-
-Place `assert_no_network_errors` after critical page loads:
-
-```json
-{ "type": "goto", "value": "/dashboard" },
-{ "type": "wait", "selector": ".loaded" },
-{ "type": "assert_no_network_errors" }
-```
-
-### Global Flag
-
-Set `failOnNetworkError: true` to automatically fail any test with network errors:
-
-```bash
-e2e-runner run --all --fail-on-network-error
-```
-
-When disabled (default), the runner still collects and reports network errors — the MCP response includes a warning when tests pass but have network errors.
-
-### Full Network Logging
-
-All XHR/fetch requests are captured with: URL, method, status, duration, request/response headers, and response body (truncated at 50KB). Viewable in the dashboard with expandable request detail rows.
-
-**MCP drill-down flow:**
-
-```
-1. e2e_run          → compact networkSummary + runDbId
-2. e2e_network_logs(runDbId)                     → all requests (url, method, status, duration)
-3. e2e_network_logs(runDbId, errorsOnly: true)   → only failed requests
-4. e2e_network_logs(runDbId, includeHeaders: true) → with headers
-5. e2e_network_logs(runDbId, includeBodies: true)  → full request/response bodies
-```
-
-The `e2e_run` response stays compact (~5KB) regardless of how many requests were captured. Use `e2e_network_logs` with the returned `runDbId` to drill into details on demand.
-
----
-
-## Hooks
-
-Run actions at lifecycle points. Define globally in config or per-suite:
-
-```json
-{
-  "hooks": {
-    "beforeAll": [{ "type": "goto", "value": "/setup" }],
-    "beforeEach": [{ "type": "goto", "value": "/" }],
-    "afterEach": [{ "type": "screenshot", "value": "after.png" }],
-    "afterAll": []
-  },
-  "tests": [...]
-}
-```
-
-> **Important:** `beforeAll` runs on a separate browser page that is closed before tests start. Use `beforeEach` for state that tests need (cookies, localStorage, auth tokens).
-
----
-
-## CLI
+<br/>
 
 ```bash
 # Run tests
@@ -769,7 +863,12 @@ e2e-runner capture <url>              # On-demand screenshot
 e2e-runner init                       # Scaffold project
 ```
 
-### CLI Options
+</details>
+
+<details>
+<summary><strong>CLI options</strong></summary>
+
+<br/>
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -787,9 +886,12 @@ e2e-runner init                       # Scaffold project
 | `--driver <name>` | _(per-test)_ | Force pool driver for the run: `browserless`, `cdp`, `lightpanda`, `obscura`, `steel` |
 | `--fallback-driver <name>` | _none_ | Explicit fallback if no pool with `--driver` is reachable |
 
----
+</details>
 
-## Configuration
+<details>
+<summary><strong>Configuration</strong> — <code>e2e.config.js</code> &amp; priority</summary>
+
+<br/>
 
 Create `e2e.config.js` in your project root:
 
@@ -815,7 +917,7 @@ export default {
 };
 ```
 
-### Config Priority (highest wins)
+**Config priority (highest wins):**
 
 1. CLI flags
 2. Environment variables
@@ -824,17 +926,16 @@ export default {
 
 When `--env <name>` is set, the matching profile overrides everything.
 
----
+</details>
 
-## CI/CD
+<details>
+<summary><strong>CI/CD</strong> — JUnit XML &amp; GitHub Actions</summary>
 
-### JUnit XML
+<br/>
 
 ```bash
 e2e-runner run --all --output junit
 ```
-
-### GitHub Actions
 
 ```yaml
 jobs:
@@ -854,9 +955,12 @@ jobs:
           report_paths: e2e/screenshots/junit.xml
 ```
 
----
+</details>
 
-## Programmatic API
+<details>
+<summary><strong>Programmatic API</strong></summary>
+
+<br/>
 
 ```js
 import { createRunner } from '@matware/e2e-runner';
@@ -871,15 +975,17 @@ const report = await runner.runTests([
 ]);
 ```
 
+</details>
+
 ---
 
 ## Requirements
 
 - **Node.js** >= 20
-- **Docker** (for the Chrome pool)
+- **Docker** — only for [Option 3](#install) (the parallel Chrome pool). Options 1 &amp; 2 don't need it.
 
 ## License
 
-Copyright 2025 Matias Aguirre (fastslack)
+Copyright 2026 Matias Aguirre (fastslack) — Matware
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
