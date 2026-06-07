@@ -47,11 +47,25 @@ Complete catalog of all action types supported by @matware/e2e-runner.
 | `click_menu_item` | `text` (menu item text), `selector` (scope, optional) | Click a menu item by text. Searches `[role="menuitem"]`, `[role="menuitemradio"]`, `[role="menuitemcheckbox"]`, `.dropdown-item`, `.menu-item`, `[class*="MenuItem"]`, `[role="menu"] > li`. Waits for element to appear. |
 | `click_in_context` | `text` (container text), `selector` (child to click) | Find the smallest container whose text includes `text`, then click the `selector` child within it. Containers: `section`, `article`, `[class*="card"]`, `li`, `tr`, `div[class]`, etc. Both fields required. |
 
+## Multi-Tab
+
+All subsequent actions run in the active tab. The runner manages a tab registry keyed by label.
+
+| Action | Fields | Description |
+|--------|--------|-------------|
+| `open_tab` | `value` (URL), `text` (label, optional) | Open a new tab and navigate (relative to `baseUrl` or absolute). Label defaults to `tab-<n>`. The new tab becomes active. |
+| `switch_tab` | `value` | Switch active tab by label (exact), numeric index, or title/URL match (regex or substring). `"default"` returns to the original tab. |
+| `wait_for_tab` | `text` (label, optional), `timeout` | Wait for a tab/popup opened by the app (`window.open`, `target="_blank"`) and make it active. Use right after the action that triggers the popup. |
+| `assert_tab_count` | `value` | Assert number of open tabs: exact (`"2"`) or operators (`">=2"`). |
+| `close_tab` | `value` (label, optional) | Close the current (or named) tab and switch back to the last remaining one. Cannot close `default` while other tabs are open. |
+
 ## Assertions
 
 | Action | Fields | Description |
 |--------|--------|-------------|
 | `assert_text` | `text` | Check entire page body contains text (substring match). |
+| `assert_no_text` | `text` | Check text does NOT appear anywhere in the page body. Opposite of `assert_text`. |
+| `assert_text_in` | `selector`, `text`, `value` (`"exact"` optional) | Check text inside a scoped container. Joins `textContent` from all matching elements. Default: case-insensitive regex; with `value: "exact"`: case-sensitive substring. |
 | `assert_element_text` | `selector`, `text`, `value` (`"exact"` optional) | Check specific element's `textContent`. Default: substring match. With `value: "exact"`: strict `trim() ===` comparison. |
 | `assert_url` | `value` | Check current URL. Path-only (`/dashboard`) compares pathname. Full URL does substring match. |
 | `assert_visible` | `selector` | Element exists and is visible (`display`, `visibility`, `opacity` checks). |
@@ -62,11 +76,14 @@ Complete catalog of all action types supported by @matware/e2e-runner.
 | `assert_input_value` | `selector`, `value` | Checks `element.value.includes(value)` on input/select/textarea. |
 | `assert_matches` | `selector`, `value` (regex) | Tests element's `textContent` against `new RegExp(value)`. |
 | `assert_no_network_errors` | — | Checks accumulated `requestfailed` events during the test. Fails with error details if any exist. |
+| `assert_visual` | `value` (golden image filename), `selector` (optional element scope), `text` (max diff fraction, e.g. `"0.02"`), plus `fullPage`, `maskRegions`, `threshold` | Visual regression against a golden reference image (`goldenDir`, default `{screenshotsDir}/golden`). First run saves the golden and passes; later runs fail if more pixels differ than the max diff (default 2%) and write a diff image. `maskRegions: [{x,y,width,height}]` ignores dynamic areas (timestamps, avatars). |
 
 ### Assertion Disambiguation
 
 - **`assert_text`** → searches the **entire page body** (substring)
+- **`assert_no_text`** → asserts text is **absent** from the page body (do NOT use `assert_not_visible` with `text` — it requires `selector`)
 - **`assert_element_text`** → checks a **specific element** (substring, or exact with `value: "exact"`)
+- **`assert_text_in`** → checks text inside a **scoped container** (regex by default)
 - **`assert_matches`** → checks a specific element against a **regex** pattern
 - **`assert_input_value`** → reads the `.value` property (for form fields)
 

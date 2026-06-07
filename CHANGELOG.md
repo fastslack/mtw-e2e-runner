@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased] — 1.6 roadmap
+
+### Planned
+
+- **Self-healing with semantic verification** — when an interaction selector is auto-rewritten (by the `test-improver` agent or selector healing), record an element fingerprint per action on the last green run (tag, visible text, `role`, `aria-label`, approximate position). After a rewrite, resolve the new selector and compare fingerprints: if the target diverged, mark the test **"green, but verify intent"** instead of plain green — a runtime gate so a rewrite can never silently pass on the wrong element. Pairs with a post-rewrite visual baseline check (reusing the existing screenshot hashes).
+- **Run comparison** — `e2e_learnings("diff:<test>")` + a dashboard "compare runs" view answering *why* a green test went red: divergent network responses, actions that slowed down sharply, and the first step whose screenshot differs from the last green baseline.
+
+## [1.5.1] - 2026-06-07
+
+### Added
+
+- **MCP module discovery** — `e2e_create_test` now cross-checks submitted actions against the module registry:
+  - ♻️ warns when a test repeats an existing module's action sequence verbatim inline, suggesting `{ "$use": "<module>" }` with the inferred params
+  - 🧩 flags action sequences duplicated across tests that aren't a module yet, suggesting extraction via `e2e_create_module`
+- **Verification-coverage lint** — `e2e_create_test` flags tests that can pass without verifying anything:
+  - 🔎 warns when a test has no assertions / `expect` field, or keeps interacting after its last check (module `$use` sequences are expanded so module-provided assertions count)
+  - 📌 nudges tests that close with page-wide `assert_text` only to scope the final check with `assert_element_text` / `assert_text_in`
+- **Assertion selectors as contracts** — the `test-improver` agent and skill now treat assertion selectors as stable contracts: selector healing applies to *interaction* selectors only, never retargeting an `assert_*` selector to make a test pass
+- **Raw JSON step captures** — auto-capture detects raw JSON/plain-text responses (Chrome's white `<pre>` viewer page) and saves the body as a minified `.json` sidecar instead of a useless white screenshot; the dashboard serves and renders these step data files with JSON syntax highlighting
+- **Step screenshot dedup** — consecutive byte-identical step frames reuse the previous file instead of writing a duplicate (and skip re-streaming to the live view), shrinking `screenshots/` and the filmstrip noise
+- **Blank-capture purge** — `capture` (CLI + MCP) skips saving blank uniform-color frames unless `--force`; the gallery listing hides blank PNGs on disk (cached verdicts, blank-scan still finds them for bulk deletion)
+- **Grouped screenshot gallery** — screenshots are grouped by their real test name using DB metadata, with a filename-parse fallback for legacy files predating metadata
+- **`glama.json`** — MCP server directory listing metadata
+
+### Changed
+
+- **Token-slim MCP tool descriptions** — tool descriptions compressed to cut the per-session token cost of loading the 17-tool catalog
+- **README/LEEME** — new **Updating** section (per-install-method update commands + npx/`node_modules` shadowing and stale-process gotchas); documented 15 previously missing actions (`gql`, `assert_visual`, `assert_no_text`, `assert_text_in`, `assert_storage`, `set_storage`, `wait_network_idle`, `click_icon`, `click_menu_item`, `click_in_context`) including a new **Multi-tab actions** catalog section (`open_tab`, `switch_tab`, `wait_for_tab`, `assert_tab_count`, `close_tab`)
+
 ## [1.5.0] - 2026-06-01
 
 ### Added

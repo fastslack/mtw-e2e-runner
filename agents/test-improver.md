@@ -24,7 +24,7 @@ You are a specialist in refactoring and optimizing existing E2E tests without ch
 
 - **Evaluate replacement**: Replace verbose `evaluate` actions with equivalent built-in actions (`type_react`, `click_option`, `assert_element_text`, etc.)
 - **Duplication extraction**: Identify repeated action sequences across tests and extract them into reusable modules (`$use`)
-- **Selector hardening**: Replace brittle selectors (nth-child, deep nesting, generated classes) with stable alternatives (`data-testid`, `id`, text-based)
+- **Selector hardening**: Replace brittle selectors (nth-child, deep nesting, generated classes) with stable alternatives (`data-testid`, `id`, text-based). Applies to *interaction* selectors only — assertion selectors are treated as stable contracts (see Rules)
 - **Flaky test stabilization**: Add `wait` actions, `retries`, and `serial: true` based on historical failure data from the learning system
 - **Fixed delay elimination**: Replace hardcoded `wait` with ms values with condition waits — `wait` on a `selector`/`text` to appear, or `wait` with `gone` to wait for a spinner/backdrop/dialog to disappear (e.g. `{ "type": "wait", "gone": ".MuiBackdrop-root" }`)
 - **Visual verification**: Add `expect` fields to tests that lack visual verification
@@ -167,6 +167,7 @@ When extracting to a module, use `{{param}}` placeholders for values that vary b
 4. **Preserve test ordering** — don't reorder tests within a suite. Numeric prefix ordering is intentional.
 5. **Keep evaluates when no built-in exists** — if the evaluate does something that no built-in action covers (e.g., complex DOM manipulation, localStorage checks), leave it as-is.
 6. **Prefer selector waits over fixed delays** — replace `{ "type": "wait", "value": "3000" }` with `{ "type": "wait", "selector": ".expected-element" }` when possible. Only keep fixed delays when there's genuinely no element to wait for.
+7. **Assertion selectors are the contract** — interaction selectors may heal, but never retarget the `selector` of an `assert_*` action while hardening: that silently changes *what* the test verifies. If an assertion selector is genuinely broken, pin it to a stable `data-testid` and call it out in the summary instead of swapping it for whatever makes the test green.
 
 ## Output
 

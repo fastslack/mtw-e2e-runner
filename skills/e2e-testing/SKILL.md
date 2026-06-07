@@ -159,6 +159,7 @@ Start/stop the web dashboard with `e2e_dashboard_start` / `e2e_dashboard_stop` f
 4. **`evaluate` is strict** — Returns starting with `FAIL:`/`ERROR:` or returning `false` will fail the test. Prefer granular assertion actions over `evaluate` with inline JS.
 5. **Serial tests** — Mark tests with `"serial": true` if they share mutable state. They run after all parallel tests.
 6. **Action retries** — Use `"retries": N` on individual actions for flaky selectors, or globally via config.
+7. **Assertion selectors are the contract** — when fixing flaky tests, heal *interaction* selectors freely, but never retarget an `assert_*` selector to make a test pass: pin assertion selectors to stable `data-testid`s.
 
 ## References
 

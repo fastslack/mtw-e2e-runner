@@ -175,6 +175,25 @@ Ver [OPENCODE.md](OPENCODE.md) para detalles.
 
 </details>
 
+### Actualizar
+
+Cada método de instalación se actualiza por separado — actualizá el/los que uses:
+
+```bash
+# dependencia npm (por proyecto)
+npm install --save-dev @matware/e2e-runner@latest
+
+# plugin de Claude Code
+claude plugin update e2e-runner@matware
+
+# instalación MCP-only (npx cachea el paquete — fijá @latest para forzar el refresh)
+claude mcp add --transport stdio --scope user e2e-runner \
+  -- npx -y -p @matware/e2e-runner@latest e2e-runner-mcp
+```
+
+> [!NOTE]
+> Dos trampas: **(1)** `npx` prefiere una copia encontrada en el `node_modules` del proyecto por sobre su propia cache — si un proyecto pinea una versión vieja, el servidor MCP y el dashboard corren esa versión vieja, así que actualizá también la dependencia del proyecto. **(2)** Los procesos ya corriendo mantienen el código viejo en memoria: después de actualizar, reiniciá el dashboard y reconectá el servidor MCP (`/mcp` → `e2e-runner` → Reconnect, o reiniciá tu sesión).
+
 ---
 
 <a name="features"></a>
@@ -260,6 +279,9 @@ Los archivos de suite pueden tener prefijos numéricos para ordenamiento (`01-au
 | `evaluate` | `value` | Ejecutar JavaScript en el contexto del navegador |
 | `navigate` | `value` | Navegación del navegador (`back`, `forward`, `reload`) |
 | `clear_cookies` | — | Limpiar todas las cookies de la página actual |
+| `wait_network_idle` | opcional `value` (ms de inactividad, default 500), `timeout` | Esperar hasta que la red esté inactiva durante `value` ms — útil después de acciones que disparan requests en segundo plano |
+| `set_storage` | `value` (`"clave=valor"`), opcional `selector: "session"` | Setear una clave de `localStorage` (o `sessionStorage` con `selector: "session"`) |
+| `gql` | `value` (query), opcional `text` (variables JSON), opcional `selector` (aserción) | Ejecutar una query/mutation GraphQL vía `fetch` en la página, con el token de auth leído de `localStorage`. Falla ante errores GraphQL. `selector` es una expresión JS que se evalúa contra la respuesta `r` (ej. `"r.data.users.length > 0"`). Instala `window.__e2eGql` para usar en `evaluate` posteriores |
 
 **Click por texto** — cuando `click` usa `text` en vez de `selector`, busca en elementos interactivos y de contenido comunes:
 
@@ -282,6 +304,8 @@ button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
 | Acción | Campos | Descripción |
 |--------|--------|-------------|
 | `assert_text` | `text` | Verificar que el texto existe en cualquier parte de la página (substring) |
+| `assert_no_text` | `text` | Verificar que el texto NO aparece en ninguna parte de la página — opuesto de `assert_text` |
+| `assert_text_in` | `selector`, `text`, opcional `value: "exact"` | Verificar texto dentro de un contenedor acotado. `text` es una regex case-insensitive por defecto; `value: "exact"` cambia a substring case-sensitive |
 | `assert_element_text` | `selector`, `text`, opcional `value: "exact"` | Verificar que el texto del elemento contiene (o coincide exactamente con) el texto esperado |
 | `assert_url` | `value` | Verificar la URL actual. Los paths (`/dashboard`) comparan solo contra el pathname |
 | `assert_visible` | `selector` | Verificar que el elemento existe y es visible |
@@ -292,6 +316,8 @@ button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
 | `assert_matches` | `selector`, `value` (regex) | Verificar que el texto del elemento coincide con un patrón regex |
 | `assert_count` | `selector`, `value` | Verificar cantidad de elementos: exacto (`"5"`), u operadores (`">3"`, `">=1"`, `"<10"`) |
 | `assert_no_network_errors` | — | Falla si alguna request de red falló (ej. `ERR_CONNECTION_REFUSED`) |
+| `assert_storage` | `value` (`"clave"` o `"clave=esperado"`), opcional `selector: "session"` | Verificar que una clave de `localStorage`/`sessionStorage` existe o tiene un valor específico |
+| `assert_visual` | `value` (imagen golden), opcional `selector`, `text` (diff máximo, ej. `"0.02"`), `fullPage`, `maskRegions`, `threshold` | Regresión visual: compara un screenshot contra una imagen golden de referencia. La primera corrida guarda la golden; las siguientes fallan si difieren más píxeles que el umbral (default 2%) y escriben una imagen de diff |
 | `get_text` | `selector` | Extraer texto del elemento (no es aserción, nunca falla). Resultado: `{ value: "..." }` |
 
 </details>
@@ -311,6 +337,9 @@ Estas acciones manejan patrones comunes en apps React/MUI que normalmente requie
 | `select_combobox` | `text`, opcional `selector`, `filter`, `openWait`/`filterWait`/`waitAfter` | Abre un MUI Autocomplete/Select, opcionalmente escribe `filter`, y hace click en la opción que coincide con `text`. Cae a `[role="option"]`, `.MuiAutocomplete-option`, `li.MuiMenuItem-root`. |
 | `focus_autocomplete` | `text` (texto del label) | Hacer focus en un input de autocomplete por texto de su label. Soporta MUI y genérico `[role="combobox"]`. |
 | `click_chip` | `text` | Click en un chip/tag por texto. Busca en `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
+| `click_icon` | `value` (id del ícono), opcional `selector` (scope) | Click en un ícono por fragmento de `data-testid`/`data-icon`/`aria-label`/clase o `<title>` del SVG — MUI, FontAwesome, Heroicons, etc. Clickea el ancestro clickeable más cercano (botón, link, tab). |
+| `click_menu_item` | `text`, opcional `selector` (scope) | Click en un ítem de menú por texto en `[role="menuitem"]`, `.dropdown-item`, `.menu-item`, `MenuItem` de MUI. |
+| `click_in_context` | `text` (texto del contenedor), `selector` (hijo) | Click en un elemento hijo dentro del contenedor más chico que coincide con `text` — ej. el botón de borrar de una card/fila específica. |
 
 ```json
 // Antes: 5 líneas de boilerplate con evaluate
@@ -318,6 +347,30 @@ Estas acciones manejan patrones comunes en apps React/MUI que normalmente requie
 
 // Después: 1 acción
 { "type": "type_react", "selector": "#search", "value": "term" }
+```
+
+</details>
+
+<details>
+<summary><strong>Acciones multi-tab</strong> — popups, ventanas OAuth &amp; flujos entre pestañas</summary>
+
+<br/>
+
+| Acción | Campos | Descripción |
+|--------|--------|-------------|
+| `open_tab` | `value` (URL), opcional `text` (etiqueta) | Abrir una pestaña nueva y navegar a la URL (relativa a `baseUrl` o absoluta). La etiqueta por defecto es `tab-<n>` |
+| `switch_tab` | `value` | Cambiar la pestaña activa por etiqueta, índice numérico, o coincidencia de título/URL (regex o substring). `"default"` vuelve a la pestaña original |
+| `wait_for_tab` | opcional `text` (etiqueta), `timeout` | Esperar una pestaña/popup nueva abierta por la app (`window.open`, `target="_blank"`) y activarla |
+| `assert_tab_count` | `value` | Verificar la cantidad de pestañas abiertas: exacto (`"2"`) u operadores (`">=2"`) |
+| `close_tab` | opcional `value` (etiqueta) | Cerrar la pestaña actual (o la indicada) y volver a la última que queda |
+
+Todas las acciones siguientes corren en la pestaña activa:
+
+```json
+{ "type": "click", "text": "Abrir reporte" }
+{ "type": "wait_for_tab", "text": "reporte" }
+{ "type": "assert_text", "text": "Resultados trimestrales" }
+{ "type": "close_tab" }
 ```
 
 </details>

@@ -175,6 +175,25 @@ See [OPENCODE.md](OPENCODE.md) for details.
 
 </details>
 
+### Updating
+
+Each install method updates separately — bump the one(s) you use:
+
+```bash
+# npm dependency (per project)
+npm install --save-dev @matware/e2e-runner@latest
+
+# Claude Code plugin
+claude plugin update e2e-runner@matware
+
+# MCP-only install (npx caches the package — pin @latest to force a refresh)
+claude mcp add --transport stdio --scope user e2e-runner \
+  -- npx -y -p @matware/e2e-runner@latest e2e-runner-mcp
+```
+
+> [!NOTE]
+> Two gotchas: **(1)** `npx` prefers a copy found in the project's `node_modules` over its own cache — if a project pins an old version, the MCP server and dashboard run that old version, so update the project dependency too. **(2)** Already-running processes keep the old code in memory: after updating, restart the dashboard and reconnect the MCP server (`/mcp` → `e2e-runner` → Reconnect, or restart your session).
+
 ---
 
 <a name="features"></a>
@@ -260,6 +279,9 @@ Suite files can have numeric prefixes for ordering (`01-auth.json`, `02-dashboar
 | `evaluate` | `value` | Execute JavaScript in the browser context |
 | `navigate` | `value` | Browser navigation (`back`, `forward`, `reload`) |
 | `clear_cookies` | — | Clear all cookies for the current page |
+| `wait_network_idle` | optional `value` (idle ms, default 500), `timeout` | Wait until the network has been idle for `value` ms — useful after actions that trigger background requests |
+| `set_storage` | `value` (`"key=val"`), optional `selector: "session"` | Set a `localStorage` key (or `sessionStorage` with `selector: "session"`) |
+| `gql` | `value` (query), optional `text` (variables JSON), optional `selector` (assertion) | Run a GraphQL query/mutation via in-page `fetch`, with the auth token read from `localStorage`. Fails on GraphQL errors. `selector` is a JS expression asserted against the response `r` (e.g. `"r.data.users.length > 0"`). Installs `window.__e2eGql` for later `evaluate` steps |
 
 **Click by text** — when `click` uses `text` instead of `selector`, it searches across common interactive and content elements:
 
@@ -282,6 +304,8 @@ button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
 | Action | Fields | Description |
 |--------|--------|-------------|
 | `assert_text` | `text` | Assert text exists anywhere on the page (substring) |
+| `assert_no_text` | `text` | Assert text does NOT appear anywhere on the page — opposite of `assert_text` |
+| `assert_text_in` | `selector`, `text`, optional `value: "exact"` | Assert text inside a scoped container. `text` is a case-insensitive regex by default; `value: "exact"` switches to case-sensitive substring |
 | `assert_element_text` | `selector`, `text`, optional `value: "exact"` | Assert element's text contains (or exactly matches) the expected text |
 | `assert_url` | `value` | Assert current URL path or full URL. Paths (`/dashboard`) compare against pathname only |
 | `assert_visible` | `selector` | Assert element exists and is visible |
@@ -292,6 +316,8 @@ button, a, [role="button"], [role="tab"], [role="menuitem"], [role="option"],
 | `assert_matches` | `selector`, `value` (regex) | Assert element text matches a regex pattern |
 | `assert_count` | `selector`, `value` | Assert element count: exact (`"5"`), or operators (`">3"`, `">=1"`, `"<10"`) |
 | `assert_no_network_errors` | — | Fail if any network requests failed (e.g. `ERR_CONNECTION_REFUSED`) |
+| `assert_storage` | `value` (`"key"` or `"key=expected"`), optional `selector: "session"` | Assert a `localStorage`/`sessionStorage` key exists or has a specific value |
+| `assert_visual` | `value` (golden image), optional `selector`, `text` (max diff, e.g. `"0.02"`), `fullPage`, `maskRegions`, `threshold` | Visual regression: compare a screenshot against a golden reference. The first run saves the golden; later runs fail if more pixels differ than the threshold (default 2%) and write a diff image |
 | `get_text` | `selector` | Extract element text (non-assertion, never fails). Result: `{ value: "..." }` |
 
 </details>
@@ -311,6 +337,9 @@ These actions handle common patterns in React/MUI apps that normally require ver
 | `select_combobox` | `text`, optional `selector`, `filter`, `openWait`/`filterWait`/`waitAfter` | Open a MUI Autocomplete/Select, optionally type `filter`, then click the option matching `text`. Falls back across `[role="option"]`, `.MuiAutocomplete-option`, `li.MuiMenuItem-root`. |
 | `focus_autocomplete` | `text` (label text) | Focus an autocomplete input by its label text. Supports MUI and generic `[role="combobox"]`. |
 | `click_chip` | `text` | Click a chip/tag element by text. Searches `[class*="Chip"]`, `[class*="chip"]`, `[data-chip]`. |
+| `click_icon` | `value` (icon id), optional `selector` (scope) | Click an icon by `data-testid`/`data-icon`/`aria-label`/class fragment or SVG `<title>` — MUI, FontAwesome, Heroicons, etc. Clicks the nearest clickable ancestor (button, link, tab). |
+| `click_menu_item` | `text`, optional `selector` (scope) | Click a menu item by text across `[role="menuitem"]`, `.dropdown-item`, `.menu-item`, MUI `MenuItem`. |
+| `click_in_context` | `text` (container text), `selector` (child) | Click a child element inside the smallest container matching `text` — e.g. the delete button of one specific card/row. |
 
 ```json
 // Before: 5 lines of evaluate boilerplate
@@ -318,6 +347,30 @@ These actions handle common patterns in React/MUI apps that normally require ver
 
 // After: 1 action
 { "type": "type_react", "selector": "#search", "value": "term" }
+```
+
+</details>
+
+<details>
+<summary><strong>Multi-tab actions</strong> — popups, OAuth windows &amp; cross-tab flows</summary>
+
+<br/>
+
+| Action | Fields | Description |
+|--------|--------|-------------|
+| `open_tab` | `value` (URL), optional `text` (label) | Open a new tab and navigate to the URL (relative to `baseUrl` or absolute). Label defaults to `tab-<n>` |
+| `switch_tab` | `value` | Switch the active tab by label, numeric index, or title/URL match (regex or substring). `"default"` returns to the original tab |
+| `wait_for_tab` | optional `text` (label), `timeout` | Wait for a new tab/popup opened by the app (`window.open`, `target="_blank"`) and make it the active tab |
+| `assert_tab_count` | `value` | Assert the number of open tabs: exact (`"2"`) or operators (`">=2"`) |
+| `close_tab` | optional `value` (label) | Close the current (or named) tab and switch back to the last remaining one |
+
+All subsequent actions run in the active tab:
+
+```json
+{ "type": "click", "text": "Open report" }
+{ "type": "wait_for_tab", "text": "report" }
+{ "type": "assert_text", "text": "Quarterly results" }
+{ "type": "close_tab" }
 ```
 
 </details>

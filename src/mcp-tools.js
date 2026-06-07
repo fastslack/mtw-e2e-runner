@@ -1016,6 +1016,13 @@ async function handleCreateTest(args) {
     }
   } catch { /* never fail test creation */ }
 
+  // ── Verification coverage: tests whose outcome is never checked ──
+  try {
+    let registry;
+    try { registry = loadModuleRegistry(config.modulesDir); } catch { registry = new Map(); }
+    warnings.push(...detectUnverifiedTests(args.tests, registry));
+  } catch { /* never fail test creation */ }
+
   const warningBlock = warnings.length > 0 ? '\n\n' + warnings.join('\n\n') : '';
 
   // Enrich with learnings context for smarter test authoring
@@ -1352,6 +1359,52 @@ function detectExtractableSequences(testsActions, moduleWindowSet, { minLen = 3,
     if (kept.length >= cap) break;
   }
   return kept;
+}
+
+// Verification coverage — a test whose interactions are never followed by a check
+// can go green even when the flow silently breaks.
+function isVerifyingAction(a) {
+  if (/^assert_/.test(a.type || '')) return true;
+  if (a.type === 'evaluate' || a.type === 'gql') return true; // strict semantics / inline assertions
+  if (a.type === 'wait' && (a.selector || a.text || a.gone)) return true; // condition waits fail if unmet
+  return false;
+}
+function isInteractingAction(a) {
+  return /^(click|select|type|fill|clear|press|hover|scroll|set_storage|focus_autocomplete|goto|navigate)/.test(a.type || '');
+}
+function detectUnverifiedTests(tests, registry) {
+  const out = [];
+  for (const t of tests || []) {
+    if (!t || !Array.isArray(t.actions) || t.expect) continue; // "expect" verifies the end state visually
+    // expand $use so module-provided assertions count
+    const leaf = [];
+    let resolvable = true;
+    for (const a of t.actions) {
+      if (a && a.$use) {
+        const mod = registry.get(a.$use);
+        if (mod?.actions) leaf.push(...mod.actions.filter(x => x && !x.$use));
+        else { resolvable = false; break; }
+      } else if (a) leaf.push(a);
+    }
+    if (!resolvable) continue;
+    let lastInteract = -1;
+    leaf.forEach((a, i) => { if (isInteractingAction(a)) lastInteract = i; });
+    if (lastInteract === -1) continue; // nothing happens — nothing to verify
+    if (!leaf.some(isVerifyingAction)) {
+      out.push(`🔎 Test "${t.name}" has no assertions and no "expect" field — it can pass without verifying anything. ` +
+        `Close with assert_* actions (assert_url, assert_text, assert_visible) or add an "expect" for visual verification.`);
+    } else if (!leaf.slice(lastInteract + 1).some(isVerifyingAction)) {
+      out.push(`🔎 Test "${t.name}" keeps interacting after its last check — the final steps are unverified. ` +
+        `Close with an assert_* action so the end state is what passes the test.`);
+    } else {
+      const tail = leaf.slice(lastInteract + 1).filter(isVerifyingAction);
+      if (tail.length && tail.every(a => a.type === 'assert_text')) {
+        out.push(`📌 Test "${t.name}" closes with page-wide assert_text only — it matches anywhere on the page. ` +
+          `Scope the final check with assert_element_text or assert_text_in.`);
+      }
+    }
+  }
+  return out;
 }
 
 async function handlePoolStatus(args) {
