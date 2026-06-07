@@ -871,7 +871,7 @@ function openJsonModal(filePath){
   }).then(function(text){
     $('#modalImg').setAttribute('hidden','');
     var pre=$('#modalJson');
-    pre.textContent=prettyJson(text);
+    pre.innerHTML=highlightJson(prettyJson(text));
     pre.removeAttribute('hidden');
     $('#modal').classList.add('open');
   }).catch(function(){showToast('Could not load JSON capture','error')});

@@ -23,6 +23,27 @@ function prettyJson(str){
   try{return JSON.stringify(JSON.parse(str),null,2)}catch(e){return str}
 }
 
+/* Lightweight JSON syntax highlighter. Escapes HTML, then wraps tokens in
+   colored spans. Input should already be pretty-printed (prettyJson). */
+function highlightJson(text){
+  var esc=String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return esc.replace(/"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\b\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?\b/g,function(m,off,s){
+    var cls;
+    if(m[0]==='"'){cls=/^\s*:/.test(s.slice(off+m.length))?'jn-key':'jn-str'}
+    else if(m==='true'||m==='false'){cls='jn-bool'}
+    else if(m==='null'){cls='jn-null'}
+    else{cls='jn-num'}
+    return '<span class="'+cls+'">'+m+'</span>';
+  });
+}
+
+/* Builds a <pre> with syntax-highlighted JSON content. */
+function jsonPre(text){
+  var p=document.createElement('pre');
+  p.innerHTML=highlightJson(text);
+  return p;
+}
+
 function fmtHeaders(h){
   if(!h||typeof h!=='object')return '';
   return Object.keys(h).map(function(k){return k+': '+h[k]}).join('\n');
@@ -109,7 +130,7 @@ function buildNetRow(n){
     }
     if(n.requestBody){
       var rbText=prettyJson(n.requestBody);
-      sections.push(buildNdSection('Request Body',el('pre',null,rbText),null,rbText));
+      sections.push(buildNdSection('Request Body',jsonPre(rbText),null,rbText));
     }
     if(n.responseHeaders){
       var rhCount=Object.keys(n.responseHeaders).length;
@@ -117,7 +138,7 @@ function buildNetRow(n){
     }
     if(n.responseBody){
       var respText=prettyJson(n.responseBody);
-      sections.push(buildNdSection('Response Body',el('pre',null,respText),null,respText));
+      sections.push(buildNdSection('Response Body',jsonPre(respText),null,respText));
     }
     detail=el('div',{className:'rd-net-detail'},sections);
     row.addEventListener('click',function(e){e.stopPropagation();row.classList.toggle('open')});

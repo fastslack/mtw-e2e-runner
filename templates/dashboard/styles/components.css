@@ -259,6 +259,13 @@ tbody tr.selected td{
 }
 .modal pre[hidden],.modal img[hidden]{display:none}
 
+/* ── JSON syntax highlighting (modal + network body panels) ── */
+.jn-key{color:var(--beacon)}
+.jn-str{color:var(--amber)}
+.jn-num{color:var(--phosphor)}
+.jn-bool{color:var(--red);font-weight:600}
+.jn-null{color:var(--red);opacity:.65;font-style:italic}
+
 /* ── Toasts ── */
 .toast-container{
   position:fixed;bottom:24px;right:24px;z-index:300;

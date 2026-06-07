@@ -23,7 +23,7 @@ import { lookupScreenshotHash, ensureProject, computeScreenshotHash, registerScr
 import { fetchIssue, checkCliAuth, detectProvider } from './issues.js';
 import { buildPrompt, hasApiKey, generateHindsightHint } from './ai-generate.js';
 import { verifyIssue } from './verify.js';
-import { listModules } from './module-resolver.js';
+import { listModules, loadModuleRegistry } from './module-resolver.js';
 import { getLearningsSummary, getFlakySummary, getSelectorStability, getPageHealth, getApiHealth, getErrorPatterns, getTestTrends, getRunInsights, getTestHistory, getPageHistory, getSelectorHistory, getHealthSnapshot, getTestCreationContext, generateImprovements, getActionHealthScores } from './learner-sqlite.js';
 import { queryGraph } from './learner-neo4j.js';
 import { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
@@ -964,6 +964,58 @@ async function handleCreateTest(args) {
     }
   } catch { /* modules dir may not exist */ }
 
+  // ── #2/#3: nudge module reuse and flag extractable duplication ──
+  try {
+    const fullModules = [...loadModuleRegistry(config.modulesDir).values()];
+
+    // #2 — submitted actions already match an existing module verbatim
+    const matches = detectModuleMatches(args.tests, fullModules);
+    for (const h of matches) {
+      const req = h.params ? Object.entries(h.params).filter(([, d]) => d?.required).map(([n]) => n) : [];
+      const paramHint = req.length ? `, "params": { ${req.map(n => `"${n}": ...`).join(', ')} }` : '';
+      warnings.push(`♻️ Test "${h.test}" repeats the ${h.len} actions of existing module "${h.module}" inline. ` +
+        `Replace them with { "$use": "${h.module}"${paramHint} }.`);
+    }
+
+    // #3 — action sequences duplicated across tests that aren't a module yet
+    const matchedTests = new Set(matches.map(m => m.test));
+    const testsActions = args.tests
+      .filter(t => t.actions && !t.actions.some(a => a && a.$use) && !matchedTests.has(t.name))
+      .map(t => ({ name: t.name, sigs: actionsSigList(t.actions) }));
+
+    // include existing test files (excluding the one just written) for cross-file duplication
+    try {
+      if (fs.existsSync(config.testsDir)) {
+        for (const f of fs.readdirSync(config.testsDir).filter(x => x.endsWith('.json'))) {
+          const fp = path.join(config.testsDir, f);
+          if (fp === filePath) continue;
+          let parsed;
+          try { parsed = JSON.parse(fs.readFileSync(fp, 'utf-8')); } catch { continue; }
+          const list = Array.isArray(parsed) ? parsed : (parsed.tests || []);
+          for (const t of list) {
+            if (t && t.actions && !t.actions.some(a => a && a.$use)) {
+              testsActions.push({ name: `${f}:${t.name}`, sigs: actionsSigList(t.actions) });
+            }
+          }
+        }
+      }
+    } catch { /* ignore unreadable test files */ }
+
+    // windows already covered by an existing module → don't re-suggest extracting them
+    const moduleWindowSet = new Set();
+    for (const m of fullModules) {
+      const sigs = actionsSigList((m.actions || []).filter(a => a && !a.$use));
+      for (const w of sigWindows(sigs, 2, 6)) moduleWindowSet.add(w);
+    }
+
+    const extractable = detectExtractableSequences(testsActions, moduleWindowSet);
+    for (const e of extractable) {
+      const sample = e.tests.slice(0, 3).join(', ') + (e.tests.length > 3 ? '…' : '');
+      warnings.push(`🧩 A sequence of ${e.len} actions appears in ${e.count} tests (${sample}) but isn't a module yet. ` +
+        `Consider extracting it with e2e_create_module and referencing it via $use.`);
+    }
+  } catch { /* never fail test creation */ }
+
   const warningBlock = warnings.length > 0 ? '\n\n' + warnings.join('\n\n') : '';
 
   // Enrich with learnings context for smarter test authoring
@@ -1217,6 +1269,89 @@ function analyzeActionPatterns(tests) {
   }
 
   return warnings;
+}
+
+// ── Module-reuse detection (#2 exact match, #3 extractable duplication) ──
+
+// Normalized signature of an action for sequence comparison.
+function actionSig(a) {
+  if (!a || typeof a !== 'object') return '∅';
+  if (a.$use) return `$use:${a.$use}`;
+  return `${a.type || '?'}|${a.selector || ''}|${a.text || ''}`;
+}
+function actionsSigList(actions) {
+  return (actions || []).map(actionSig);
+}
+// All contiguous sig windows of length minLen..maxLen, each joined with '»'.
+function sigWindows(sigs, minLen, maxLen) {
+  const out = [];
+  const top = Math.min(maxLen, sigs.length);
+  for (let len = minLen; len <= top; len++) {
+    for (let i = 0; i + len <= sigs.length; i++) {
+      out.push(sigs.slice(i, i + len).join('»'));
+    }
+  }
+  return out;
+}
+
+// #2 — a module field matches a concrete test field; {{param}} placeholders are wildcards.
+function moduleFieldMatch(modVal, testVal) {
+  if (modVal == null || modVal === '') return true;            // module doesn't constrain it
+  if (typeof modVal === 'string' && modVal.includes('{{')) return true; // placeholder → wildcard
+  return modVal === testVal;
+}
+function moduleActionMatch(modA, testA) {
+  if (!modA || !testA || modA.$use || testA.$use) return false;
+  return modA.type === testA.type
+    && moduleFieldMatch(modA.selector, testA.selector)
+    && moduleFieldMatch(modA.text, testA.text);
+}
+// Find modules whose full leaf-action sequence appears as a contiguous run inside a test
+// that doesn't already use modules. Returns [{ module, params, test, len }].
+function detectModuleMatches(tests, fullModules) {
+  const hits = [];
+  for (const mod of fullModules) {
+    const ma = (mod.actions || []).filter(a => a && !a.$use);
+    if (ma.length < 2) continue;
+    for (const test of tests) {
+      const ta = test.actions || [];
+      if (ta.some(a => a && a.$use)) continue; // already modular
+      for (let i = 0; i + ma.length <= ta.length; i++) {
+        let ok = true;
+        for (let j = 0; j < ma.length; j++) {
+          if (!moduleActionMatch(ma[j], ta[i + j])) { ok = false; break; }
+        }
+        if (ok) { hits.push({ module: mod.$module, params: mod.params, test: test.name, len: ma.length }); break; }
+      }
+    }
+  }
+  return hits;
+}
+// #3 — contiguous sig windows (len>=minLen) shared by >=2 distinct tests and not already a module.
+function detectExtractableSequences(testsActions, moduleWindowSet, { minLen = 3, maxLen = 6, cap = 2 } = {}) {
+  const owners = new Map(); // windowKey -> Set(testName)
+  const lenOf = new Map();  // windowKey -> action count
+  for (const t of testsActions) {
+    const seen = new Set();
+    for (const key of sigWindows(t.sigs, minLen, maxLen)) {
+      if (key.includes('$use:') || moduleWindowSet.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      if (!owners.has(key)) { owners.set(key, new Set()); lenOf.set(key, key.split('»').length); }
+      owners.get(key).add(t.name);
+    }
+  }
+  const cands = [];
+  for (const [key, set] of owners) {
+    if (set.size >= 2) cands.push({ key, len: lenOf.get(key), count: set.size, tests: [...set] });
+  }
+  cands.sort((a, b) => b.len - a.len || b.count - a.count); // longest, then most frequent
+  const kept = [];
+  for (const c of cands) {
+    if (kept.some(k => k.key.includes(c.key))) continue; // subsumed by a longer kept window
+    kept.push(c);
+    if (kept.length >= cap) break;
+  }
+  return kept;
 }
 
 async function handlePoolStatus(args) {
@@ -1915,7 +2050,19 @@ async function handleAnalyze(args) {
       screenshotBase64 = data.toString('base64');
     }
 
-    const result = { meta, ...structure, suggestedTests };
+    // Surface reusable modules at the decision point, so scaffolds can $use them
+    // instead of duplicating action sequences.
+    let availableModules = [];
+    try {
+      availableModules = listModules(config.modulesDir).map(m => ({
+        name: m.name,
+        params: m.params.map(p => (p.required ? p.name : `${p.name}?`)),
+        description: m.description || undefined,
+        hint: `{ "$use": "${m.name}"${m.params.some(p => p.required) ? ', "params": { ... }' : ''} }`,
+      }));
+    } catch { /* modules dir may not exist */ }
+
+    const result = { meta, ...structure, suggestedTests, availableModules };
     const content = [{ type: 'text', text: JSON.stringify(result, null, 2) }];
 
     if (screenshotBase64) {
