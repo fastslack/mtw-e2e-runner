@@ -298,7 +298,9 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     tabRegistry.set('default', page);
 
     // CDP screencast — streams browser frames as JPEG to the dashboard
-    // Only attempt on browserless pools; generic CDP pools (Lightpanda) break on createCDPSession
+    // Skipped for generic CDP pools, which may break on createCDPSession.
+    // Moli supports Page.startScreencast under --layout, but emits a frame only
+    // when the page changes (default interval 1000ms, `moli serve --screencast-interval-ms`).
     const poolDriver = getCachedDriver(chosenPool);
     if (config.screencast && poolDriver !== 'cdp') {
       try {
@@ -329,11 +331,11 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
         }), 5000);
         log('📹', `${C.dim}screencast started for ${test.name} (driver=${poolDriver})${C.reset}`);
       } catch (err) {
-        log('⚠️', `${C.amber}screencast failed for ${test.name}: ${err.message} (driver=${poolDriver})${C.reset}`);
+        log('⚠️', `${C.yellow}screencast failed for ${test.name}: ${err.message} (driver=${poolDriver})${C.reset}`);
         cdpSession = null;
       }
     } else if (config.screencast && poolDriver === 'cdp') {
-      log('⚠️', `${C.amber}screencast disabled: pool driver is generic CDP (Lightpanda?), not supported${C.reset}`);
+      log('⚠️', `${C.yellow}screencast disabled: pool driver is generic CDP (Lightpanda?), not supported${C.reset}`);
     }
 
     page.on('console', (msg) => {
@@ -524,14 +526,27 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             // Wait for a new tab/popup to be opened (e.g. by window.open, target=_blank)
             const label = action.text || `tab-${tabRegistry.size}`;
             const waitTimeout = action.timeout || config.defaultTimeout || 10000;
-            const newTarget = await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => reject(new Error(`wait_for_tab: no new tab appeared after ${waitTimeout}ms`)), waitTimeout);
-              context.once('targetcreated', (target) => {
-                clearTimeout(timer);
-                resolve(target);
+            // The tab may already exist: fast engines (e.g. Moli) create the
+            // popup target before the triggering click resolves, so the
+            // 'targetcreated' event has fired before this listener exists.
+            // Adopt any page in the context that isn't registered yet first.
+            const knownPages = new Set(tabRegistry.values());
+            let newPage = null;
+            for (const t of context.targets()) {
+              if (t.type() !== 'page') continue;
+              const p = await t.page().catch(() => null);
+              if (p && !p.isClosed() && !knownPages.has(p)) { newPage = p; break; }
+            }
+            if (!newPage) {
+              const newTarget = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error(`wait_for_tab: no new tab appeared after ${waitTimeout}ms`)), waitTimeout);
+                context.once('targetcreated', (target) => {
+                  clearTimeout(timer);
+                  resolve(target);
+                });
               });
-            });
-            const newPage = await newTarget.page();
+              newPage = await newTarget.page();
+            }
             if (newPage) {
               await newPage.setViewport(config.viewport);
               tabRegistry.set(label, newPage);

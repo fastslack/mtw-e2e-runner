@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Runtime**: Node.js >= 20, ESM (`"type": "module"`)
 - **Dependencies**: `puppeteer-core` (connects to remote browser), `@modelcontextprotocol/sdk` (MCP server), `better-sqlite3` (dashboard DB)
-- **Infrastructure**: Multi-driver pool — `browserless`, generic `cdp`, `lightpanda` (Zig), `obscura` (Rust+V8), or `steel`. Default `auto` probes endpoints and picks per pool. `pool start` uses Docker Compose for browserless/lightpanda; Obscura ships as a single binary the user runs locally.
+- **Infrastructure**: Multi-driver pool — `browserless`, generic `cdp`, `lightpanda` (Zig), `obscura` (Rust+V8), `moli` (Rust+V8, Lexmount), or `steel`. Default `auto` probes endpoints and picks per pool (Moli is recognized by the `Moli-Version` field in `/json/version`, since its `Browser` string says Chrome). `pool start` uses Docker Compose for browserless/lightpanda; Obscura and Moli ship as single binaries the user runs locally. Moli must run with `moli serve --layout` — without it clicks and screenshots are rejected, and `connectToPool()` fails fast with a fix hint.
 
 ## Commands
 
@@ -102,7 +102,7 @@ templates/          Scaffolding templates for init command + dashboard SPA
 - All action types are validated at load time — unknown types throw immediately with location info
 - SQLite DB at `~/.e2e-runner/dashboard.db` aggregates all projects (WAL mode, singleton connection)
 - The codebase is entirely in English (comments, error messages, CLI help text)
-- Tests can pin a specific browser engine via `driver` (`browserless` | `cdp` | `lightpanda` | `obscura` | `steel`). `fallbackDriver` is **explicit opt-in** — without it, a missing target driver fails hard. Capacity issues do NOT trigger fallback; the runner waits inside the filtered pool set. CLI `--driver`/`--fallback-driver` override per-test fields. Resolution lives in `resolvePoolsForTest()` in `src/pool-manager.js`.
+- Tests can pin a specific browser engine via `driver` (`browserless` | `cdp` | `lightpanda` | `moli` | `obscura` | `steel`). `fallbackDriver` is **explicit opt-in** — without it, a missing target driver fails hard. Capacity issues do NOT trigger fallback; the runner waits inside the filtered pool set. CLI `--driver`/`--fallback-driver` override per-test fields. Resolution lives in `resolvePoolsForTest()` in `src/pool-manager.js`.
 
 ## MCP Tools
 

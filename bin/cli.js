@@ -208,7 +208,7 @@ ${C.bold}Options:${C.reset}
   --auth-login-endpoint <url>  Auto-login: POST credentials to this URL to get auth token
   --auth-token-path <path>     Dot-path to token in auth response (default: token)
   --verification-strictness <level>  Visual verification: strict, moderate (default), lenient
-  --driver <name>          Force pool driver for this run: browserless, cdp, lightpanda, obscura, steel
+  --driver <name>          Force pool driver for this run: browserless, cdp, lightpanda, moli, obscura, steel
                            (overrides per-test "driver" field; useful for A/B benchmarks)
   --fallback-driver <name> Explicit fallback if no pool with --driver is reachable (overrides per-test "fallbackDriver")
 
@@ -235,7 +235,7 @@ async function cmdRun() {
 
   // Validate CLI driver overrides up-front (clearer error than waiting for first test)
   if (config.cliDriverOverride || config.cliFallbackDriverOverride) {
-    const allowed = ['browserless', 'cdp', 'lightpanda', 'obscura', 'steel'];
+    const allowed = ['browserless', 'cdp', 'lightpanda', 'moli', 'obscura', 'steel'];
     for (const [flag, val] of [['--driver', config.cliDriverOverride], ['--fallback-driver', config.cliFallbackDriverOverride]]) {
       if (val && !allowed.includes(val)) {
         console.error(`${C.red}Invalid value for ${flag}: "${val}". Allowed: ${allowed.join(', ')}.${C.reset}`);
