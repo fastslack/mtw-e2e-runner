@@ -52,7 +52,13 @@ npx e2e-runner issue <url> --prompt       # output AI prompt as JSON
 npx e2e-runner issue <url> --test-type api  # generate API tests instead of UI tests
 ```
 
-There are no unit tests, linter, or build step in this project.
+There are no unit tests, linter, or build step in this project. The one test harness is the driver-compatibility integration suite, which needs a live pool:
+
+```bash
+npm run test:integration -- --pool http://127.0.0.1:9222 [--driver moli] [--no-layout-pool <url>]
+```
+
+See `test/integration/driver-compat/README.md`. Run it against Moli and Chrome after touching `src/pool.js`, `src/actions.js` (screenshots, inputs, blank detection) or tab handling in `src/runner.js`.
 
 ## Architecture
 
@@ -132,7 +138,7 @@ MCP server implementation: `src/mcp-server.js` uses `@modelcontextprotocol/sdk` 
 
 ## Development Notes
 
-- No unit tests, no linter, no build step
+- No unit tests, no linter, no build step — only the driver-compat integration suite (`npm run test:integration`)
 - Config priority (ascending): defaults → `e2e.config.js|json` → env vars → CLI flags → environment profile
 - Full env var and CLI flag lists are in `src/config.js`
 
