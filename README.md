@@ -1028,6 +1028,17 @@ const report = await runner.runTests([
 ]);
 ```
 
+**Embedding the runner in another program?** Use the stable, side-effect-free entry instead — versioned results (`schemaVersion: 1`, JSON Schema included), no dashboard DB / learnings / LLM calls, no native addons:
+
+```js
+import { runSuite, inspectPage } from '@matware/e2e-runner/embed';
+
+const result = await runSuite(tests, { baseUrl, poolUrl, screenshotsDir, vars, env });
+const page = await inspectPage('http://app:3000/login', { poolUrl, screenshotsDir });
+```
+
+See [docs/embedding.md](docs/embedding.md).
+
 </details>
 
 ---

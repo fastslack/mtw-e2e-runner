@@ -18,7 +18,15 @@ import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
 import { resolveTestData, validateActionTypes } from './module-resolver.js';
 import { compareImages } from './visual-diff.js';
-import { ensureProject, getVariables } from './db.js';
+// db.js (better-sqlite3) is imported lazily in loadVarsForTest() so the
+// embed entry can load in runtimes without native Node addons.
+
+/**
+ * Non-enumerable link from an internal test result back to the test object it
+ * ran (invisible to JSON reports). The embed API uses it to keep input order
+ * and pass unknown test keys through as `meta`.
+ */
+export const TEST_SOURCE = Symbol.for('@matware/e2e-runner.testSource');
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -127,27 +135,32 @@ function mergeHooks(configHooks, suiteHooks) {
 }
 
 /** Replaces {{var.KEY}} and {{env.KEY}} in all string fields of an action object.
- *  Skips {{param}} patterns (no dot) — those are module params handled by module-resolver. */
-function resolveVarsInAction(action, vars) {
+ *  Skips {{param}} patterns (no dot) — those are module params handled by module-resolver.
+ *  `env` defaults to process.env; the embed API passes its own map instead. */
+function resolveVarsInAction(action, vars, env = process.env) {
   const resolved = { ...action };
   for (const key of Object.keys(resolved)) {
     if (typeof resolved[key] !== 'string') continue;
     resolved[key] = resolved[key].replace(/\{\{(var|env)\.([^}]+)\}\}/g, (match, ns, name) => {
       if (ns === 'env') {
-        if (process.env[name] !== undefined) return process.env[name];
+        if (env[name] !== undefined) return String(env[name]);
         throw new Error(`Unresolved variable: {{env.${name}}} — environment variable not set`);
       }
       // ns === 'var'
-      if (vars[name] !== undefined) return vars[name];
+      if (vars[name] !== undefined) return String(vars[name]);
       throw new Error(`Unresolved variable: {{var.${name}}} — not found in project or suite variables`);
     });
   }
   return resolved;
 }
 
-/** Loads merged variables for a test (project scope + suite scope overlay). */
-function loadVarsForTest(config, suiteName) {
+/** Loads merged variables for a test (project scope + suite scope overlay).
+ *  When the caller supplied variables in memory (config._embed.vars — the
+ *  embed API), SQLite is never touched. */
+async function loadVarsForTest(config, suiteName) {
+  if (config._embed) return { ...(config._embed.vars || {}) };
   try {
+    const { ensureProject, getVariables } = await import('./db.js');
     const cwd = config._cwd || process.cwd();
     const projectName = config.projectName || cwd.split('/').pop() || 'default';
     const projectId = ensureProject(cwd, projectName, config.screenshotsDir, config.testsDir);
@@ -161,9 +174,9 @@ function loadVarsForTest(config, suiteName) {
 }
 
 /** Resolves variables in an array of actions. */
-function resolveVarsInActions(actions, vars) {
+function resolveVarsInActions(actions, vars, env) {
   if (!actions || !actions.length) return actions;
-  return actions.map(a => resolveVarsInAction(a, vars));
+  return actions.map(a => resolveVarsInAction(a, vars, env));
 }
 
 /** Executes an array of hook actions on a page */
@@ -174,7 +187,7 @@ async function executeHookActions(page, actions, config) {
 }
 
 /** Normalizes raw JSON (array or object with hooks) into { tests, hooks } */
-function normalizeTestData(data) {
+export function normalizeTestData(data) {
   if (Array.isArray(data)) {
     return { tests: data, hooks: {} };
   }
@@ -387,11 +400,12 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     }
 
     // Resolve {{var.X}} and {{env.X}} in test actions and hooks
-    const vars = loadVarsForTest(config, config._suiteName);
+    const vars = await loadVarsForTest(config, config._suiteName);
+    const varEnv = config._embed?.env || process.env;
     if (Object.keys(vars).length > 0 || /\{\{(var|env)\./.test(JSON.stringify(test.actions))) {
-      test = { ...test, actions: resolveVarsInActions(test.actions, vars) };
-      if (hooks.beforeEach?.length) hooks = { ...hooks, beforeEach: resolveVarsInActions(hooks.beforeEach, vars) };
-      if (hooks.afterEach?.length) hooks = { ...hooks, afterEach: resolveVarsInActions(hooks.afterEach, vars) };
+      test = { ...test, actions: resolveVarsInActions(test.actions, vars, varEnv) };
+      if (hooks.beforeEach?.length) hooks = { ...hooks, beforeEach: resolveVarsInActions(hooks.beforeEach, vars, varEnv) };
+      if (hooks.afterEach?.length) hooks = { ...hooks, afterEach: resolveVarsInActions(hooks.afterEach, vars, varEnv) };
     }
 
     // Run beforeEach hook
@@ -885,6 +899,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
         }
       }
 
+      Object.defineProperty(result, TEST_SOURCE, { value: test, enumerable: false, configurable: true });
       results.push(result);
       activeCount--;
 

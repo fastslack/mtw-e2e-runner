@@ -1,0 +1,56 @@
+[
+  {
+    "name": "greets the user",
+    "criteria": [
+      {
+        "id": "AC-1",
+        "text": "Greeting shows the name"
+      }
+    ],
+    "ticket": "T-1",
+    "actions": [
+      {
+        "type": "goto",
+        "value": "/about"
+      },
+      {
+        "type": "type",
+        "selector": "#who",
+        "value": "Ana"
+      },
+      {
+        "type": "click",
+        "selector": "#greet"
+      },
+      {
+        "type": "screenshot",
+        "value": "greeted.png"
+      },
+      {
+        "type": "assert_text",
+        "text": "Hello Ana"
+      }
+    ]
+  },
+  {
+    "name": "login form has a submit",
+    "criteria": [
+      "AC-2"
+    ],
+    "actions": [
+      {
+        "type": "goto",
+        "value": "/"
+      },
+      {
+        "type": "assert_visible",
+        "selector": "#email"
+      },
+      {
+        "type": "assert_visible",
+        "selector": "#missing",
+        "timeout": 1000
+      }
+    ]
+  }
+]

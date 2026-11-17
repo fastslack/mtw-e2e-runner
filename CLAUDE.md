@@ -52,7 +52,11 @@ npx e2e-runner issue <url> --prompt       # output AI prompt as JSON
 npx e2e-runner issue <url> --test-type api  # generate API tests instead of UI tests
 ```
 
-There are no unit tests, linter, or build step in this project.
+There is no linter or build step. Tests cover the embed API only:
+
+```bash
+npm test    # node --test test/unit/*.test.js — browser tests use local Chrome or E2E_TEST_POOL_URL, skipped if neither exists
+```
 
 ## Architecture
 
@@ -69,6 +73,8 @@ src/logger.js       ANSI logger (no external deps)
 src/index.js        Programmatic API — exports createRunner() that wraps the full pipeline
 src/mcp-server.js   MCP server — stdio transport, redirects console to stderr
 src/mcp-tools.js    MCP tool definitions + handlers — shared by stdio and dashboard HTTP transports
+src/embed.js        Stable embed API (runSuite, inspectPage) — no SQLite/learnings/LLM imports; results mapped to schemas/*.v1.json by src/embed-result.js
+src/page-analysis.js  Page structure extraction + smart navigation, shared by e2e_analyze and inspectPage
 src/db.js           SQLite module — singleton connection, WAL mode, migrations, screenshot hashes
 src/dashboard.js    HTTP server + WebSocket broadcast + REST API + pool polling
 src/websocket.js    Minimal RFC 6455 WebSocket server, no deps

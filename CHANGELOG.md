@@ -2,6 +2,18 @@
 
 ## [Unreleased] — 1.6 roadmap
 
+### Added
+
+- **Embed API (`@matware/e2e-runner/embed`)** — stable entry for programs that embed the runner, documented in `docs/embedding.md`:
+  - `runSuite(suite, opts)` runs a suite (array or `{ tests, hooks }`, modules as an in-memory map or a directory, `vars`/`env` passed in) and returns a versioned `RunResult` (`schemaVersion: 1`, `schemas/run-result.v1.json`) with per-step results, failed step, console, network, screenshots and a `meta` passthrough of unknown test keys
+  - `inspectPage(url, opts)` returns the `e2e_analyze` page structure plus a screenshot path (`schemas/inspect-result.v1.json`)
+  - No side effects beyond screenshots in `screenshotsDir` (no dashboard DB, learnings, sync, reports or stdout), never calls an LLM, and does not load `better-sqlite3` — runs under Bun
+- `npm test` — unit + browser tests for the embed API (`node --test`)
+
+### Changed
+
+- `runner.js` loads `db.js` lazily (only to resolve `{{var.*}}` from SQLite); page-analysis helpers moved from `mcp-tools.js` to `src/page-analysis.js`. CLI and MCP behaviour unchanged.
+
 ### Planned
 
 - **Self-healing with semantic verification** — when an interaction selector is auto-rewritten (by the `test-improver` agent or selector healing), record an element fingerprint per action on the last green run (tag, visible text, `role`, `aria-label`, approximate position). After a rewrite, resolve the new selector and compare fingerprints: if the target diverged, mark the test **"green, but verify intent"** instead of plain green — a runtime gate so a rewrite can never silently pass on the wrong element. Pairs with a post-rewrite visual baseline check (reusing the existing screenshot hashes).
