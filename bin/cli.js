@@ -32,8 +32,8 @@ import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../src/config.js';
-import { startPool, stopPool, restartPool, connectToPool } from '../src/pool.js';
-import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool, selectPool } from '../src/pool-manager.js';
+import { startPool, stopPool, restartPool, connectToPool, disconnectFromPool } from '../src/pool.js';
+import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool, selectPool, releasePending } from '../src/pool-manager.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
 import { looksLikeBlankCapture } from '../src/actions.js';
 import { generateReport, saveReport, printReport, persistRun, printInsights } from '../src/reporter.js';
@@ -563,10 +563,13 @@ async function cmdCapture() {
   await waitForAnyPool(capturePoolUrls, 30000, captureDriverOpts);
 
   let browser;
+  let context;
+  let capturePool = null;
   try {
-    const capturePool = await selectPool(capturePoolUrls, 2000, 60000, captureDriverOpts);
-    browser = await connectToPool(capturePool);
-    const page = await browser.newPage();
+    capturePool = await selectPool(capturePoolUrls, 2000, 60000, captureDriverOpts);
+    browser = await connectToPool(capturePool, config.connectRetries, config.connectRetryDelay);
+    context = await browser.createBrowserContext();
+    const page = await context.newPage();
     await page.setViewport(config.viewport);
 
     log('📸', `Navigating to ${C.cyan}${url}${C.reset}`);
@@ -616,7 +619,9 @@ async function cmdCapture() {
     log('🏷️', `Hash:  ${C.bold}ss:${hash}${C.reset}`);
     console.log('');
   } finally {
-    if (browser) browser.disconnect();
+    if (context) try { await context.close(); } catch { /* */ }
+    if (browser) try { await disconnectFromPool(browser, capturePool); } catch { /* */ }
+    if (capturePool) releasePending(capturePool);
   }
 }
 

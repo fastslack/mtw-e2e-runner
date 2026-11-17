@@ -49,6 +49,11 @@ const DEFAULTS = {
   env: 'default',
   hooks: { beforeAll: [], afterAll: [], beforeEach: [], afterEach: [] },
   dashboardPort: 8484,
+  // Bind address for the dashboard (env DASHBOARD_HOST). null = 127.0.0.1,
+  // or 0.0.0.0 in sync hub mode. Non-loopback binds require dashboardToken.
+  dashboardHost: null,
+  // Token for remote dashboard access (env DASHBOARD_TOKEN). null = random per start.
+  dashboardToken: null,
   maxHistoryRuns: 100,
   projectName: null,
   exclude: [],

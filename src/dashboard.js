@@ -9,6 +9,7 @@
  */
 
 import http from 'http';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -56,6 +57,67 @@ function isBlankScreenshotCached(filePath) {
   }
 }
 
+// ── Access control ────────────────────────────────────────────────────────────
+//
+// The dashboard can run tests, capture URLs and write files, so it must not be
+// reachable by other machines or by arbitrary web pages:
+//  - Default bind is loopback. In that mode the Host header must be a loopback
+//    name too, which defeats DNS rebinding.
+//  - When bound to a non-loopback address (DASHBOARD_HOST / dashboardHost, or
+//    sync hub mode), every request needs a token unless it comes from this
+//    machine with a loopback Host. Browsers get it once via /?token=… which
+//    sets an HttpOnly, SameSite=Strict cookie.
+//  - State-changing requests from a foreign Origin are refused, and POST bodies
+//    must be application/json so cross-site forms/fetches can't skip preflight.
+
+const TOKEN_COOKIE = 'e2e_dashboard_token';
+
+function hostnameOf(hostHeader) {
+  if (!hostHeader) return null;
+  try { return new URL(`http://${hostHeader}`).hostname; } catch { return null; }
+}
+
+function isLoopbackHostname(hostname) {
+  if (!hostname) return false;
+  return hostname === 'localhost' || hostname.endsWith('.localhost')
+    || hostname === '[::1]' || hostname === '::1' || /^127\.\d+\.\d+\.\d+$/.test(hostname);
+}
+
+function isLoopbackAddress(addr) {
+  if (!addr) return false;
+  return addr === '::1' || /^(::ffff:)?127\.\d+\.\d+\.\d+$/.test(addr);
+}
+
+function tokensEqual(a, b) {
+  if (!a || !b) return false;
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+function requestToken(req) {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) return auth.slice(7).trim();
+  const m = (req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)${TOKEN_COOKIE}=([^;]+)`));
+  if (m) { try { return decodeURIComponent(m[1]); } catch { return m[1]; } }
+  return null;
+}
+
+/**
+ * Decides whether a request may use the dashboard.
+ * @returns {{ ok: boolean, status?: number, error?: string }}
+ */
+function checkDashboardAccess(req, { loopbackBind, token }) {
+  const hostname = hostnameOf(req.headers.host);
+  if (loopbackBind) {
+    if (!isLoopbackHostname(hostname)) return { ok: false, status: 403, error: 'Invalid Host header' };
+    return { ok: true };
+  }
+  const trustedLocal = isLoopbackAddress(req.socket?.remoteAddress) && isLoopbackHostname(hostname);
+  if (trustedLocal || tokensEqual(requestToken(req), token)) return { ok: true };
+  return { ok: false, status: 401, error: 'Unauthorized — open the dashboard with ?token=<DASHBOARD_TOKEN> or send Authorization: Bearer <token>' };
+}
+
 /** Starts the dashboard server */
 export async function startDashboard(config) {
   const port = config.dashboardPort || 8484;
@@ -67,6 +129,15 @@ export async function startDashboard(config) {
     migrateSyncSchema();
     log(`${C.cyan}[sync]${C.reset} Hub mode enabled`);
   }
+
+  const bindHost = config.dashboardHost || process.env.DASHBOARD_HOST
+    || (config.sync?.mode === 'hub' ? '0.0.0.0' : '127.0.0.1');
+  const loopbackBind = isLoopbackHostname(bindHost);
+  const dashboardToken = loopbackBind
+    ? null
+    : (config.dashboardToken || process.env.DASHBOARD_TOKEN || crypto.randomBytes(24).toString('hex'));
+  const accessOpts = { loopbackBind, token: dashboardToken };
+  const devOrigins = process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173'];
 
   let currentRun = null; // { running: true, runId, report } or null
   let latestReport = null;
@@ -109,19 +180,22 @@ export async function startDashboard(config) {
     const url = new URL(req.url, `http://localhost:${port}`);
     const pathname = url.pathname;
 
-    // CORS — allow same-origin (Origin's host matches the Host header)
-    // and the explicit whitelist (localhost/127.0.0.1 on dashboard port).
-    const allowedOrigins = [`http://localhost:${port}`, `http://127.0.0.1:${port}`];
+    // CORS — allow the explicit whitelist (localhost/127.0.0.1 on dashboard port)
+    // and same-origin (Origin's host matches the Host header). Same-origin is
+    // safe because checkDashboardAccess() pins Host to loopback (or requires a
+    // token) before anything runs.
+    const allowedOrigins = [`http://localhost:${port}`, `http://127.0.0.1:${port}`, ...devOrigins];
     const origin = req.headers.origin;
+    let originAllowed = !origin;
     if (origin) {
-      let allowOrigin = allowedOrigins.includes(origin);
-      if (!allowOrigin && req.headers.host) {
-        try { allowOrigin = new URL(origin).host === req.headers.host; } catch { /* */ }
+      originAllowed = allowedOrigins.includes(origin);
+      if (!originAllowed && req.headers.host) {
+        try { originAllowed = new URL(origin).host === req.headers.host; } catch { /* */ }
       }
-      if (allowOrigin) res.setHeader('Access-Control-Allow-Origin', origin);
+      if (originAllowed) res.setHeader('Access-Control-Allow-Origin', origin);
     }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Mcp-Session-Id');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, Mcp-Session-Id');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -130,10 +204,41 @@ export async function startDashboard(config) {
     }
 
     try {
-      // Handle sync routes if in hub mode
+      // Handle sync routes if in hub mode (they carry their own JWT auth)
       if (config.sync?.mode === 'hub' && pathname.startsWith('/api/sync')) {
         const handled = await handleSyncRoutes(req, res, config, pathname);
         if (handled) return;
+      }
+
+      // Token bootstrap: /?token=… stores the token in a cookie and drops it from the URL
+      if (dashboardToken && pathname === '/' && url.searchParams.has('token')) {
+        if (tokensEqual(url.searchParams.get('token'), dashboardToken)) {
+          res.writeHead(302, {
+            'Set-Cookie': `${TOKEN_COOKIE}=${encodeURIComponent(dashboardToken)}; HttpOnly; SameSite=Strict; Path=/`,
+            Location: '/',
+          });
+          res.end();
+          return;
+        }
+      }
+
+      const access = checkDashboardAccess(req, accessOpts);
+      if (!access.ok) {
+        jsonResponse(res, { error: access.error }, access.status);
+        return;
+      }
+
+      const method = req.method || 'GET';
+      if (method !== 'GET' && method !== 'HEAD') {
+        if (!originAllowed) {
+          jsonResponse(res, { error: 'Cross-origin request refused' }, 403);
+          return;
+        }
+        const ctype = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+        if (method === 'POST' && ctype !== 'application/json') {
+          jsonResponse(res, { error: 'Content-Type must be application/json' }, 415);
+          return;
+        }
       }
       
       // Serve dashboard HTML
@@ -949,9 +1054,9 @@ export async function startDashboard(config) {
     }
   }, 30000);
 
-  const devOrigins = process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173'];
   const wss = createWebSocketServer(server, {
     allowedOrigins: [`http://localhost:${port}`, `http://127.0.0.1:${port}`, ...devOrigins],
+    verifyClient: (req) => checkDashboardAccess(req, accessOpts).ok,
     onConnect(socket) {
       // Replay live state for new/reconnected clients
       for (const rid of Object.keys(liveEventBuffers)) {
@@ -1037,7 +1142,7 @@ export async function startDashboard(config) {
   }
 
   return new Promise((resolve, reject) => {
-    const host = config.dashboardHost || process.env.DASHBOARD_HOST || '0.0.0.0';
+    const host = bindHost;
 
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
@@ -1050,6 +1155,11 @@ export async function startDashboard(config) {
 
     server.listen(port, host, () => {
       log('🖥️', `${C.bold}Dashboard${C.reset} running at ${C.cyan}http://${host}:${port}${C.reset}`);
+      if (!loopbackBind) {
+        const tokenSource = (config.dashboardToken || process.env.DASHBOARD_TOKEN) ? 'DASHBOARD_TOKEN' : 'generated for this session';
+        log('🔐', `${C.yellow}Dashboard is reachable from the network (${host}). Remote access needs the token (${tokenSource}):${C.reset}`);
+        log('  ', `${C.cyan}http://<this-host>:${port}/?token=${dashboardToken}${C.reset}`);
+      }
 
       const handle = {
         server,

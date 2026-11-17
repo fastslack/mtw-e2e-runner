@@ -102,6 +102,12 @@ export function createWebSocketServer(httpServer, options = {}) {
       }
     }
 
+    if (options.verifyClient && !options.verifyClient(req)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     const key = req.headers['sec-websocket-key'];
     if (!key) {
       socket.destroy();
