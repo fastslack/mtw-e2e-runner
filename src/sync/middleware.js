@@ -10,7 +10,7 @@
  * - Audit logging
  */
 
-import { verifyJwt, validateTotp, verifyApiKey, isTimestampValid } from './auth.js';
+import { verifyJwt, validateTotp, verifyApiKey, isTimestampValid, decrypt } from './auth.js';
 import { getInstance, updateInstanceLastSeen, consumeNonce, logAudit } from './schema.js';
 import crypto from 'crypto';
 
@@ -170,11 +170,19 @@ export function createAuthMiddleware(config) {
     
     try {
       const payload = verifyJwt(token, jwtSecret);
+
+      // A JWT outlives approval changes: re-check the instance on every request
+      // so revoke/suspend takes effect immediately, not when the token expires.
+      const instance = getInstance(payload.sub);
+      if (!instance || instance.status !== 'active') {
+        throw new Error(`Instance status is ${instance ? instance.status : 'unknown'}`);
+      }
       
       // Attach auth info to request
       req.auth = {
         instanceId: payload.sub,
-        role: payload.role || 'member',
+        // Role from the DB, not the token: promotions/demotions apply immediately.
+        role: instance.role || 'member',
         instanceDbId: payload.dbId,
       };
       
@@ -296,7 +304,6 @@ export function authenticateWithCredentials(credentials, config) {
   const masterKey = getMasterKey(config);
   if (masterKey && totpSecret.includes(':')) {
     try {
-      const { decrypt } = require('./auth.js');
       totpSecret = decrypt(totpSecret, masterKey);
     } catch (err) {
       return { success: false, error: 'Failed to decrypt TOTP secret' };

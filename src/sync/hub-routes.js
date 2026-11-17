@@ -24,6 +24,17 @@ import {
   encrypt,
 } from './auth.js';
 
+// Registration fields are client-controlled: printable text only (they end up
+// in the approver's terminal and the dashboard), bounded length.
+const INSTANCE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+function cleanText(value, max = 100) {
+  if (value === undefined || value === null) return null;
+  // eslint-disable-next-line no-control-regex
+  const text = String(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim().slice(0, max);
+  return text || null;
+}
+const SCREENSHOT_HASH_RE = /^[a-f0-9]{8}$/;
+
 import {
   migrateSyncSchema,
   createInstance,
@@ -44,6 +55,7 @@ import {
   createAuthMiddleware,
   createRateLimitMiddleware,
   requirePermission,
+  hasPermission,
   authenticateWithCredentials,
   getJwtSecret,
   getMasterKey,
@@ -188,6 +200,13 @@ async function handleRegister(req, res, config, requestId) {
   if (!body.instanceId || !body.displayName) {
     return jsonResponse(res, { error: 'Missing instanceId or displayName' }, 400);
   }
+  if (typeof body.instanceId !== 'string' || !INSTANCE_ID_RE.test(body.instanceId)) {
+    return jsonResponse(res, { error: 'Invalid instanceId (letters, digits, ".", "_", "-"; max 128 chars)' }, 400);
+  }
+  const displayName = cleanText(body.displayName);
+  if (!displayName) {
+    return jsonResponse(res, { error: 'Invalid displayName' }, 400);
+  }
   
   // Check if registration is allowed
   if (!config.sync?.hub?.allowRegistration) {
@@ -213,12 +232,14 @@ async function handleRegister(req, res, config, requestId) {
   try {
     const id = createInstance({
       instanceId: body.instanceId,
-      displayName: body.displayName,
-      hostname: body.hostname || null,
-      environment: body.environment || 'development',
+      displayName,
+      hostname: cleanText(body.hostname),
+      environment: cleanText(body.environment, 40) || 'development',
       apiKeyHash: hashApiKey(apiKey),
       totpSecret: storedTotpSecret,
-      role: body.role || 'member',
+      // Never trust a self-declared role: every registration starts as member.
+      // Roles change only via `e2e-runner sync set-role` or PATCH by an admin.
+      role: 'member',
       status,
     });
     
@@ -228,7 +249,7 @@ async function handleRegister(req, res, config, requestId) {
       status: 'success',
       ipAddress: getClientIp(req),
       requestId,
-      details: { displayName: body.displayName, initialStatus: status },
+      details: { displayName, initialStatus: status, role: 'member', requestedRole: body.role ? cleanText(body.role, 20) : undefined },
     });
     
     // Return credentials (only shown once!)
@@ -237,7 +258,8 @@ async function handleRegister(req, res, config, requestId) {
       instance: {
         id,
         instanceId: body.instanceId,
-        displayName: body.displayName,
+        displayName,
+        role: 'member',
         status,
       },
       credentials: {
@@ -440,6 +462,11 @@ async function handlePush(req, res, config, requestId) {
     if (screenshots && Array.isArray(screenshots)) {
       for (const ss of screenshots) {
         if (ss.hash && ss.data) {
+          // The hash becomes a file name: only accept the 8-hex content hash
+          // (anything else, e.g. "../../x", would write outside screenshotsDir).
+          if (typeof ss.hash !== 'string' || !SCREENSHOT_HASH_RE.test(ss.hash)) continue;
+          const ssBuffer = Buffer.from(String(ss.data), 'base64');
+          if (crypto.createHash('sha256').update(ssBuffer).digest('hex').slice(0, 8) !== ss.hash) continue;
           // Store screenshot
           const screenshotsDir = config.screenshotsDir || path.join(process.env.HOME, '.e2e-runner', 'screenshots');
           if (!fs.existsSync(screenshotsDir)) {
@@ -448,8 +475,7 @@ async function handlePush(req, res, config, requestId) {
           
           const ssPath = path.join(screenshotsDir, `${ss.hash}.png`);
           if (!fs.existsSync(ssPath)) {
-            const buffer = Buffer.from(ss.data, 'base64');
-            fs.writeFileSync(ssPath, buffer);
+            fs.writeFileSync(ssPath, ssBuffer);
           }
           
           // Record in sync_screenshots
@@ -595,7 +621,7 @@ async function handleUpdateInstance(req, res, config, instanceId) {
     params.push(body.status);
     
     if (body.status === 'active' && instance.status === 'pending') {
-      updates.push('approved_at = datetime("now")');
+      updates.push("approved_at = datetime('now')");
       updates.push('approved_by = ?');
       params.push(req.auth.instanceDbId);
     }
@@ -606,9 +632,9 @@ async function handleUpdateInstance(req, res, config, instanceId) {
     params.push(body.role);
   }
   
-  if (body.displayName) {
+  if (body.displayName && cleanText(body.displayName)) {
     updates.push('display_name = ?');
-    params.push(body.displayName);
+    params.push(cleanText(body.displayName));
   }
   
   if (updates.length === 0) {
@@ -703,8 +729,11 @@ async function handleUploadScreenshot(req, res, config) {
     fs.mkdirSync(screenshotsDir, { recursive: true });
   }
   
+  if (typeof body.hash !== 'string' || !SCREENSHOT_HASH_RE.test(body.hash)) {
+    return jsonResponse(res, { error: 'Invalid hash' }, 400);
+  }
   const ssPath = path.join(screenshotsDir, `${body.hash}.png`);
-  const buffer = Buffer.from(body.data, 'base64');
+  const buffer = Buffer.from(String(body.data), 'base64');
   
   // Verify hash
   const actualHash = crypto.createHash('sha256').update(buffer).digest('hex').slice(0, 8);
@@ -775,16 +804,17 @@ function parseJsonBody(req) {
  * Send JSON response.
  */
 function jsonResponse(res, data, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(data));
+  // Handlers `return jsonResponse(...)`; returning true tells the dashboard the
+  // request was handled (undefined made it respond a second time and crash).
+  return true;
 }
 
 /**
  * Synchronous permission check.
  */
 function requirePermissionSync(req, res, permission) {
-  const { hasPermission } = require('./middleware.js');
-  
   if (!req.auth) {
     jsonResponse(res, { error: 'Not authenticated' }, 401);
     return false;

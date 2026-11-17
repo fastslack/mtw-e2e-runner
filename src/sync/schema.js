@@ -224,9 +224,11 @@ export function listInstances(status = null) {
  */
 export function updateInstanceStatus(instanceId, status, approvedBy = null) {
   const db = getDb();
-  const updates = ['status = ?', 'approved_at = datetime("now")'];
+  // Single quotes: SQLite builds without DQS reject "now" as an identifier.
+  const updates = ['status = ?'];
   const params = [status];
-  
+
+  if (status === 'active') updates.push("approved_at = datetime('now')");
   if (approvedBy) {
     updates.push('approved_by = ?');
     params.push(approvedBy);
@@ -234,6 +236,15 @@ export function updateInstanceStatus(instanceId, status, approvedBy = null) {
   
   params.push(instanceId);
   db.prepare(`UPDATE sync_instances SET ${updates.join(', ')} WHERE instance_id = ?`).run(...params);
+}
+
+/**
+ * Update instance role (hub admin action: CLI `sync set-role` or PATCH by an admin).
+ */
+export const INSTANCE_ROLES = ['admin', 'member', 'readonly'];
+export function updateInstanceRole(instanceId, role) {
+  if (!INSTANCE_ROLES.includes(role)) throw new Error(`Invalid role "${role}" (expected ${INSTANCE_ROLES.join(', ')})`);
+  getDb().prepare('UPDATE sync_instances SET role = ? WHERE instance_id = ?').run(role, instanceId);
 }
 
 /**

@@ -13,8 +13,8 @@ import path from 'path';
 import http from 'http';
 
 import { loadConfig } from './config.js';
-import { connectToPool } from './pool.js';
-import { waitForAnyPool, getPoolUrls, getAggregatedPoolStatus, selectPool } from './pool-manager.js';
+import { connectToPool, disconnectFromPool } from './pool.js';
+import { waitForAnyPool, getPoolUrls, getAggregatedPoolStatus, selectPool, releasePending } from './pool-manager.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites, fetchAuthToken } from './runner.js';
 import { generateReport, saveReport, persistRun } from './reporter.js';
 import { narrateTest } from './narrate.js';
@@ -2027,17 +2027,37 @@ async function smartNavigate(page, url, waitUntil) {
   }
 }
 
+/**
+ * Only http(s) targets are allowed for on-demand capture/analyze: these tools
+ * are reachable over the dashboard HTTP API, and file:// or other schemes
+ * would let a caller screenshot files from the browser host.
+ */
+function validateHttpUrl(raw) {
+  let parsed;
+  try { parsed = new URL(raw); } catch { return `Invalid url: ${raw}`; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return `Unsupported url protocol "${parsed.protocol}" — only http:// and https:// are allowed`;
+  }
+  return null;
+}
+
 async function handleAnalyze(args) {
   if (!args.url) return errorResult('Missing required parameter: url');
+  const urlError = validateHttpUrl(args.url);
+  if (urlError) return errorResult(urlError);
 
   const config = await loadConfig({}, args.cwd);
   const poolUrls = getPoolUrls(config);
   const chosenPool = await selectPool(poolUrls, 2000, 60000, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
 
   let browser;
+  let context;
   try {
-    browser = await connectToPool(chosenPool);
-    const page = await browser.newPage();
+    browser = await connectToPool(chosenPool, config.connectRetries, config.connectRetryDelay);
+    // Isolated context: closing it closes the tab on CDP pools, where
+    // disconnect() alone would leave it open in the remote browser.
+    context = await browser.createBrowserContext();
+    const page = await context.newPage();
     await page.setViewport(config.viewport);
 
     // Resolve auth token: explicit arg > config static > auto-login
@@ -2124,21 +2144,29 @@ async function handleAnalyze(args) {
 
     return { content };
   } finally {
-    if (browser) browser.disconnect();
+    if (context) try { await context.close(); } catch { /* */ }
+    if (browser) try { await disconnectFromPool(browser, chosenPool); } catch { /* */ }
+    releasePending(chosenPool);
   }
 }
 
 async function handleCapture(args) {
   if (!args.url) return errorResult('Missing required parameter: url');
+  const urlError = validateHttpUrl(args.url);
+  if (urlError) return errorResult(urlError);
 
   const config = await loadConfig({}, args.cwd);
   const capturePoolUrls = getPoolUrls(config);
   const capturePool = await selectPool(capturePoolUrls, 2000, 60000, { poolDriver: config.poolDriver, maxSessions: config.maxSessions });
 
   let browser;
+  let context;
   try {
-    browser = await connectToPool(capturePool);
-    const page = await browser.newPage();
+    browser = await connectToPool(capturePool, config.connectRetries, config.connectRetryDelay);
+    // Isolated context: closing it closes the tab on CDP pools, where
+    // disconnect() alone would leave it open in the remote browser.
+    context = await browser.createBrowserContext();
+    const page = await context.newPage();
     await page.setViewport(config.viewport);
 
     // Resolve auth token: explicit arg > config static > auto-login
@@ -2200,7 +2228,9 @@ async function handleCapture(args) {
       ],
     };
   } finally {
-    if (browser) browser.disconnect();
+    if (context) try { await context.close(); } catch { /* */ }
+    if (browser) try { await disconnectFromPool(browser, capturePool); } catch { /* */ }
+    releasePending(capturePool);
   }
 }
 
@@ -2228,7 +2258,8 @@ async function handleDashboardStop() {
 }
 
 async function handleDashboardRestart(args) {
-  const port = args.port || (dashboardHandle ? dashboardHandle.port : 8484);
+  const port = Number(args.port || (dashboardHandle ? dashboardHandle.port : 8484));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return errorResult(`Invalid port: ${args.port}`);
 
   // Stop current instance if we own it
   if (dashboardHandle) {
@@ -2236,10 +2267,21 @@ async function handleDashboardRestart(args) {
     dashboardHandle = null;
   }
 
-  // Kill any process occupying the target port (e.g. from another session)
+  // Kill a stale e2e-runner dashboard holding the target port (e.g. from another
+  // session). Only the LISTENING process, and only if it answers like our
+  // dashboard — `lsof -ti :PORT` alone also lists clients connected to the port
+  // (browsers, the MCP client itself) and any unrelated server.
   try {
+    let isOurDashboard = false;
+    try {
+      const probe = await fetch(`http://127.0.0.1:${port}/api/status`, { signal: AbortSignal.timeout(2000) });
+      const body = await probe.json();
+      isOurDashboard = !!(body && body.dashboard && Array.isArray(body.poolUrls));
+    } catch { /* nothing listening, or not our dashboard */ }
     const { execFileSync } = await import('child_process');
-    const lsof = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const lsof = isOurDashboard
+      ? execFileSync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+      : '';
     if (lsof) {
       for (const pid of lsof.split('\n').filter(Boolean)) {
         try { process.kill(Number(pid), 'SIGTERM'); } catch {}

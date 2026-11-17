@@ -778,18 +778,22 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     }
     log('🪝', `${C.dim}Running beforeAll hook...${C.reset}`);
     let browser = null;
+    let hookPool = null;
+    let hookPage = null;
     try {
-      const hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
+      hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
       browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
-      const page = await browser.newPage();
-      await page.setViewport(config.viewport);
-      await executeHookActions(page, hooks.beforeAll, config);
-      await page.close();
+      hookPage = await browser.newPage();
+      await hookPage.setViewport(config.viewport);
+      await executeHookActions(hookPage, hooks.beforeAll, config);
     } catch (error) {
       log('❌', `${C.red}beforeAll hook failed: ${error.message}${C.reset}`);
       throw error;
     } finally {
+      if (hookPage) try { await hookPage.close(); } catch { /* */ }
       if (browser) try { await disconnectFromPool(browser, hookPool); } catch { /* */ }
+      // selectPool() tracked a pending slot for the hook — release it
+      if (hookPool) releasePending(hookPool);
     }
   }
 
@@ -943,17 +947,21 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
   if (hooks.afterAll?.length) {
     log('🪝', `${C.dim}Running afterAll hook...${C.reset}`);
     let browser = null;
+    let hookPool = null;
+    let hookPage = null;
     try {
-      const hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
+      hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
       browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
-      const page = await browser.newPage();
-      await page.setViewport(config.viewport);
-      await executeHookActions(page, hooks.afterAll, config);
-      await page.close();
+      hookPage = await browser.newPage();
+      await hookPage.setViewport(config.viewport);
+      await executeHookActions(hookPage, hooks.afterAll, config);
     } catch (error) {
       log('⚠️', `${C.yellow}afterAll hook failed: ${error.message}${C.reset}`);
     } finally {
+      if (hookPage) try { await hookPage.close(); } catch { /* */ }
       if (browser) try { await disconnectFromPool(browser, hookPool); } catch { /* */ }
+      // selectPool() tracked a pending slot for the hook — release it
+      if (hookPool) releasePending(hookPool);
     }
   }
 
