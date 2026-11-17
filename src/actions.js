@@ -50,17 +50,19 @@ export const BLANK_JPEG_BYTE_THRESHOLD = 8000;
 export function looksLikeBlankCapture(buf, format = 'png') {
   if (!Buffer.isBuffer(buf)) return false;
   const threshold = format === 'jpeg' ? BLANK_JPEG_BYTE_THRESHOLD : BLANK_PNG_BYTE_THRESHOLD;
-  if (buf.length < threshold) return true;
-  // Byte size alone misses larger near-uniform frames (e.g. a white page
-  // whose PNG still compresses above 20 KB). For PNGs we can decode and
-  // check pixel uniformity directly — ≥98% of sampled pixels within
-  // tolerance of the mean color means there is nothing worth keeping.
-  // JPEGs (step captures) can't be decoded without deps, so they keep
-  // the byte heuristic only. Fails open on decode errors.
+  // For PNGs, decode and check pixel uniformity directly — ≥98% of sampled
+  // pixels within tolerance of the mean color means there is nothing worth
+  // keeping. This is authoritative whenever decoding succeeds: byte size
+  // depends on the engine's encoder (Moli's PNGs of a real page can be
+  // ~10 KB, far below the Chrome-calibrated threshold), and it also misses
+  // larger near-uniform frames. The byte threshold is only a fallback when
+  // the PNG can't be decoded. JPEGs (step captures) can't be decoded
+  // without deps, so they keep the byte heuristic only.
   if (format === 'png') {
-    return isBlankImage(buf, { tolerance: 12, maxOutlierFraction: 0.02 }).blank;
+    const result = isBlankImage(buf, { tolerance: 12, maxOutlierFraction: 0.02 });
+    if (!result.error) return result.blank;
   }
-  return false;
+  return buf.length < threshold;
 }
 
 /** All recognized action types — single source of truth for validation. */
@@ -82,6 +84,36 @@ export const KNOWN_ACTION_TYPES = new Set([
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Focuses a field and selects its entire contents so the next keystroke
+ * replaces it. Triple-click does this in Chrome for single-line inputs, but
+ * not in every engine (Moli places the caret without selecting) and not for
+ * multi-line textareas in Chrome (it selects one line). After the
+ * triple-click, verify the selection covers the whole value and fall back to
+ * a DOM selection — input events still come from real key presses.
+ */
+async function selectFieldContents(page, selector) {
+  await page.click(selector, { clickCount: 3 });
+  await page.$eval(selector, (el) => {
+    try {
+      if (typeof el.value === 'string' && typeof el.select === 'function') {
+        const full = el.selectionStart === 0 && el.selectionEnd === el.value.length;
+        if (!full) el.select();
+        return;
+      }
+    } catch { /* input types without selection API (number, email) */ }
+    if (el.isContentEditable) {
+      const sel = window.getSelection();
+      if (sel && sel.toString() !== el.textContent) {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+  }).catch(() => { /* element detached — keep triple-click behavior */ });
 }
 
 export async function executeAction(page, action, config) {
@@ -137,7 +169,7 @@ export async function executeAction(page, action, config) {
     case 'type':
     case 'fill':
       await page.waitForSelector(selector, { timeout });
-      await page.click(selector, { clickCount: 3 });
+      await selectFieldContents(page, selector);
       await page.keyboard.press('Backspace');
       await page.type(selector, value, { delay: 20 });
       break;
@@ -416,7 +448,7 @@ export async function executeAction(page, action, config) {
 
     case 'clear':
       await page.waitForSelector(selector, { timeout });
-      await page.click(selector, { clickCount: 3 });
+      await selectFieldContents(page, selector);
       await page.keyboard.press('Backspace');
       break;
 
@@ -947,7 +979,8 @@ export async function executeAction(page, action, config) {
       if (!fs.existsSync(goldenPath)) {
         // First run: save current screenshot as the golden reference
         if (!fs.existsSync(goldenDir)) fs.mkdirSync(goldenDir, { recursive: true });
-        const screenshotOpts = { path: goldenPath, fullPage: action.fullPage !== false };
+        // Element captures are clipped to the element — Puppeteer rejects fullPage alongside a clip.
+        const screenshotOpts = selector ? { path: goldenPath } : { path: goldenPath, fullPage: action.fullPage !== false };
         if (selector) {
           const el = await page.$(selector);
           if (!el) throw new Error(`assert_visual: selector "${selector}" not found`);
@@ -965,7 +998,7 @@ export async function executeAction(page, action, config) {
       // Capture current screenshot
       const safeName = path.basename(value, path.extname(value));
       const currentPath = path.join(screenshotsDir, `current-${safeName}-${Date.now()}.png`);
-      const screenshotOpts = { path: currentPath, fullPage: action.fullPage !== false };
+      const screenshotOpts = selector ? { path: currentPath } : { path: currentPath, fullPage: action.fullPage !== false };
       if (selector) {
         const el = await page.$(selector);
         if (!el) throw new Error(`assert_visual: selector "${selector}" not found`);

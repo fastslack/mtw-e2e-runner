@@ -1,0 +1,60 @@
+{
+  "tests": [
+    {
+      "name": "forms-and-inputs",
+      "actions": [
+        { "type": "goto", "value": "/" },
+        { "type": "assert_text", "text": "Hello Driver" },
+        { "type": "type", "selector": "#name", "value": "Driver user" },
+        { "type": "fill", "selector": "#notes", "value": "replaced" },
+        { "type": "select", "selector": "#sel", "value": "b" },
+        { "type": "click", "selector": "#btn" },
+        { "type": "assert_element_text", "selector": "#out", "text": "Saved: Driver user / replaced / b" },
+        { "type": "assert_input_value", "selector": "#name", "value": "Driver user" },
+        { "type": "clear", "selector": "#name" },
+        { "type": "evaluate", "value": "document.getElementById('name').value === ''" },
+        { "type": "click", "text": "Save" },
+        { "type": "assert_text", "text": "Saved: / replaced / b" }
+      ]
+    },
+    {
+      "name": "screenshots-and-visual",
+      "expect": "Blue hero with 'Hello Driver' heading and a green box below the form",
+      "actions": [
+        { "type": "goto", "value": "/" },
+        { "type": "wait", "text": "API ok" },
+        { "type": "screenshot", "value": "compat-viewport.png" },
+        { "type": "screenshot", "value": "compat-full.png", "fullPage": true },
+        { "type": "assert_visual", "value": "compat-page.png" },
+        { "type": "assert_visual", "value": "compat-box.png", "selector": "#box" },
+        { "type": "assert_visible", "selector": "#box" },
+        { "type": "assert_class", "selector": "#box", "value": "ok" },
+        { "type": "hover", "selector": "#box" },
+        { "type": "scroll", "selector": ".tall" }
+      ]
+    },
+    {
+      "name": "network-storage-tabs",
+      "actions": [
+        { "type": "goto", "value": "/" },
+        { "type": "wait_network_idle" },
+        { "type": "assert_text", "text": "API ok" },
+        { "type": "assert_storage", "value": "seen=yes" },
+        { "type": "assert_no_network_errors" },
+        { "type": "click", "selector": "#pop" },
+        { "type": "wait_for_tab", "text": "popup" },
+        { "type": "assert_text", "text": "Popup page" },
+        { "type": "switch_tab", "value": "default" },
+        { "type": "assert_url", "value": "/" },
+        { "type": "evaluate", "value": "document.title === 'Driver Compat Fixture'" }
+      ]
+    },
+    {
+      "name": "expected-failure",
+      "actions": [
+        { "type": "goto", "value": "/" },
+        { "type": "assert_text", "text": "this text does not exist", "timeout": 1500 }
+      ]
+    }
+  ]
+}

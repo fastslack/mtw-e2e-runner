@@ -53,7 +53,8 @@
   },
   "scripts": {
     "build:dashboard": "node templates/build-dashboard.js",
-    "prepublishOnly": "node templates/build-dashboard.js"
+    "prepublishOnly": "node templates/build-dashboard.js",
+    "test:integration": "node test/integration/driver-compat/run.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
