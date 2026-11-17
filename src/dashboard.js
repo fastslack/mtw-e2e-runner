@@ -148,6 +148,45 @@ export async function startDashboard(config) {
     try { latestReport = JSON.parse(fs.readFileSync(reportPath, 'utf-8')); } catch { /* */ }
   }
 
+  // ── HTTP tool confinement ──────────────────────────────────────────────────
+  // Tools reached over HTTP (/mcp, /api/tool/*) may only act on projects this
+  // dashboard already knows (its own cwd + projects registered in SQLite), and
+  // only tools listed in DASHBOARD_TOOLS (dispatchTool itself knows them all,
+  // including dashboard restart, which kills processes).
+  const httpToolNames = new Set(DASHBOARD_TOOLS.map(t => t.name));
+  const realOrResolve = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+
+  function allowedProjectRoots() {
+    const roots = new Set([realOrResolve(config._cwd || process.cwd())]);
+    try {
+      for (const p of dbListProjects()) if (p.cwd) roots.add(realOrResolve(p.cwd));
+    } catch { /* DB unavailable — only the dashboard's own project */ }
+    return roots;
+  }
+
+  /** Validates and normalizes HTTP tool args in place. Returns an error string or null. */
+  function confineToolArgs(name, args) {
+    if (!httpToolNames.has(name)) return `Tool "${name}" is not available over the dashboard HTTP API`;
+    if (args.cwd !== undefined && args.cwd !== null) {
+      if (typeof args.cwd !== 'string') return 'Invalid cwd';
+      const real = realOrResolve(args.cwd);
+      if (!allowedProjectRoots().has(real)) {
+        return `cwd "${args.cwd}" is not a project known to this dashboard. Run e2e-runner in it once (CLI or stdio MCP) to register it.`;
+      }
+      args.cwd = real;
+    } else {
+      // Pin the default explicitly so handlers never fall back to some other process cwd
+      args.cwd = realOrResolve(config._cwd || process.cwd());
+    }
+    if (args.file !== undefined && args.file !== null) {
+      if (typeof args.file !== 'string') return 'Invalid file';
+      const resolved = realOrResolve(path.resolve(args.cwd, args.file));
+      if (!resolved.startsWith(args.cwd + path.sep)) return 'file must be inside the project directory';
+      args.file = resolved;
+    }
+    return null;
+  }
+
   // MCP helper: creates a fresh stateless transport+server per request
   // (the SDK requires a new transport for each request in stateless mode)
   async function handleMcpRequest(req, res) {
@@ -163,6 +202,8 @@ export async function startDashboard(config) {
 
     mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args = {} } = request.params;
+      const denied = confineToolArgs(name, args);
+      if (denied) return errorResult(denied);
       try {
         return await dispatchTool(name, args);
       } catch (error) {
@@ -655,6 +696,8 @@ export async function startDashboard(config) {
               delete args.projectId;
             }
             if (tool === 'issue-verify') args.mode = 'verify';
+            const denied = confineToolArgs(mcpName, args);
+            if (denied) { jsonResponse(res, { error: denied }, 403); return; }
             const result = await dispatchTool(mcpName, args);
             // dispatchTool returns MCP-style { content:[{type,text}], isError? }.
             // Convert to a friendlier shape for the dashboard.
@@ -1189,6 +1232,7 @@ export function stopDashboard(handle) {
 }
 
 function jsonResponse(res, data, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  // no-store: responses can carry test variables, auth headers and network bodies
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(data));
 }

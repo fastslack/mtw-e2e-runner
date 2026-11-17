@@ -2258,7 +2258,8 @@ async function handleDashboardStop() {
 }
 
 async function handleDashboardRestart(args) {
-  const port = args.port || (dashboardHandle ? dashboardHandle.port : 8484);
+  const port = Number(args.port || (dashboardHandle ? dashboardHandle.port : 8484));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return errorResult(`Invalid port: ${args.port}`);
 
   // Stop current instance if we own it
   if (dashboardHandle) {
@@ -2266,10 +2267,21 @@ async function handleDashboardRestart(args) {
     dashboardHandle = null;
   }
 
-  // Kill any process occupying the target port (e.g. from another session)
+  // Kill a stale e2e-runner dashboard holding the target port (e.g. from another
+  // session). Only the LISTENING process, and only if it answers like our
+  // dashboard — `lsof -ti :PORT` alone also lists clients connected to the port
+  // (browsers, the MCP client itself) and any unrelated server.
   try {
+    let isOurDashboard = false;
+    try {
+      const probe = await fetch(`http://127.0.0.1:${port}/api/status`, { signal: AbortSignal.timeout(2000) });
+      const body = await probe.json();
+      isOurDashboard = !!(body && body.dashboard && Array.isArray(body.poolUrls));
+    } catch { /* nothing listening, or not our dashboard */ }
     const { execFileSync } = await import('child_process');
-    const lsof = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const lsof = isOurDashboard
+      ? execFileSync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+      : '';
     if (lsof) {
       for (const pid of lsof.split('\n').filter(Boolean)) {
         try { process.kill(Number(pid), 'SIGTERM'); } catch {}
