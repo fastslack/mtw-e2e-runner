@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fastslack/mtw-e2e-runner/schemas/run-result.v1.json",
+  "title": "e2e-runner RunResult v1",
+  "description": "Result of runSuite() from @matware/e2e-runner/embed. Fields may be added within v1 (consumers must ignore unknown fields); removing, renaming or changing the type or meaning of a field requires schemaVersion 2 and a major release.",
+  "type": "object",
+  "required": ["schemaVersion", "runner", "startedAt", "finishedAt", "summary", "tests"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runner": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "@matware/e2e-runner" },
+        "version": { "type": ["string", "null"], "description": "Package version that produced the result" }
+      }
+    },
+    "startedAt": { "type": ["string", "null"], "format": "date-time" },
+    "finishedAt": { "type": ["string", "null"], "format": "date-time" },
+    "summary": {
+      "type": "object",
+      "required": ["total", "passed", "failed", "flaky", "durationMs"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "flaky": { "type": "integer", "minimum": 0, "description": "Tests that passed only after a retry, or by non-unanimous voting" },
+        "durationMs": { "type": "integer", "minimum": 0, "description": "Wall-clock time of the whole run" }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "description": "One entry per input test, in input order",
+      "items": { "$ref": "#/$defs/test" }
+    }
+  },
+  "$defs": {
+    "nullableString": { "type": ["string", "null"] },
+    "test": {
+      "type": "object",
+      "required": ["name", "passed", "flaky", "attempts", "durationMs", "error", "finalUrl", "meta", "failedStep", "steps", "console", "network", "screenshots"],
+      "properties": {
+        "name": { "type": "string" },
+        "passed": { "type": "boolean" },
+        "flaky": { "type": "boolean" },
+        "attempts": { "type": "integer", "minimum": 1, "description": "Attempts made (retries + 1), or the voting count" },
+        "durationMs": { "type": "integer", "minimum": 0, "description": "Duration of the reported (last) attempt" },
+        "error": { "$ref": "#/$defs/nullableString", "description": "null when passed" },
+        "finalUrl": { "$ref": "#/$defs/nullableString", "description": "Page URL when the test ended" },
+        "meta": {
+          "type": "object",
+          "description": "Every key of the input test object the runner does not use (e.g. a criteria array), passed through by value"
+        },
+        "failedStep": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["index", "type", "selector", "error"],
+              "properties": {
+                "index": { "type": "integer", "minimum": 0 },
+                "type": { "type": "string" },
+                "selector": { "$ref": "#/$defs/nullableString" },
+                "error": { "$ref": "#/$defs/nullableString" }
+              }
+            }
+          ],
+          "description": "First failing step; null when passed or when the test failed outside a step (hook, timeout, pool connection)"
+        },
+        "steps": {
+          "type": "array",
+          "description": "Executed steps of the reported attempt, after module ($use) expansion. Steps after a failure are not executed and not listed.",
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "console": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["level", "text"],
+            "properties": {
+              "level": { "type": "string", "description": "Browser console level: log, info, warn, error, debug, verbose, ..." },
+              "text": { "type": "string" }
+            }
+          }
+        },
+        "network": {
+          "type": "object",
+          "required": ["errors", "requests"],
+          "properties": {
+            "errors": {
+              "type": "array",
+              "description": "Requests that failed at the network level (DNS, refused, aborted, ...)",
+              "items": {
+                "type": "object",
+                "required": ["url", "error"],
+                "properties": {
+                  "url": { "type": "string" },
+                  "error": { "$ref": "#/$defs/nullableString" }
+                }
+              }
+            },
+            "requests": {
+              "type": "array",
+              "description": "XHR/fetch requests that got a response (headers and bodies are deliberately not exposed)",
+              "items": {
+                "type": "object",
+                "required": ["url", "method", "status", "durationMs"],
+                "properties": {
+                  "url": { "type": "string" },
+                  "method": { "type": "string" },
+                  "status": { "type": "integer" },
+                  "durationMs": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
+        "screenshots": {
+          "type": "object",
+          "required": ["error", "final", "steps"],
+          "properties": {
+            "error": { "$ref": "#/$defs/nullableString", "description": "Failure capture: the full-page error screenshot, else the capture after the failing step. null when passed." },
+            "final": { "$ref": "#/$defs/nullableString", "description": "Last frame of the test: verification capture (tests with expect), else the error capture, else the last step capture" },
+            "steps": { "type": "array", "items": { "type": "string" }, "description": "Distinct step capture paths, in order" }
+          }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["index", "type", "selector", "passed", "durationMs", "error", "screenshot"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "type": { "type": "string" },
+        "selector": { "$ref": "#/$defs/nullableString" },
+        "passed": { "type": "boolean" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "error": { "$ref": "#/$defs/nullableString" },
+        "screenshot": { "$ref": "#/$defs/nullableString", "description": "Explicit screenshot of a screenshot step, else the automatic capture after the step (may repeat the previous file when the frame did not change); null when nothing renderable was captured" }
+      }
+    }
+  }
+}

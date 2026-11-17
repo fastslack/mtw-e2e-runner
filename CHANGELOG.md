@@ -5,6 +5,15 @@
 ### Added
 
 - **Moli driver** (`moli`) — [Moli](https://github.com/lexmount/moli) (Rust + V8) as a CDP pool engine. `auto` detects it via the `Moli-Version` field of `/json/version` (its `Browser` string reports Chrome). `connectToPool()` verifies once per pool that Moli runs with `--layout` and fails fast with a fix hint otherwise; `pool start`/`pool stop` print install and run guidance. Accepted by `--driver`, per-test `driver`/`fallbackDriver`, and `POOL_DRIVER`.
+- **Embed API (`@matware/e2e-runner/embed`)** — stable entry for programs that embed the runner, documented in `docs/embedding.md`:
+  - `runSuite(suite, opts)` runs a suite (array or `{ tests, hooks }`, modules as an in-memory map or a directory, `vars`/`env` passed in) and returns a versioned `RunResult` (`schemaVersion: 1`, `schemas/run-result.v1.json`) with per-step results, failed step, console, network, screenshots and a `meta` passthrough of unknown test keys
+  - `inspectPage(url, opts)` returns the `e2e_analyze` page structure plus a screenshot path (`schemas/inspect-result.v1.json`)
+  - No side effects beyond screenshots in `screenshotsDir` (no dashboard DB, learnings, sync, reports or stdout), never calls an LLM, and does not load `better-sqlite3` — runs under Bun
+- `npm test` — unit + browser tests for the embed API (`node --test`)
+
+### Changed
+
+- `runner.js` loads `db.js` lazily (only to resolve `{{var.*}}` from SQLite); page-analysis helpers moved from `mcp-tools.js` to `src/page-analysis.js`. CLI and MCP behaviour unchanged.
 
 ### Fixed
 

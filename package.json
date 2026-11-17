@@ -6,7 +6,10 @@
   "type": "module",
   "main": "src/index.js",
   "exports": {
-    ".": "./src/index.js"
+    ".": "./src/index.js",
+    "./embed": "./src/embed.js",
+    "./schemas/*": "./schemas/*",
+    "./package.json": "./package.json"
   },
   "bin": {
     "e2e-runner": "bin/cli.js",
@@ -15,6 +18,7 @@
   "files": [
     "bin/",
     "src/",
+    "schemas/",
     "templates/",
     ".claude-plugin/",
     ".mcp.json",
@@ -54,9 +58,14 @@
   "scripts": {
     "build:dashboard": "node templates/build-dashboard.js",
     "prepublishOnly": "node templates/build-dashboard.js",
-    "test:integration": "node test/integration/driver-compat/run.mjs"
+    "test:integration": "node test/integration/driver-compat/run.mjs",
+    "test": "node --test test/unit/*.test.js"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
   }
 }

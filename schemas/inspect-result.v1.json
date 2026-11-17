@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fastslack/mtw-e2e-runner/schemas/inspect-result.v1.json",
+  "title": "e2e-runner InspectResult v1",
+  "description": "Result of inspectPage() from @matware/e2e-runner/embed. Same versioning rule as RunResult v1.",
+  "type": "object",
+  "required": ["schemaVersion", "url", "finalUrl", "title", "viewport", "scope", "screenshot", "forms", "inputs", "buttons", "links", "headings", "navigation", "tabs", "tables", "modals", "menus", "alerts", "images", "stats", "suggestedTests"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "url": { "type": "string" },
+    "finalUrl": { "type": "string" },
+    "title": { "type": "string" },
+    "viewport": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } }
+    },
+    "scope": { "type": ["string", "null"] },
+    "screenshot": { "type": ["string", "null"], "description": "PNG path in screenshotsDir; null when opts.screenshot === false" },
+    "forms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["selector", "fields"],
+        "properties": {
+          "selector": { "type": "string" },
+          "action": { "type": "string" },
+          "method": { "type": "string" },
+          "fields": { "type": "array", "items": { "$ref": "#/$defs/input" } },
+          "submitButton": { "type": "object", "required": ["selector"], "properties": { "selector": { "type": "string" }, "text": { "type": "string" } } }
+        }
+      }
+    },
+    "inputs": { "type": "array", "description": "Inputs outside any form", "items": { "$ref": "#/$defs/input" } },
+    "buttons": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "links": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "headings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["level", "text", "selector"],
+        "properties": { "level": { "type": "integer", "minimum": 1, "maximum": 6 }, "text": { "type": "string" }, "selector": { "type": "string" } }
+      }
+    },
+    "navigation": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "tabs": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "tables": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "modals": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "menus": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "alerts": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "images": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "stats": { "type": "object" },
+    "suggestedTests": {
+      "type": "array",
+      "description": "Deterministic test scaffolds derived from the structure (no LLM involved)",
+      "items": {
+        "type": "object",
+        "required": ["name", "actions"],
+        "properties": { "name": { "type": "string" }, "actions": { "type": "array", "items": { "type": "object" } } }
+      }
+    }
+  },
+  "$defs": {
+    "element": {
+      "type": "object",
+      "required": ["selector"],
+      "properties": { "selector": { "type": "string" } }
+    },
+    "input": {
+      "type": "object",
+      "required": ["selector", "tag", "type"],
+      "properties": {
+        "selector": { "type": "string" },
+        "tag": { "type": "string" },
+        "type": { "type": "string" },
+        "name": { "type": "string" },
+        "label": { "type": "string" },
+        "required": { "type": "boolean" },
+        "placeholder": { "type": "string" }
+      }
+    }
+  }
+}
