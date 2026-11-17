@@ -239,6 +239,15 @@ export function updateInstanceStatus(instanceId, status, approvedBy = null) {
 }
 
 /**
+ * Update instance role (hub admin action: CLI `sync set-role` or PATCH by an admin).
+ */
+export const INSTANCE_ROLES = ['admin', 'member', 'readonly'];
+export function updateInstanceRole(instanceId, role) {
+  if (!INSTANCE_ROLES.includes(role)) throw new Error(`Invalid role "${role}" (expected ${INSTANCE_ROLES.join(', ')})`);
+  getDb().prepare('UPDATE sync_instances SET role = ? WHERE instance_id = ?').run(role, instanceId);
+}
+
+/**
  * Update instance last seen.
  */
 export function updateInstanceLastSeen(instanceId, ip = null) {

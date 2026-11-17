@@ -181,7 +181,8 @@ export function createAuthMiddleware(config) {
       // Attach auth info to request
       req.auth = {
         instanceId: payload.sub,
-        role: payload.role || 'member',
+        // Role from the DB, not the token: promotions/demotions apply immediately.
+        role: instance.role || 'member',
         instanceDbId: payload.dbId,
       };
       

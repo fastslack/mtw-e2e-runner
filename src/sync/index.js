@@ -36,6 +36,7 @@ export {
   getInstance,
   listInstances,
   updateInstanceStatus,
+  updateInstanceRole,
   getHubConnection,
   saveHubConnection,
   enqueueSync,

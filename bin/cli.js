@@ -59,6 +59,7 @@ import {
   getInstance,
   listInstances,
   updateInstanceStatus,
+  updateInstanceRole,
   getHubConnection,
   getQueueStats,
   getSyncClient,
@@ -177,6 +178,7 @@ ${C.bold}Usage:${C.reset}
   e2e-runner sync add-instance          Register new agent (hub mode)
   e2e-runner sync list-instances        List registered agents (hub mode)
   e2e-runner sync approve <id>          Approve pending agent (hub mode)
+  e2e-runner sync set-role <id> <role>  Set agent role: admin|member|readonly (hub mode)
   e2e-runner sync revoke <id>           Suspend an agent (hub mode)
   e2e-runner sync push                  Process sync queue (agent mode)
   e2e-runner sync pull                  Pull runs from hub (agent mode)
@@ -984,14 +986,16 @@ async function cmdSync() {
         apiKeyHash: hashApiKey(apiKey),
         totpSecret,
         role,
-        status: config.sync?.hub?.requireApproval ? 'pending' : 'active',
+        // Created locally by the hub operator, who is the approver: active right away.
+        // (requireApproval only gates self-registration through /api/sync/register.)
+        status: 'active',
       });
       
       console.log(`\n${C.green}${C.bold}Instance created successfully!${C.reset}\n`);
       console.log(`${C.bold}Instance ID:${C.reset}    ${instanceId}`);
       console.log(`${C.bold}Display Name:${C.reset}   ${displayName}`);
       console.log(`${C.bold}Role:${C.reset}           ${role}`);
-      console.log(`${C.bold}Status:${C.reset}         ${config.sync?.hub?.requireApproval ? 'pending' : 'active'}`);
+      console.log(`${C.bold}Status:${C.reset}         active`);
       console.log('');
       console.log(`${C.bold}${C.yellow}SAVE THESE CREDENTIALS (shown only once):${C.reset}`);
       console.log(`${C.bold}API Key:${C.reset}        ${apiKey}`);
@@ -1024,10 +1028,12 @@ async function cmdSync() {
           const statusColor = inst.status === 'active' ? C.green : inst.status === 'pending' ? C.yellow : C.red;
           const onlineIndicator = isOnline ? `${C.green}*${C.reset}` : ' ';
           
-          console.log(`  ${onlineIndicator} ${C.bold}${inst.instance_id}${C.reset}`);
-          console.log(`      Name:   ${inst.display_name}`);
+          const clean = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+          console.log(`  ${onlineIndicator} ${C.bold}${clean(inst.instance_id)}${C.reset}`);
+          console.log(`      Name:   ${clean(inst.display_name)}`);
           console.log(`      Status: ${statusColor}${inst.status}${C.reset}`);
-          console.log(`      Role:   ${inst.role}`);
+          console.log(`      Role:   ${inst.role === 'admin' ? C.red + C.bold : ''}${clean(inst.role)}${C.reset}`);
+          console.log(`      Env:    ${clean(inst.environment)}${inst.hostname ? ` @ ${clean(inst.hostname)}` : ''}`);
           console.log(`      Seen:   ${inst.last_seen || 'never'}`);
           console.log('');
         }
@@ -1053,11 +1059,46 @@ async function cmdSync() {
         process.exit(1);
       }
       
+      // Show what is being approved: role and self-reported details
+      const clean = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+      console.log(`  Name:        ${clean(instance.display_name)}`);
+      console.log(`  Role:        ${instance.role === 'admin' ? C.red + C.bold : ''}${clean(instance.role)}${C.reset}`);
+      console.log(`  Environment: ${clean(instance.environment)}`);
+      console.log(`  Hostname:    ${clean(instance.hostname) || '-'}`);
+      console.log(`  Registered:  ${clean(instance.created_at) || '-'}`);
+      if (instance.role === 'admin') {
+        console.log(`${C.yellow}  Warning: this instance has the admin role. Use 'e2e-runner sync set-role ${instanceId} member' to demote it.${C.reset}`);
+      }
       updateInstanceStatus(instanceId, 'active');
-      console.log(`${C.green}Instance '${instanceId}' approved and activated${C.reset}`);
+      console.log(`${C.green}Instance '${instanceId}' approved and activated (role: ${clean(instance.role)})${C.reset}`);
       break;
     }
     
+    case 'set-role': {
+      if (config.sync?.mode !== 'hub') {
+        console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
+        process.exit(1);
+      }
+      const instanceId = args[2];
+      const role = args[3];
+      if (!instanceId || !role) {
+        console.error(`${C.red}Usage: e2e-runner sync set-role <id> <admin|member|readonly>${C.reset}`);
+        process.exit(1);
+      }
+      if (!getInstance(instanceId)) {
+        console.error(`${C.red}Error: Instance '${instanceId}' not found${C.reset}`);
+        process.exit(1);
+      }
+      try {
+        updateInstanceRole(instanceId, role);
+      } catch (err) {
+        console.error(`${C.red}Error: ${err.message}${C.reset}`);
+        process.exit(1);
+      }
+      console.log(`${C.green}Instance '${instanceId}' role set to ${role}${C.reset}`);
+      break;
+    }
+
     case 'revoke': {
       if (config.sync?.mode !== 'hub') {
         console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
