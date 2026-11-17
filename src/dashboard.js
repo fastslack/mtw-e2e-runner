@@ -248,7 +248,7 @@ export async function startDashboard(config) {
       // Handle sync routes if in hub mode (they carry their own JWT auth)
       if (config.sync?.mode === 'hub' && pathname.startsWith('/api/sync')) {
         const handled = await handleSyncRoutes(req, res, config, pathname);
-        if (handled) return;
+        if (handled || res.headersSent || res.writableEnded) return;
       }
 
       // Token bootstrap: /?token=… stores the token in a cookie and drops it from the URL
@@ -1067,7 +1067,10 @@ export async function startDashboard(config) {
       jsonResponse(res, { error: 'Not found' }, 404);
     } catch (error) {
       process.stderr.write(`[dashboard] ${error.message}\n`);
-      jsonResponse(res, { error: 'Internal server error' }, 500);
+      // Never throw from here: an exception in this async handler is an
+      // unhandled rejection that takes the whole dashboard down.
+      if (!res.headersSent) jsonResponse(res, { error: 'Internal server error' }, 500);
+      else if (!res.writableEnded) res.end();
     }
   });
 

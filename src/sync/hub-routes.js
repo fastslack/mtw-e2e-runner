@@ -44,6 +44,7 @@ import {
   createAuthMiddleware,
   createRateLimitMiddleware,
   requirePermission,
+  hasPermission,
   authenticateWithCredentials,
   getJwtSecret,
   getMasterKey,
@@ -595,7 +596,7 @@ async function handleUpdateInstance(req, res, config, instanceId) {
     params.push(body.status);
     
     if (body.status === 'active' && instance.status === 'pending') {
-      updates.push('approved_at = datetime("now")');
+      updates.push("approved_at = datetime('now')");
       updates.push('approved_by = ?');
       params.push(req.auth.instanceDbId);
     }
@@ -775,16 +776,17 @@ function parseJsonBody(req) {
  * Send JSON response.
  */
 function jsonResponse(res, data, status = 200) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(data));
+  // Handlers `return jsonResponse(...)`; returning true tells the dashboard the
+  // request was handled (undefined made it respond a second time and crash).
+  return true;
 }
 
 /**
  * Synchronous permission check.
  */
 function requirePermissionSync(req, res, permission) {
-  const { hasPermission } = require('./middleware.js');
-  
   if (!req.auth) {
     jsonResponse(res, { error: 'Not authenticated' }, 401);
     return false;

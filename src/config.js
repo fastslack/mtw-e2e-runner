@@ -137,7 +137,10 @@ const DEFAULTS = {
         caPath: null,
       },
       allowRegistration: true,
-      requireApproval: false,
+      // New agents registered via /api/sync/register stay 'pending' until approved
+      // (e2e-runner sync approve <id>). Opt out: requireApproval:false or
+      // E2E_SYNC_REQUIRE_APPROVAL=false.
+      requireApproval: true,
       masterKeyEnv: 'E2E_SYNC_MASTER_KEY',
     },
     agent: {
@@ -311,6 +314,16 @@ function loadEnvVars() {
     env.sync = env.sync || {};
     env.sync.hub = env.sync.hub || {};
     env.sync.hub.port = parseInt(process.env.E2E_SYNC_HUB_PORT);
+  }
+  if (process.env.E2E_SYNC_REQUIRE_APPROVAL !== undefined && process.env.E2E_SYNC_REQUIRE_APPROVAL !== '') {
+    env.sync = env.sync || {};
+    env.sync.hub = env.sync.hub || {};
+    env.sync.hub.requireApproval = !/^(false|0|no|off)$/i.test(process.env.E2E_SYNC_REQUIRE_APPROVAL.trim());
+  }
+  if (process.env.E2E_SYNC_ALLOW_REGISTRATION !== undefined && process.env.E2E_SYNC_ALLOW_REGISTRATION !== '') {
+    env.sync = env.sync || {};
+    env.sync.hub = env.sync.hub || {};
+    env.sync.hub.allowRegistration = !/^(false|0|no|off)$/i.test(process.env.E2E_SYNC_ALLOW_REGISTRATION.trim());
   }
   if (process.env.E2E_SYNC_TLS_ENABLED) {
     env.sync = env.sync || {};

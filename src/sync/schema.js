@@ -224,9 +224,11 @@ export function listInstances(status = null) {
  */
 export function updateInstanceStatus(instanceId, status, approvedBy = null) {
   const db = getDb();
-  const updates = ['status = ?', 'approved_at = datetime("now")'];
+  // Single quotes: SQLite builds without DQS reject "now" as an identifier.
+  const updates = ['status = ?'];
   const params = [status];
-  
+
+  if (status === 'active') updates.push("approved_at = datetime('now')");
   if (approvedBy) {
     updates.push('approved_by = ?');
     params.push(approvedBy);
