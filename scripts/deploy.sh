@@ -47,6 +47,16 @@ PKG_NAME="$(node -p "require('./package.json').name")"
 PKG_VERSION="$(node -p "require('./package.json').version")"
 echo "→ ${PKG_NAME}@${PKG_VERSION}"
 
+# ── Exact-version pins (Claude plugin directory refuses unpinned npx/@latest) ─
+# Re-pins every `npx`/install reference in skills, commands, docs and scripts to
+# PKG_VERSION. If anything changed, stop so the pins get committed with the release.
+node scripts/pin-version.mjs
+if ! git diff --quiet; then
+  echo "✗ Version pins were updated to ${PKG_VERSION}. Review, commit, and re-run:"
+  git diff --stat
+  exit 1
+fi
+
 if npm view "${PKG_NAME}@${PKG_VERSION}" version >/dev/null 2>&1; then
   echo "✗ ${PKG_NAME}@${PKG_VERSION} is already published. Bump the version first."
   exit 1

@@ -1,7 +1,6 @@
 ---
 description: Verify a GitHub/GitLab issue by creating and running E2E tests
-user_invocable: true
-allowed_tools:
+allowed-tools:
   - mcp__e2e-runner__e2e_pool_status
   - mcp__e2e-runner__e2e_issue
   - mcp__e2e-runner__e2e_create_test

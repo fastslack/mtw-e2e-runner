@@ -59,7 +59,9 @@
     "build:dashboard": "node templates/build-dashboard.js",
     "prepublishOnly": "node templates/build-dashboard.js",
     "test:integration": "node test/integration/driver-compat/run.mjs",
-    "test": "node --test test/unit/*.test.js"
+    "test": "node --test test/unit/*.test.js",
+    "pin-version": "node scripts/pin-version.mjs",
+    "pin-version:check": "node scripts/pin-version.mjs --check"
   },
   "engines": {
     "node": ">=20.0.0"

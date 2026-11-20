@@ -25,14 +25,14 @@ ok "Docker running"
 # ── Install ──────────────────────────────────────────────────────────────────
 
 info "Installing @matware/e2e-runner..."
-npm install --save-dev @matware/e2e-runner
+npm install --save-dev @matware/e2e-runner@1.5.1
 ok "Installed"
 
 # ── Scaffold ─────────────────────────────────────────────────────────────────
 
 if [ ! -d "e2e/tests" ]; then
   info "Scaffolding project structure..."
-  npx e2e-runner init
+  npx -y @matware/e2e-runner@1.5.1 init
   ok "Created e2e/ directory with sample test and config"
 else
   ok "e2e/ directory already exists, skipping scaffold"
@@ -41,25 +41,25 @@ fi
 # ── Start Chrome pool ────────────────────────────────────────────────────────
 
 info "Starting Chrome pool..."
-npx e2e-runner pool start
+npx -y @matware/e2e-runner@1.5.1 pool start
 ok "Chrome pool running on port 3333"
 
 # ── Run sample test ──────────────────────────────────────────────────────────
 
 info "Running sample tests..."
-npx e2e-runner run --all
+npx -y @matware/e2e-runner@1.5.1 run --all
 ok "Tests complete! Report saved to e2e/screenshots/report.json"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 
 printf "\n${BOLD}${GREEN}Setup complete!${RESET}\n\n"
 printf "  ${DIM}Write tests:${RESET}       e2e/tests/*.json\n"
-printf "  ${DIM}Run all:${RESET}           npx e2e-runner run --all\n"
-printf "  ${DIM}Run one suite:${RESET}     npx e2e-runner run --suite <name>\n"
-printf "  ${DIM}Open dashboard:${RESET}    npx e2e-runner dashboard\n"
-printf "  ${DIM}Pool status:${RESET}       npx e2e-runner pool status\n"
+printf "  ${DIM}Run all:${RESET}           npx -y @matware/e2e-runner@1.5.1 run --all\n"
+printf "  ${DIM}Run one suite:${RESET}     npx -y @matware/e2e-runner@1.5.1 run --suite <name>\n"
+printf "  ${DIM}Open dashboard:${RESET}    npx -y @matware/e2e-runner@1.5.1 dashboard\n"
+printf "  ${DIM}Pool status:${RESET}       npx -y @matware/e2e-runner@1.5.1 pool status\n"
 printf "\n"
 printf "  ${DIM}Add to Claude Code:${RESET}\n"
 printf "  claude mcp add --transport stdio --scope user e2e-runner \\\\\n"
-printf "    -- npx -y -p @matware/e2e-runner e2e-runner-mcp\n"
+printf "    -- npx -y -p @matware/e2e-runner@1.5.1 e2e-runner-mcp\n"
 printf "\n"
