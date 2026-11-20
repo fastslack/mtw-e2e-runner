@@ -86,13 +86,13 @@ export default {
 Or via environment variables:
 
 ```bash
-AUTH_TOKEN="eyJhbGciOiJIUzI1NiIs..." npx e2e-runner run --all
+AUTH_TOKEN="eyJhbGciOiJIUzI1NiIs..." npx -y @matware/e2e-runner@1.5.1 run --all
 ```
 
 Or via CLI:
 
 ```bash
-npx e2e-runner run --all --auth-token "eyJhbG..." --auth-storage-key "jwt"
+npx -y @matware/e2e-runner@1.5.1 run --all --auth-token "eyJhbG..." --auth-storage-key "jwt"
 ```
 
 MCP tools (`e2e_capture`, `e2e_issue`) also accept `authToken` and `authStorageKey` per call.
@@ -152,7 +152,7 @@ OAuth flows redirect to external providers (Google, GitHub, Okta) which can't be
 
 ```bash
 SESSION=$(curl -s -c - https://api.example.com/auth/login -d '{"email":"test@example.com","password":"secret"}' | grep session_id | awk '{print $NF}')
-AUTH_TOKEN="$SESSION" AUTH_STORAGE_KEY="session_id" npx e2e-runner run --all
+AUTH_TOKEN="$SESSION" AUTH_STORAGE_KEY="session_id" npx -y @matware/e2e-runner@1.5.1 run --all
 ```
 
 ## Reusable Auth Modules

@@ -17,39 +17,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install
 
 # Scaffold e2e/ directory in a consuming project
-npx e2e-runner init
+node bin/cli.js init
 
 # Manage Chrome pool (requires Docker) — CLI only, NOT available via MCP
-npx e2e-runner pool start      # spins up browserless/chrome container
-npx e2e-runner pool stop
-npx e2e-runner pool status     # also available as e2e_pool_status MCP tool
+node bin/cli.js pool start      # spins up browserless/chrome container
+node bin/cli.js pool stop
+node bin/cli.js pool status     # also available as e2e_pool_status MCP tool
 
 # Run tests
-npx e2e-runner run --all                  # all suites in e2e/tests/
-npx e2e-runner run --suite <name>         # single suite (matches with or without numeric prefix)
-npx e2e-runner run --tests <file.json>    # specific JSON file
-npx e2e-runner run --inline '<json>'      # inline JSON array
+node bin/cli.js run --all                  # all suites in e2e/tests/
+node bin/cli.js run --suite <name>         # single suite (matches with or without numeric prefix)
+node bin/cli.js run --tests <file.json>    # specific JSON file
+node bin/cli.js run --inline '<json>'      # inline JSON array
 
 # Force a driver for the whole run (overrides per-test `driver` fields)
-npx e2e-runner run --all --driver obscura
-npx e2e-runner run --all --driver obscura --fallback-driver cdp
+node bin/cli.js run --all --driver obscura
+node bin/cli.js run --all --driver obscura --fallback-driver cdp
 
 # List available suites
-npx e2e-runner list
+node bin/cli.js list
 
 # Capture a screenshot of any URL (no test required)
-npx e2e-runner capture <url>
-npx e2e-runner capture <url> --full-page --selector ".loaded" --delay 2000 --filename my-capture.png
+node bin/cli.js capture <url>
+node bin/cli.js capture <url> --full-page --selector ".loaded" --delay 2000 --filename my-capture.png
 
 # Web dashboard
-npx e2e-runner dashboard [--port 8484]
+node bin/cli.js dashboard [--port 8484]
 
 # Issue-to-test
-npx e2e-runner issue <url>                # fetch and display
-npx e2e-runner issue <url> --generate     # generate test via Claude API
-npx e2e-runner issue <url> --verify       # generate + run + report
-npx e2e-runner issue <url> --prompt       # output AI prompt as JSON
-npx e2e-runner issue <url> --test-type api  # generate API tests instead of UI tests
+node bin/cli.js issue <url>                # fetch and display
+node bin/cli.js issue <url> --generate     # generate test via Claude API
+node bin/cli.js issue <url> --verify       # generate + run + report
+node bin/cli.js issue <url> --prompt       # output AI prompt as JSON
+node bin/cli.js issue <url> --test-type api  # generate API tests instead of UI tests
 ```
 
 There are no unit tests, linter, or build step in this project. The one test harness is the driver-compatibility integration suite, which needs a live pool:

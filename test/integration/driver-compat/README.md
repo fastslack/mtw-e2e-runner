@@ -51,7 +51,7 @@ npm run test:integration -- --pool http://127.0.0.1:9333 --no-layout-pool http:/
   --remote-debugging-port=9555 --user-data-dir=/tmp/e2e-compat-chrome about:blank &
 npm run test:integration -- --pool http://127.0.0.1:9555
 
-# browserless (Docker pool started with `npx e2e-runner pool start`)
+# browserless (Docker pool started with `npx -y @matware/e2e-runner@1.5.1 pool start`)
 npm run test:integration -- --pool ws://localhost:3333
 ```
 

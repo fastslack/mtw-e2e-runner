@@ -1,7 +1,6 @@
 ---
 description: Run E2E tests and analyze results with screenshots and network drill-down
-user_invocable: true
-allowed_tools:
+allowed-tools:
   - mcp__e2e-runner__e2e_pool_status
   - mcp__e2e-runner__e2e_list
   - mcp__e2e-runner__e2e_run
@@ -16,7 +15,7 @@ Execute E2E tests and provide a complete analysis of results.
 
 ## Workflow
 
-1. **Check pool availability** — Call `e2e_pool_status` to confirm the Chrome pool is running. If not available, tell the user to run `npx e2e-runner pool start` via CLI.
+1. **Check pool availability** — Call `e2e_pool_status` to confirm the Chrome pool is running. If not available, tell the user to run `npx -y @matware/e2e-runner@1.5.1 pool start` via CLI.
 
 2. **List available suites** — Call `e2e_list` to show the user what test suites are available.
 

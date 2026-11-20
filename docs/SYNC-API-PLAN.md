@@ -91,7 +91,7 @@ export default {
 | Reutiliza código | Dashboard HTTP server, WebSocket, SQLite |
 | Flexible | Cualquier instancia puede ser hub |
 | Portable | Un laptop puede ser hub temporal |
-| Simple deployment | `npx e2e-runner dashboard` + config |
+| Simple deployment | `npx -y @matware/e2e-runner@1.5.1 dashboard` + config |
 
 ---
 
@@ -391,7 +391,7 @@ CREATE TABLE IF NOT EXISTS sync_queue (
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  1. Admin en Hub ejecuta:                                   │
-│     $ npx e2e-runner sync add-instance                      │
+│     $ npx -y @matware/e2e-runner@1.5.1 sync add-instance    │
 │                                                             │
 │     → Genera:                                               │
 │       instance_id: laptop-juan-a3f2                         │
@@ -513,15 +513,15 @@ src/
 
 ```bash
 # Comandos de administración
-npx e2e-runner sync status              # Estado de conexión
-npx e2e-runner sync add-instance        # Generar credenciales (hub)
-npx e2e-runner sync list-instances      # Listar agents (hub)
-npx e2e-runner sync approve <id>        # Aprobar agent pendiente
-npx e2e-runner sync revoke <id>         # Revocar agent
+npx -y @matware/e2e-runner@1.5.1 sync status              # Estado de conexión
+npx -y @matware/e2e-runner@1.5.1 sync add-instance        # Generar credenciales (hub)
+npx -y @matware/e2e-runner@1.5.1 sync list-instances      # Listar agents (hub)
+npx -y @matware/e2e-runner@1.5.1 sync approve <id>        # Aprobar agent pendiente
+npx -y @matware/e2e-runner@1.5.1 sync revoke <id>         # Revocar agent
 
 # Comandos de operación
-npx e2e-runner sync push                # Push manual
-npx e2e-runner sync pull                # Pull manual
+npx -y @matware/e2e-runner@1.5.1 sync push                # Push manual
+npx -y @matware/e2e-runner@1.5.1 sync pull                # Pull manual
 ```
 
 ### Fase 5: Dashboard UX (1 semana)
@@ -557,8 +557,8 @@ npx e2e-runner sync pull                # Pull manual
 
 ```bash
 # Generar CA y certificados
-npx e2e-runner sync init-pki            # Genera CA
-npx e2e-runner sync gen-cert <instance> # Genera cert para instancia
+npx -y @matware/e2e-runner@1.5.1 sync init-pki            # Genera CA
+npx -y @matware/e2e-runner@1.5.1 sync gen-cert <instance> # Genera cert para instancia
 ```
 
 ---
