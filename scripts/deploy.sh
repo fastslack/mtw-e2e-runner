@@ -93,13 +93,16 @@ else
   echo "✓ Published ${PKG_NAME}@${PKG_VERSION}"
 
   # ── Git tag + push ───────────────────────────────────────────────────────
+  # Push the tag by name: `--follow-tags` skips lightweight tags, which left
+  # v1.6.0 local-only and made the GitHub Release step fail.
   if git rev-parse "v${PKG_VERSION}" >/dev/null 2>&1; then
     echo "→ Tag v${PKG_VERSION} already exists, skipping."
   else
-    git tag "v${PKG_VERSION}"
+    git tag -a "v${PKG_VERSION}" -m "v${PKG_VERSION}"
     echo "→ Tagged v${PKG_VERSION}"
   fi
-  git push --follow-tags || echo "  (push skipped/failed — push manually if needed)"
+  git push origin HEAD "refs/tags/v${PKG_VERSION}" \
+    || echo "  (push failed — run: git push origin HEAD refs/tags/v${PKG_VERSION})"
 
   # ── GitHub Release ───────────────────────────────────────────────────────
   # Non-fatal: npm is already live, so a missing/unauthenticated gh just prints
