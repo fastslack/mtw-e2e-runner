@@ -63,7 +63,7 @@ if [[ -z "$E2E_BIN" ]]; then
   # Try npx path
   E2E_BIN="$(npm root -g 2>/dev/null)/@matware/e2e-runner/bin/cli.js"
   if [[ ! -f "$E2E_BIN" ]]; then
-    E2E_BIN="npx -y @matware/e2e-runner@1.5.1"
+    E2E_BIN="npx -y @matware/e2e-runner@1.6.0"
   fi
 fi
 

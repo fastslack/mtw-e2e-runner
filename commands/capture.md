@@ -13,7 +13,7 @@ Take a screenshot of any URL in one step. Handles pool checks and authentication
 
 ## Workflow
 
-1. **Check pool** — Call `e2e_pool_status` to confirm the Chrome pool is running. If not available, tell the user to run `npx -y @matware/e2e-runner@1.5.1 pool start` via CLI and stop.
+1. **Check pool** — Call `e2e_pool_status` to confirm the Chrome pool is running. If not available, tell the user to run `npx -y @matware/e2e-runner@1.6.0 pool start` via CLI and stop.
 
 2. **Capture** — Call `e2e_capture` with:
    - `url`: The URL from the user's request (REQUIRED)
