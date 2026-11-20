@@ -114,7 +114,7 @@ Events are for live feedback; the returned `RunResult` is the source of truth.
 ```jsonc
 {
   "schemaVersion": 1,
-  "runner": { "name": "@matware/e2e-runner", "version": "1.5.1" },
+  "runner": { "name": "@matware/e2e-runner", "version": "1.6.0" },
   "startedAt": "2026-11-17T16:22:00.000Z",
   "finishedAt": "2026-11-17T16:22:01.500Z",
   "summary": { "total": 2, "passed": 1, "failed": 1, "flaky": 0, "durationMs": 1500 },

@@ -88,8 +88,8 @@ Now say *"create a test for X and run it"* — Claude gets 17 MCP tools, slash c
 ## 🚀 Install — it's tiny
 
 ```bash
-npm install --save-dev @matware/e2e-runner@1.5.1
-npx -y @matware/e2e-runner@1.5.1 init        # scaffolds e2e/ with a sample test + config
+npm install --save-dev @matware/e2e-runner@1.6.0
+npx -y @matware/e2e-runner@1.6.0 init        # scaffolds e2e/ with a sample test + config
 ```
 
 Then pick how to run the browser. **You don't need Docker** unless you want the parallel pool:
@@ -100,7 +100,7 @@ Launch any Chromium browser with a debugging port, then point the runner at it:
 
 ```bash
 google-chrome --headless=new --remote-debugging-port=9222 &   # or brave / chromium / msedge
-CHROME_POOL_URL=http://localhost:9222 POOL_DRIVER=cdp npx -y @matware/e2e-runner@1.5.1 run --all
+CHROME_POOL_URL=http://localhost:9222 POOL_DRIVER=cdp npx -y @matware/e2e-runner@1.6.0 run --all
 ```
 
 Or bake it into `e2e.config.js` so you never repeat it:
@@ -121,17 +121,17 @@ A single ~30 MB binary with built-in anti-detection. Install once, run it, point
 
 ```bash
 obscura serve --port 9222 --stealth &
-CHROME_POOL_URL=http://localhost:9222 POOL_DRIVER=obscura npx -y @matware/e2e-runner@1.5.1 run --all
+CHROME_POOL_URL=http://localhost:9222 POOL_DRIVER=obscura npx -y @matware/e2e-runner@1.6.0 run --all
 ```
 
-`npx -y @matware/e2e-runner@1.5.1 pool start` (with `poolDriver: 'obscura'` in your config) prints the exact install command for your OS.
+`npx -y @matware/e2e-runner@1.6.0 pool start` (with `poolDriver: 'obscura'` in your config) prints the exact install command for your OS.
 
 ### Option 3 · Docker pool — parallel, for CI &amp; big suites
 
 A shared, queue-managed Chrome pool that runs many tests at once:
 
 ```bash
-npx -y @matware/e2e-runner@1.5.1 run --all     # the first run auto-starts the Docker pool for you
+npx -y @matware/e2e-runner@1.6.0 run --all     # the first run auto-starts the Docker pool for you
 ```
 
 Requires Docker. Set `baseUrl: 'http://host.docker.internal:3000'` so the containerized Chrome can reach your app.
@@ -159,7 +159,7 @@ Open `e2e/tests/sample.json` — a flow is an ordered list of actions:
 ]
 ```
 
-Run it with `npx -y @matware/e2e-runner@1.5.1 run --all`. Results — pass/fail, timing, screenshots, network errors — print to your terminal and to the [web dashboard](#dashboard) if it's open.
+Run it with `npx -y @matware/e2e-runner@1.6.0 run --all`. Results — pass/fail, timing, screenshots, network errors — print to your terminal and to the [web dashboard](#dashboard) if it's open.
 
 <details>
 <summary><strong>Add OpenCode</strong> (optional)</summary>
@@ -181,14 +181,14 @@ Each install method updates separately — bump the one(s) you use:
 
 ```bash
 # npm dependency (per project)
-npm install --save-dev @matware/e2e-runner@1.5.1
+npm install --save-dev @matware/e2e-runner@1.6.0
 
 # Claude Code plugin
 claude plugin update e2e-runner@matware
 
 # MCP-only install (pinned to an exact version — bump it to upgrade)
 claude mcp add --transport stdio --scope user e2e-runner \
-  -- npx -y -p @matware/e2e-runner@1.5.1 e2e-runner-mcp
+  -- npx -y -p @matware/e2e-runner@1.6.0 e2e-runner-mcp
 ```
 
 > [!NOTE]
@@ -566,7 +566,7 @@ This gives Claude 17 MCP tools, a workflow skill, 4 slash commands (`/e2e-runner
 
 ```bash
 claude mcp add --transport stdio --scope user e2e-runner \
-  -- npx -y -p @matware/e2e-runner@1.5.1 e2e-runner-mcp
+  -- npx -y -p @matware/e2e-runner@1.6.0 e2e-runner-mcp
 ```
 
 </details>
@@ -1008,8 +1008,8 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npx -y @matware/e2e-runner@1.5.1 pool start
-      - run: npx -y @matware/e2e-runner@1.5.1 run --all --output junit
+      - run: npx -y @matware/e2e-runner@1.6.0 pool start
+      - run: npx -y @matware/e2e-runner@1.6.0 run --all --output junit
       - uses: mikepenz/action-junit-report@v4
         if: always()
         with:

@@ -21,7 +21,7 @@ e2e_pool_status → check "Available: yes" and session capacity
 
 If the pool is not running, the user must start it via CLI (not available via MCP):
 ```bash
-npx -y @matware/e2e-runner@1.5.1 pool start
+npx -y @matware/e2e-runner@1.6.0 pool start
 ```
 
 ## Core Workflow

@@ -1,6 +1,13 @@
 # Changelog
 
-## [Unreleased] — 1.6 roadmap
+## [Unreleased]
+
+### Planned
+
+- **Self-healing with semantic verification** — when an interaction selector is auto-rewritten (by the `test-improver` agent or selector healing), record an element fingerprint per action on the last green run (tag, visible text, `role`, `aria-label`, approximate position). After a rewrite, resolve the new selector and compare fingerprints: if the target diverged, mark the test **"green, but verify intent"** instead of plain green — a runtime gate so a rewrite can never silently pass on the wrong element. Pairs with a post-rewrite visual baseline check (reusing the existing screenshot hashes).
+- **Run comparison** — `e2e_learnings("diff:<test>")` + a dashboard "compare runs" view answering *why* a green test went red: divergent network responses, actions that slowed down sharply, and the first step whose screenshot differs from the last green baseline.
+
+## [1.6.0] - 2026-11-20
 
 ### Added
 
@@ -14,6 +21,9 @@
 ### Changed
 
 - `runner.js` loads `db.js` lazily (only to resolve `{{var.*}}` from SQLite); page-analysis helpers moved from `mcp-tools.js` to `src/page-analysis.js`. CLI and MCP behaviour unchanged.
+- **Sync hub: new agents need approval** — `sync.hub.requireApproval` now defaults to `true`; agents registered through `/api/sync/register` stay `pending` until `e2e-runner sync approve <id>`. Opt out with `requireApproval: false` or `E2E_SYNC_REQUIRE_APPROVAL=false`.
+- **Dashboard binds to `127.0.0.1` by default** — `0.0.0.0` only in sync hub mode or when `DASHBOARD_HOST`/`dashboardHost` says so. A non-loopback bind requires a token (`DASHBOARD_TOKEN`/`dashboardToken`, or a random one logged at start).
+- **Exact-version pins** — every `npx`/install reference in skills, commands, docs and scripts is pinned to the package version (`npm run pin-version`, checked by `deploy.sh`), as the Claude plugin directory requires. Commands use the documented `allowed-tools` key, and `plugin.json` declares an `icon`.
 
 ### Fixed
 
@@ -23,10 +33,14 @@
 - **`assert_visual` with `selector`** — element captures no longer pass `fullPage`, which Puppeteer rejects alongside the element clip.
 - Screencast warnings printed `undefined` instead of a color code.
 
-### Planned
+### Security
 
-- **Self-healing with semantic verification** — when an interaction selector is auto-rewritten (by the `test-improver` agent or selector healing), record an element fingerprint per action on the last green run (tag, visible text, `role`, `aria-label`, approximate position). After a rewrite, resolve the new selector and compare fingerprints: if the target diverged, mark the test **"green, but verify intent"** instead of plain green — a runtime gate so a rewrite can never silently pass on the wrong element. Pairs with a post-rewrite visual baseline check (reusing the existing screenshot hashes).
-- **Run comparison** — `e2e_learnings("diff:<test>")` + a dashboard "compare runs" view answering *why* a green test went red: divergent network responses, actions that slowed down sharply, and the first step whose screenshot differs from the last green baseline.
+- **Dashboard** — rejects non-loopback `Host` headers on a loopback bind (DNS rebinding), refuses state-changing requests from foreign origins, requires JSON POST bodies, and applies the same access check to WebSocket upgrades. `/mcp` and `/api/tool/*` only dispatch dashboard tools; `cwd` must be the dashboard's project or one already registered, and `e2e_run` files must resolve inside it. JSON responses send `Cache-Control: no-store` and `nosniff`.
+- **`e2e_capture` / `e2e_analyze`** accept only `http(s)` URLs (`file://` exposed local files).
+- **`e2e_dashboard_restart`** validates the port and only kills the listening process when it answers like an e2e-runner dashboard.
+- **Sync hub** — registration always stores the `member` role (any agent could register as admin); new `e2e-runner sync set-role`; the JWT middleware re-reads role and status from the DB, so revoke and role changes apply immediately; screenshot path traversal fixed; registration fields validated.
+- **Sync hub bugs** — approve/revoke failed on SQLite (`datetime("now")`), two `require()` calls in ESM broke TOTP decryption and admin routes, and error responses could crash the hub.
+- **Pool** — connection and tab leaks fixed.
 
 ## [1.5.1] - 2026-06-07
 

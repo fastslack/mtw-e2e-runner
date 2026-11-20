@@ -1,6 +1,6 @@
 {
   "name": "e2e-runner",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "JSON-driven E2E browser test runner — no JavaScript test files needed. Parallel execution against a Chrome pool (browserless, CDP, Lightpanda, Obscura, Moli, Steel), 28+ built-in actions, visual verification, network debugging, flaky test detection, reusable modules, and a real-time dashboard. Includes 3 specialized agents, 4 slash commands, and 17 MCP tools.",
   "icon": "./logos/export/favicon.svg",
   "author": {

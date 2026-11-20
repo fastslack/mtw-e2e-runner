@@ -75,7 +75,7 @@ else
         PACKAGE_DIR="${PWD}/node_modules/@matware/e2e-runner"
     elif [ ! -f "${PACKAGE_DIR}/package.json" ]; then
         log_error "Cannot find @matware/e2e-runner package"
-        log_error "Run: npm install @matware/e2e-runner@1.5.1"
+        log_error "Run: npm install @matware/e2e-runner@1.6.0"
         exit 1
     fi
     
@@ -107,7 +107,7 @@ echo ""
 log_info "OpenCode setup complete!"
 echo ""
 echo "Next steps:"
-echo "  1. Start the Chrome pool: npx -y @matware/e2e-runner@1.5.1 pool start"
+echo "  1. Start the Chrome pool: npx -y @matware/e2e-runner@1.6.0 pool start"
 echo "  2. Restart OpenCode to load the MCP server"
 echo "  3. Ask: 'Run all E2E tests'"
 echo ""

@@ -8,8 +8,8 @@
 
 **Fix**:
 ```bash
-npx -y @matware/e2e-runner@1.5.1 pool start
-npx -y @matware/e2e-runner@1.5.1 pool status   # verify it's running
+npx -y @matware/e2e-runner@1.6.0 pool start
+npx -y @matware/e2e-runner@1.6.0 pool status   # verify it's running
 ```
 
 Pool management is CLI-only — `pool start` and `pool stop` are not available via MCP.
@@ -20,8 +20,8 @@ Pool management is CLI-only — `pool start` and `pool stop` are not available v
 
 **Fix**: Increase capacity or reduce concurrency:
 ```bash
-npx -y @matware/e2e-runner@1.5.1 pool stop
-npx -y @matware/e2e-runner@1.5.1 pool start --max-sessions 10
+npx -y @matware/e2e-runner@1.6.0 pool stop
+npx -y @matware/e2e-runner@1.6.0 pool start --max-sessions 10
 ```
 Or reduce test concurrency: `--concurrency 2`
 
@@ -31,7 +31,7 @@ The runner checks `/pressure` before each connection and waits up to 60s for a f
 
 **Cause**: Docker daemon is not started.
 
-**Fix**: Start Docker Desktop or `sudo systemctl start docker`, then `npx -y @matware/e2e-runner@1.5.1 pool start`.
+**Fix**: Start Docker Desktop or `sudo systemctl start docker`, then `npx -y @matware/e2e-runner@1.6.0 pool start`.
 
 ## React / SPA Issues
 
