@@ -1,7 +1,6 @@
 ---
 description: Create a new E2E test by exploring the UI and designing test actions
-user_invocable: true
-allowed_tools:
+allowed-tools:
   - mcp__e2e-runner__e2e_pool_status
   - mcp__e2e-runner__e2e_capture
   - mcp__e2e-runner__e2e_list

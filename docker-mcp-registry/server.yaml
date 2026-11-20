@@ -27,7 +27,7 @@ run:
 config:
   description: >
     Requires a Chrome pool (browserless/chrome) running on the host.
-    Start with: npx e2e-runner pool start
+    Start with: npx -y @matware/e2e-runner@1.5.1 pool start
   env:
     - name: BASE_URL
       example: http://host.docker.internal:3000

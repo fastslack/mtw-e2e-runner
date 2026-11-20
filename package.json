@@ -53,7 +53,9 @@
   },
   "scripts": {
     "build:dashboard": "node templates/build-dashboard.js",
-    "prepublishOnly": "node templates/build-dashboard.js"
+    "prepublishOnly": "node templates/build-dashboard.js",
+    "pin-version": "node scripts/pin-version.mjs",
+    "pin-version:check": "node scripts/pin-version.mjs --check"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -6,7 +6,7 @@ This document describes how to use `@matware/e2e-runner` with [OpenCode](https:/
 
 1. **Install the package** (if not already installed):
    ```bash
-   npm install -g @matware/e2e-runner
+   npm install -g @matware/e2e-runner@1.5.1
    ```
 
 2. **Copy configuration to your project**:
@@ -157,7 +157,7 @@ cp -r node_modules/@matware/e2e-runner/.opencode/commands/* ~/.config/opencode/c
 
 1. Restart OpenCode after changing `opencode.json`
 2. Check the MCP server logs for errors
-3. Verify the Chrome pool is running: `npx e2e-runner pool status`
+3. Verify the Chrome pool is running: `npx -y @matware/e2e-runner@1.5.1 pool status`
 
 ### Skill Not Loading
 

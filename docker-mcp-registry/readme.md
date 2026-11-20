@@ -18,7 +18,7 @@ AI-native JSON-driven E2E browser test runner with Chrome pool, parallel executi
 Requires a Chrome pool running on the host:
 
 ```bash
-npx e2e-runner pool start
+npx -y @matware/e2e-runner@1.5.1 pool start
 ```
 
 ## Documentation
