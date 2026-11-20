@@ -2,6 +2,27 @@
 
 ## [Unreleased] — 1.6 roadmap
 
+### Added
+
+- **Moli driver** (`moli`) — [Moli](https://github.com/lexmount/moli) (Rust + V8) as a CDP pool engine. `auto` detects it via the `Moli-Version` field of `/json/version` (its `Browser` string reports Chrome). `connectToPool()` verifies once per pool that Moli runs with `--layout` and fails fast with a fix hint otherwise; `pool start`/`pool stop` print install and run guidance. Accepted by `--driver`, per-test `driver`/`fallbackDriver`, and `POOL_DRIVER`.
+- **Embed API (`@matware/e2e-runner/embed`)** — stable entry for programs that embed the runner, documented in `docs/embedding.md`:
+  - `runSuite(suite, opts)` runs a suite (array or `{ tests, hooks }`, modules as an in-memory map or a directory, `vars`/`env` passed in) and returns a versioned `RunResult` (`schemaVersion: 1`, `schemas/run-result.v1.json`) with per-step results, failed step, console, network, screenshots and a `meta` passthrough of unknown test keys
+  - `inspectPage(url, opts)` returns the `e2e_analyze` page structure plus a screenshot path (`schemas/inspect-result.v1.json`)
+  - No side effects beyond screenshots in `screenshotsDir` (no dashboard DB, learnings, sync, reports or stdout), never calls an LLM, and does not load `better-sqlite3` — runs under Bun
+- `npm test` — unit + browser tests for the embed API (`node --test`)
+
+### Changed
+
+- `runner.js` loads `db.js` lazily (only to resolve `{{var.*}}` from SQLite); page-analysis helpers moved from `mcp-tools.js` to `src/page-analysis.js`. CLI and MCP behaviour unchanged.
+
+### Fixed
+
+- **Blank-capture detection** — decodable PNGs are judged by pixel uniformity only; the byte-size threshold is a fallback for undecodable data. Engines with efficient encoders (Moli: ~10 KB for a real page) no longer have valid screenshots — including `expect` verification captures — discarded as blank.
+- **`type` / `fill` / `clear`** — after the triple-click, verify the field's whole value is selected and fall back to a DOM selection. Fixes stale text being kept on engines where triple-click doesn't select (Moli) and on multi-line `<textarea>` in Chrome.
+- **`wait_for_tab`** — adopts a new tab that already exists before waiting for `targetcreated`; fast engines open the popup before the triggering click resolves.
+- **`assert_visual` with `selector`** — element captures no longer pass `fullPage`, which Puppeteer rejects alongside the element clip.
+- Screencast warnings printed `undefined` instead of a color code.
+
 ### Planned
 
 - **Self-healing with semantic verification** — when an interaction selector is auto-rewritten (by the `test-improver` agent or selector healing), record an element fingerprint per action on the last green run (tag, visible text, `role`, `aria-label`, approximate position). After a rewrite, resolve the new selector and compare fingerprints: if the target diverged, mark the test **"green, but verify intent"** instead of plain green — a runtime gate so a rewrite can never silently pass on the wrong element. Pairs with a post-rewrite visual baseline check (reusing the existing screenshot hashes).
@@ -274,7 +295,7 @@
 - Add null check for property descriptor in `type_react` action
 - Add bounds validation (1–365) for `days` parameter in `e2e_learnings`
 
-## [1.1.1] - 2025-02-xx
+## [1.1.1] - 2026-02-17
 
 - Action-level retry with `retries` field on individual actions
 - Serial tests (`"serial": true`) — run after parallel tests finish
@@ -289,7 +310,7 @@
 - Visual verification with `expect` field
 - Strict test JSON validation
 
-## [1.1.0] - 2025-02-16
+## [1.1.0] - 2026-02-17
 
 ### Added
 
@@ -401,24 +422,24 @@
 
 - **`docker-mcp-registry/tools.json`** removed
 
-## [1.0.4] - 2025-01-xx
+## [1.0.4] - 2026-02-xx
 
 - Remove `e2e_pool_start` and `e2e_pool_stop` from MCP server (restarting pool kills other sessions)
 
-## [1.0.3] - 2025-01-xx
+## [1.0.3] - 2026-02-xx
 
 - Show console errors and network errors in report output
 
-## [1.0.2] - 2025-01-xx
+## [1.0.2] - 2026-02-xx
 
 - Add multi-project support via `cwd` parameter in all MCP tools
 
-## [1.0.1] - 2025-01-xx
+## [1.0.1] - 2026-02-xx
 
 - Add `mcpName` and `server.json` for MCP Registry
 - Fix `server.json` description length
 
-## [1.0.0] - 2025-01-xx
+## [1.0.0] - 2026-02-xx
 
 - Initial release: JSON-driven E2E test runner with MCP server
 - Parallel test execution against Chrome pool (browserless/chrome)

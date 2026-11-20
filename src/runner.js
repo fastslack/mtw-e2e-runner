@@ -18,7 +18,15 @@ import { narrateAction } from './narrate.js';
 import { log, colors as C } from './logger.js';
 import { resolveTestData, validateActionTypes } from './module-resolver.js';
 import { compareImages } from './visual-diff.js';
-import { ensureProject, getVariables } from './db.js';
+// db.js (better-sqlite3) is imported lazily in loadVarsForTest() so the
+// embed entry can load in runtimes without native Node addons.
+
+/**
+ * Non-enumerable link from an internal test result back to the test object it
+ * ran (invisible to JSON reports). The embed API uses it to keep input order
+ * and pass unknown test keys through as `meta`.
+ */
+export const TEST_SOURCE = Symbol.for('@matware/e2e-runner.testSource');
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -127,27 +135,32 @@ function mergeHooks(configHooks, suiteHooks) {
 }
 
 /** Replaces {{var.KEY}} and {{env.KEY}} in all string fields of an action object.
- *  Skips {{param}} patterns (no dot) — those are module params handled by module-resolver. */
-function resolveVarsInAction(action, vars) {
+ *  Skips {{param}} patterns (no dot) — those are module params handled by module-resolver.
+ *  `env` defaults to process.env; the embed API passes its own map instead. */
+function resolveVarsInAction(action, vars, env = process.env) {
   const resolved = { ...action };
   for (const key of Object.keys(resolved)) {
     if (typeof resolved[key] !== 'string') continue;
     resolved[key] = resolved[key].replace(/\{\{(var|env)\.([^}]+)\}\}/g, (match, ns, name) => {
       if (ns === 'env') {
-        if (process.env[name] !== undefined) return process.env[name];
+        if (env[name] !== undefined) return String(env[name]);
         throw new Error(`Unresolved variable: {{env.${name}}} — environment variable not set`);
       }
       // ns === 'var'
-      if (vars[name] !== undefined) return vars[name];
+      if (vars[name] !== undefined) return String(vars[name]);
       throw new Error(`Unresolved variable: {{var.${name}}} — not found in project or suite variables`);
     });
   }
   return resolved;
 }
 
-/** Loads merged variables for a test (project scope + suite scope overlay). */
-function loadVarsForTest(config, suiteName) {
+/** Loads merged variables for a test (project scope + suite scope overlay).
+ *  When the caller supplied variables in memory (config._embed.vars — the
+ *  embed API), SQLite is never touched. */
+async function loadVarsForTest(config, suiteName) {
+  if (config._embed) return { ...(config._embed.vars || {}) };
   try {
+    const { ensureProject, getVariables } = await import('./db.js');
     const cwd = config._cwd || process.cwd();
     const projectName = config.projectName || cwd.split('/').pop() || 'default';
     const projectId = ensureProject(cwd, projectName, config.screenshotsDir, config.testsDir);
@@ -161,9 +174,9 @@ function loadVarsForTest(config, suiteName) {
 }
 
 /** Resolves variables in an array of actions. */
-function resolveVarsInActions(actions, vars) {
+function resolveVarsInActions(actions, vars, env) {
   if (!actions || !actions.length) return actions;
-  return actions.map(a => resolveVarsInAction(a, vars));
+  return actions.map(a => resolveVarsInAction(a, vars, env));
 }
 
 /** Executes an array of hook actions on a page */
@@ -174,7 +187,7 @@ async function executeHookActions(page, actions, config) {
 }
 
 /** Normalizes raw JSON (array or object with hooks) into { tests, hooks } */
-function normalizeTestData(data) {
+export function normalizeTestData(data) {
   if (Array.isArray(data)) {
     return { tests: data, hooks: {} };
   }
@@ -298,7 +311,9 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     tabRegistry.set('default', page);
 
     // CDP screencast — streams browser frames as JPEG to the dashboard
-    // Only attempt on browserless pools; generic CDP pools (Lightpanda) break on createCDPSession
+    // Skipped for generic CDP pools, which may break on createCDPSession.
+    // Moli supports Page.startScreencast under --layout, but emits a frame only
+    // when the page changes (default interval 1000ms, `moli serve --screencast-interval-ms`).
     const poolDriver = getCachedDriver(chosenPool);
     if (config.screencast && poolDriver !== 'cdp') {
       try {
@@ -329,11 +344,11 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
         }), 5000);
         log('📹', `${C.dim}screencast started for ${test.name} (driver=${poolDriver})${C.reset}`);
       } catch (err) {
-        log('⚠️', `${C.amber}screencast failed for ${test.name}: ${err.message} (driver=${poolDriver})${C.reset}`);
+        log('⚠️', `${C.yellow}screencast failed for ${test.name}: ${err.message} (driver=${poolDriver})${C.reset}`);
         cdpSession = null;
       }
     } else if (config.screencast && poolDriver === 'cdp') {
-      log('⚠️', `${C.amber}screencast disabled: pool driver is generic CDP (Lightpanda?), not supported${C.reset}`);
+      log('⚠️', `${C.yellow}screencast disabled: pool driver is generic CDP (Lightpanda?), not supported${C.reset}`);
     }
 
     page.on('console', (msg) => {
@@ -387,11 +402,12 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
     }
 
     // Resolve {{var.X}} and {{env.X}} in test actions and hooks
-    const vars = loadVarsForTest(config, config._suiteName);
+    const vars = await loadVarsForTest(config, config._suiteName);
+    const varEnv = config._embed?.env || process.env;
     if (Object.keys(vars).length > 0 || /\{\{(var|env)\./.test(JSON.stringify(test.actions))) {
-      test = { ...test, actions: resolveVarsInActions(test.actions, vars) };
-      if (hooks.beforeEach?.length) hooks = { ...hooks, beforeEach: resolveVarsInActions(hooks.beforeEach, vars) };
-      if (hooks.afterEach?.length) hooks = { ...hooks, afterEach: resolveVarsInActions(hooks.afterEach, vars) };
+      test = { ...test, actions: resolveVarsInActions(test.actions, vars, varEnv) };
+      if (hooks.beforeEach?.length) hooks = { ...hooks, beforeEach: resolveVarsInActions(hooks.beforeEach, vars, varEnv) };
+      if (hooks.afterEach?.length) hooks = { ...hooks, afterEach: resolveVarsInActions(hooks.afterEach, vars, varEnv) };
     }
 
     // Run beforeEach hook
@@ -524,14 +540,27 @@ export async function runTest(test, config, hooks = {}, progressFn = () => {}) {
             // Wait for a new tab/popup to be opened (e.g. by window.open, target=_blank)
             const label = action.text || `tab-${tabRegistry.size}`;
             const waitTimeout = action.timeout || config.defaultTimeout || 10000;
-            const newTarget = await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => reject(new Error(`wait_for_tab: no new tab appeared after ${waitTimeout}ms`)), waitTimeout);
-              context.once('targetcreated', (target) => {
-                clearTimeout(timer);
-                resolve(target);
+            // The tab may already exist: fast engines (e.g. Moli) create the
+            // popup target before the triggering click resolves, so the
+            // 'targetcreated' event has fired before this listener exists.
+            // Adopt any page in the context that isn't registered yet first.
+            const knownPages = new Set(tabRegistry.values());
+            let newPage = null;
+            for (const t of context.targets()) {
+              if (t.type() !== 'page') continue;
+              const p = await t.page().catch(() => null);
+              if (p && !p.isClosed() && !knownPages.has(p)) { newPage = p; break; }
+            }
+            if (!newPage) {
+              const newTarget = await new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error(`wait_for_tab: no new tab appeared after ${waitTimeout}ms`)), waitTimeout);
+                context.once('targetcreated', (target) => {
+                  clearTimeout(timer);
+                  resolve(target);
+                });
               });
-            });
-            const newPage = await newTarget.page();
+              newPage = await newTarget.page();
+            }
             if (newPage) {
               await newPage.setViewport(config.viewport);
               tabRegistry.set(label, newPage);
@@ -763,18 +792,22 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
     }
     log('🪝', `${C.dim}Running beforeAll hook...${C.reset}`);
     let browser = null;
+    let hookPool = null;
+    let hookPage = null;
     try {
-      const hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
+      hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
       browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
-      const page = await browser.newPage();
-      await page.setViewport(config.viewport);
-      await executeHookActions(page, hooks.beforeAll, config);
-      await page.close();
+      hookPage = await browser.newPage();
+      await hookPage.setViewport(config.viewport);
+      await executeHookActions(hookPage, hooks.beforeAll, config);
     } catch (error) {
       log('❌', `${C.red}beforeAll hook failed: ${error.message}${C.reset}`);
       throw error;
     } finally {
+      if (hookPage) try { await hookPage.close(); } catch { /* */ }
       if (browser) try { await disconnectFromPool(browser, hookPool); } catch { /* */ }
+      // selectPool() tracked a pending slot for the hook — release it
+      if (hookPool) releasePending(hookPool);
     }
   }
 
@@ -885,6 +918,7 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
         }
       }
 
+      Object.defineProperty(result, TEST_SOURCE, { value: test, enumerable: false, configurable: true });
       results.push(result);
       activeCount--;
 
@@ -928,17 +962,21 @@ export async function runTestsParallel(tests, config, suiteHooks = {}) {
   if (hooks.afterAll?.length) {
     log('🪝', `${C.dim}Running afterAll hook...${C.reset}`);
     let browser = null;
+    let hookPool = null;
+    let hookPage = null;
     try {
-      const hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
+      hookPool = await selectPool(getPoolUrls(config), 2000, 60000, driverOpts);
       browser = await connectToPool(hookPool, config.connectRetries, config.connectRetryDelay);
-      const page = await browser.newPage();
-      await page.setViewport(config.viewport);
-      await executeHookActions(page, hooks.afterAll, config);
-      await page.close();
+      hookPage = await browser.newPage();
+      await hookPage.setViewport(config.viewport);
+      await executeHookActions(hookPage, hooks.afterAll, config);
     } catch (error) {
       log('⚠️', `${C.yellow}afterAll hook failed: ${error.message}${C.reset}`);
     } finally {
+      if (hookPage) try { await hookPage.close(); } catch { /* */ }
       if (browser) try { await disconnectFromPool(browser, hookPool); } catch { /* */ }
+      // selectPool() tracked a pending slot for the hook — release it
+      if (hookPool) releasePending(hookPool);
     }
   }
 

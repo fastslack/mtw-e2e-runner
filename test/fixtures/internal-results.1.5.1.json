@@ -1,0 +1,176 @@
+[
+  {
+    "name": "login form has a submit",
+    "startTime": "2026-11-17T16:22:00.636Z",
+    "actions": [
+      {
+        "type": "goto",
+        "value": "/",
+        "success": true,
+        "duration": 37,
+        "result": null,
+        "autoScreenshot": "<screenshotsDir>/step-login form has a submit-000-1794932521099.jpg",
+        "narrative": "Navigated to / (37ms)"
+      },
+      {
+        "type": "assert_visible",
+        "selector": "#email",
+        "success": true,
+        "duration": 8,
+        "result": null,
+        "autoScreenshot": "<screenshotsDir>/step-login form has a submit-000-1794932521099.jpg",
+        "narrative": "Verified \"#email\" is visible (8ms)"
+      },
+      {
+        "type": "assert_visible",
+        "selector": "#missing",
+        "timeout": 1000,
+        "success": false,
+        "duration": 0,
+        "error": "assert_visible failed: \"#missing\" not found",
+        "autoScreenshot": "<screenshotsDir>/step-login form has a submit-000-1794932521099.jpg",
+        "narrative": "FAIL: Assert \"#missing\" visible — assert_visible failed: \"#missing\" not found"
+      }
+    ],
+    "success": false,
+    "error": "assert_visible failed: \"#missing\" not found",
+    "consoleLogs": [
+      {
+        "type": "log",
+        "text": "home loaded"
+      },
+      {
+        "type": "error",
+        "text": "fixture error"
+      },
+      {
+        "type": "verbose",
+        "text": "[DOM] Input elements should have autocomplete attributes (suggested: \"current-password\"): (More info: https://goo.gl/9p2vKq) %o"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      }
+    ],
+    "networkErrors": [],
+    "networkLogs": [],
+    "poolUrl": "http://127.0.0.1:62558",
+    "poolDriver": "cdp",
+    "endTime": "2026-11-17T16:22:01.302Z",
+    "finalUrl": "http://app.test/",
+    "attempt": 1,
+    "maxAttempts": 1
+  },
+  {
+    "name": "greets the user",
+    "startTime": "2026-11-17T16:22:00.632Z",
+    "actions": [
+      {
+        "type": "goto",
+        "value": "/about",
+        "success": true,
+        "duration": 45,
+        "result": null,
+        "autoScreenshot": "<screenshotsDir>/step-greets the user-000-1794932521100.jpg",
+        "narrative": "Navigated to /about (45ms)"
+      },
+      {
+        "type": "type",
+        "selector": "#who",
+        "value": "Ana",
+        "success": true,
+        "duration": 99,
+        "result": null,
+        "autoScreenshot": "<screenshotsDir>/step-greets the user-001-1794932521222.jpg",
+        "narrative": "Typed \"Ana\" into \"#who\" (99ms)"
+      },
+      {
+        "type": "click",
+        "selector": "#greet",
+        "success": true,
+        "duration": 14,
+        "result": null,
+        "autoScreenshot": "<screenshotsDir>/step-greets the user-002-1794932521270.jpg",
+        "narrative": "Clicked on \"#greet\" (14ms)"
+      },
+      {
+        "type": "screenshot",
+        "value": "greeted.png",
+        "success": true,
+        "duration": 49,
+        "result": {
+          "screenshot": null,
+          "skipped": "blank-render",
+          "bytes": 11907
+        },
+        "narrative": "Skipped screenshot (render looked blank)"
+      },
+      {
+        "type": "assert_text",
+        "text": "Hello Ana",
+        "success": true,
+        "duration": 1,
+        "result": null,
+        "autoScreenshot": "<screenshotsDir>/step-greets the user-002-1794932521270.jpg",
+        "narrative": "Verified text \"Hello Ana\" is present on page (1ms)"
+      }
+    ],
+    "success": true,
+    "error": null,
+    "consoleLogs": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: net::ERR_UNSAFE_PORT"
+      },
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      }
+    ],
+    "networkErrors": [
+      {
+        "url": "http://127.0.0.1:9/unreachable",
+        "error": "net::ERR_UNSAFE_PORT"
+      }
+    ],
+    "networkLogs": [
+      {
+        "url": "http://app.test/api/ping",
+        "method": "GET",
+        "status": 200,
+        "statusText": "OK",
+        "duration": 14,
+        "requestHeaders": {
+          "sec-ch-ua-platform": "\"macOS\"",
+          "referer": "http://app.test/about",
+          "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"153\", \"Not_A Brand\";v=\"8\", \"Chromium\";v=\"153\"",
+          "sec-ch-ua-mobile": "?0",
+          "accept": "*/*",
+          "accept-encoding": "gzip, deflate, br, zstd",
+          "accept-language": "en-US,en;q=0.9",
+          "connection": "keep-alive",
+          "host": "127.0.0.1:62559",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+          "sec-fetch-site": "same-origin"
+        },
+        "requestBody": null,
+        "responseHeaders": {
+          "connection": "keep-alive",
+          "date": "Tue, 17 Nov 2026 16:22:01 GMT",
+          "keep-alive": "timeout=5",
+          "transfer-encoding": "chunked",
+          "content-type": "application/json"
+        },
+        "responseBody": "{\"ok\":true}"
+      }
+    ],
+    "poolUrl": "http://127.0.0.1:62558",
+    "poolDriver": "cdp",
+    "endTime": "2026-11-17T16:22:01.389Z",
+    "finalUrl": "http://app.test/about",
+    "attempt": 1,
+    "maxAttempts": 1
+  }
+]

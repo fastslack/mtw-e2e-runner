@@ -207,8 +207,38 @@ export function resolveTestData(data, modulesDir) {
     return data; // No modules directory — pass through unchanged
   }
 
-  const registry = loadModuleRegistry(modulesDir);
-  if (registry.size === 0) {
+  return resolveTestDataWithRegistry(data, loadModuleRegistry(modulesDir));
+}
+
+/**
+ * Builds a module registry from an in-memory map ({ name: moduleJson }) or an
+ * array of module JSON objects. Used by the embed API so callers can pass
+ * modules without writing them to disk.
+ * @param {object|Array} modules
+ * @returns {Map<string, object>}
+ */
+export function buildModuleRegistry(modules) {
+  const registry = new Map();
+  if (!modules) return registry;
+  const entries = Array.isArray(modules)
+    ? modules.map(m => [m?.$module, m])
+    : Object.entries(modules).map(([name, m]) => [m?.$module || name, m]);
+  for (const [name, data] of entries) {
+    if (!name || !data || typeof data !== 'object') {
+      throw new Error(`Invalid module definition${name ? ` "${name}"` : ''}: expected an object with "actions"`);
+    }
+    if (registry.has(name)) throw new Error(`Duplicate module name "${name}"`);
+    registry.set(name, { ...data, $module: name });
+  }
+  return registry;
+}
+
+/**
+ * Resolves all $use references in a test data structure against a registry
+ * (as returned by loadModuleRegistry / buildModuleRegistry).
+ */
+export function resolveTestDataWithRegistry(data, registry) {
+  if (!registry || registry.size === 0) {
     return data; // No modules defined — pass through
   }
 

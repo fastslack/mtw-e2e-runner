@@ -78,7 +78,7 @@ Now say *"create a test for X and run it"* — Claude gets 17 MCP tools, slash c
 | ✍️ | **[Writing tests](#writing-tests)** | test format · full action catalog · retries · serial · modules · auth · hooks |
 | 🤖 | **[AI integration](#ai)** | Claude Code · OpenCode · 17 MCP tools · visual verification · issue-to-test |
 | 📊 | **[Dashboard &amp; insights](#dashboard)** | live dashboard · learning system · network logs · screenshot capture |
-| 🌐 | **[Browser drivers](#drivers)** | browserless · cdp · lightpanda · obscura · steel |
+| 🌐 | **[Browser drivers](#drivers)** | browserless · cdp · lightpanda · obscura · moli · steel |
 | ⚙️ | **[CLI, config &amp; CI](#reference)** | commands · flags · `e2e.config.js` · GitHub Actions · programmatic API |
 
 ---
@@ -210,9 +210,9 @@ claude mcp add --transport stdio --scope user e2e-runner \
 
 🧠 **Learning system** — Tracks test stability across runs. Detects flaky tests, unstable selectors, slow APIs, and error patterns — then surfaces actionable insights.
 
-⚡ **Parallel execution** — Run N tests simultaneously against a shared browser pool (browserless, raw CDP, Lightpanda, Obscura, or Steel). Serial mode available for tests that share state.
+⚡ **Parallel execution** — Run N tests simultaneously against a shared browser pool (browserless, raw CDP, Lightpanda, Obscura, Moli, or Steel). Serial mode available for tests that share state.
 
-🎯 **Pluggable browser drivers** — Pick the engine that fits each test: real Chrome via browserless, Lightpanda or Obscura for fast lightweight runs, Steel for managed sessions. Set `driver` per test or override the whole run with `--driver`.
+🎯 **Pluggable browser drivers** — Pick the engine that fits each test: real Chrome via browserless, Lightpanda, Obscura or Moli for fast lightweight runs, Steel for managed sessions. Set `driver` per test or override the whole run with `--driver`.
 
 📊 **Real-time dashboard** — Live execution view, run history with pass-rate charts, screenshot gallery with hash-based search, expandable network request logs.
 
@@ -822,6 +822,7 @@ The runner can talk to multiple browser engines through different drivers. The d
 | `cdp` | Generic CDP-compatible (raw Chrome, etc.) | `/json/version` reachable | Fallback for any CDP server that isn't one of the others |
 | `lightpanda` | [Lightpanda](https://lightpanda.io) (Zig) | `/json/version` Browser=lightpanda | ~9× faster, ~16× less memory than headless Chrome — ideal for high-volume scrape-style tests |
 | `obscura` | [Obscura](https://github.com/h4ckf0r0day/obscura) (Rust + V8) | `/json/version` Browser=obscura | ~30 MB RAM footprint, built-in anti-detection (`--stealth`), stays close to real Chrome via Puppeteer |
+| `moli` | [Moli](https://github.com/lexmount/moli) (Rust + V8) | `/json/version` has `Moli-Version` | Lightweight, structure-first engine with on-demand layout; real screenshots, `assert_visual` and screencast. **Requires `moli serve --layout`** — the runner fails fast with a fix hint otherwise |
 | `steel` | [Steel Browser](https://steel.dev) | `/v1/sessions` returns JSON | Managed session lifecycle, REST API for orchestration |
 
 <details>
@@ -875,6 +876,12 @@ curl -LO https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura
 tar xzf obscura-x86_64-linux.tar.gz
 ./obscura serve --port 9222 --stealth
 # then point the runner at it: poolUrls: ['http://localhost:9222'], poolDriver: 'obscura'
+
+# Moli — install the binary and run it with layout enabled (needed for clicks + screenshots)
+curl --proto '=https' --tlsv1.2 -fsSL https://github.com/lexmount/moli/releases/latest/download/moli-installer.sh | sh
+moli serve --layout --resource --port 9222
+# then: poolUrls: ['http://localhost:9222'], poolDriver: 'moli' (or 'auto')
+# Moli runs on the host, so use a host-reachable baseUrl (http://localhost:3000), not host.docker.internal
 ```
 
 </details>
@@ -936,7 +943,7 @@ e2e-runner init                       # Scaffold project
 | `--env <name>` | `default` | Environment profile |
 | `--fail-on-network-error` | `false` | Fail tests with network errors |
 | `--project-name <name>` | dir name | Project display name |
-| `--driver <name>` | _(per-test)_ | Force pool driver for the run: `browserless`, `cdp`, `lightpanda`, `obscura`, `steel` |
+| `--driver <name>` | _(per-test)_ | Force pool driver for the run: `browserless`, `cdp`, `lightpanda`, `moli`, `obscura`, `steel` |
 | `--fallback-driver <name>` | _none_ | Explicit fallback if no pool with `--driver` is reachable |
 
 </details>
@@ -974,8 +981,9 @@ export default {
 
 1. CLI flags
 2. Environment variables
-3. Config file (`e2e.config.js` or `e2e.config.json`)
-4. Defaults
+3. `.env` file in the project root (KEY=VALUE, never overrides existing `process.env` values)
+4. Config file (`e2e.config.js` or `e2e.config.json`)
+5. Defaults
 
 When `--env <name>` is set, the matching profile overrides everything.
 
@@ -1027,6 +1035,17 @@ const report = await runner.runTests([
   { name: 'quick-check', actions: [{ type: 'goto', value: '/' }] },
 ]);
 ```
+
+**Embedding the runner in another program?** Use the stable, side-effect-free entry instead — versioned results (`schemaVersion: 1`, JSON Schema included), no dashboard DB / learnings / LLM calls, no native addons:
+
+```js
+import { runSuite, inspectPage } from '@matware/e2e-runner/embed';
+
+const result = await runSuite(tests, { baseUrl, poolUrl, screenshotsDir, vars, env });
+const page = await inspectPage('http://app:3000/login', { poolUrl, screenshotsDir });
+```
+
+See [docs/embedding.md](docs/embedding.md).
 
 </details>
 

@@ -25,6 +25,8 @@ export { writeToGraph, queryGraph, closeNeo4j } from './learner-neo4j.js';
 export { startNeo4j, stopNeo4j, getNeo4jStatus } from './neo4j-pool.js';
 export { forkAppInstance, destroyFork, destroyAllForks, getAppPoolStatus, isAppPoolEnabled } from './app-pool.js';
 export { compareImages, assertVisualMatch } from './visual-diff.js';
+// Stable embed API (also available as '@matware/e2e-runner/embed') — see docs/embedding.md
+export { runSuite, inspectPage, toRunResult, RUN_RESULT_SCHEMA_VERSION, INSPECT_RESULT_SCHEMA_VERSION } from './embed.js';
 
 import { loadConfig } from './config.js';
 import { waitForAnyPool, getPoolUrls } from './pool-manager.js';

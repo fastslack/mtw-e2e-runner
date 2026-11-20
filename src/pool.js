@@ -7,10 +7,13 @@
  *   - "cdp"         — generic CDP pool (raw Chrome, etc.) using /json/version health check
  *   - "lightpanda"  — Lightpanda browser (Zig-based, 9x faster, ~16x less memory) via CDP on port 9222
  *   - "obscura"     — Obscura headless browser (Rust+V8, ~30 MB, anti-detect) via CDP on port 9222
+ *   - "moli"        — Moli headless browser (Rust+V8, Lexmount) via CDP on port 9222. Must run with
+ *                     `moli serve --layout`: without it, coordinate input (clicks) and screenshots are
+ *                     unavailable, so connectToPool verifies layout once per pool and fails fast.
  *   - "steel"       — Steel Browser with /v1/sessions REST API and session lifecycle
  *   - "auto"        — detect driver by probing endpoints: /pressure → browserless, /v1/sessions → steel,
- *                     /json/version with Browser=lightpanda → lightpanda, Browser=obscura → obscura,
- *                     fallback → cdp
+ *                     /json/version with Moli-Version → moli, Browser=lightpanda → lightpanda,
+ *                     Browser=obscura → obscura, fallback → cdp
  */
 
 import puppeteer from 'puppeteer-core';
@@ -30,7 +33,10 @@ function sleep(ms) {
 // ── Driver detection cache ────────────────────────────────────────────────────
 
 /** Set of driver identifiers accepted by config, test JSON, and CLI overrides. */
-export const KNOWN_DRIVERS = new Set(['auto', 'browserless', 'cdp', 'lightpanda', 'obscura', 'steel']);
+export const KNOWN_DRIVERS = new Set(['auto', 'browserless', 'cdp', 'lightpanda', 'moli', 'obscura', 'steel']);
+
+/** Drivers that speak plain CDP with /json/version discovery and no session REST API. */
+const CDP_FAMILY = new Set(['cdp', 'lightpanda', 'moli', 'obscura']);
 
 /** Caches detected driver per pool URL to avoid re-probing on every status call. */
 const driverCache = new Map();
@@ -44,10 +50,14 @@ const driverCache = new Map();
  */
 const wsEndpointCache = new Map();
 
+/** Moli pool URLs already verified to run with `--layout` (probe once per pool). */
+const moliLayoutVerified = new Set();
+
 /** Clears the driver cache (useful for tests or pool restarts). */
 export function clearDriverCache() {
   driverCache.clear();
   wsEndpointCache.clear();
+  moliLayoutVerified.clear();
 }
 
 /** Returns the cached driver for a pool URL, or null if not yet detected. */
@@ -104,6 +114,12 @@ async function detectPoolDriver(poolUrl) {
       const data = await res.json();
       if (typeof data.webSocketDebuggerUrl === 'string' && data.webSocketDebuggerUrl) {
         wsEndpointCache.set(poolUrl, rewriteWsHost(data.webSocketDebuggerUrl, poolUrl));
+      }
+      // Moli reports a Chrome-compatible Browser string ("Chrome/x.y"), so it
+      // must be recognized by its dedicated Moli-Version field instead.
+      if (data['Moli-Version'] !== undefined) {
+        driverCache.set(poolUrl, 'moli');
+        return 'moli';
       }
       const browser = typeof data.Browser === 'string' ? data.Browser.toLowerCase() : '';
       if (browser.includes('lightpanda')) {
@@ -179,6 +195,39 @@ async function resolveDriver(poolUrl, poolDriver) {
   // Cache explicit driver so status calls and connect calls share the same value
   driverCache.set(poolUrl, poolDriver);
   return poolDriver;
+}
+
+// ── Moli driver: layout verification ──────────────────────────────────────────
+
+/**
+ * Moli's default `serve` mode uses mock geometry: coordinate input
+ * (Input.dispatchMouseEvent — every page.click/hover) and real screenshots
+ * are rejected unless the server was started with `--layout`. The endpoint
+ * does not advertise its layout policy, so probe it once per pool with a
+ * harmless mouse move in a throwaway context and fail fast with a fix hint.
+ * Errors unrelated to layout are ignored so the probe never masks a usable pool.
+ */
+async function ensureMoliLayout(browser, poolUrl) {
+  if (moliLayoutVerified.has(poolUrl)) return;
+  let context = null;
+  try {
+    context = await browser.createBrowserContext();
+    const page = await context.newPage();
+    await page.mouse.move(1, 1);
+  } catch (error) {
+    if (/requires layout/i.test(error.message || '')) {
+      const port = (() => { try { return new URL(poolUrl.replace(/^ws/, 'http')).port || '9222'; } catch { return '9222'; } })();
+      const err = new Error(
+        `Moli pool at ${poolUrl} is running without layout. Clicks, hover and screenshots need real layout — ` +
+        `restart it with: moli serve --layout --resource --port ${port}`
+      );
+      err.moliLayoutMissing = true;
+      throw err;
+    }
+  } finally {
+    try { await context?.close(); } catch { /* */ }
+  }
+  moliLayoutVerified.add(poolUrl);
 }
 
 // ── CDP driver: status via /json/version health check ─────────────────────────
@@ -403,17 +452,25 @@ export async function connectToPool(poolUrl, retries = 3, delay = 2000) {
   // ws://host:port without knowing the driver-specific path
   // (Obscura requires /devtools/browser; browserless does not).
   let wsEndpoint = poolUrl;
-  if (driver === 'obscura' || driver === 'lightpanda' || driver === 'cdp') {
+  if (CDP_FAMILY.has(driver)) {
     wsEndpoint = await resolveCdpWsEndpoint(poolUrl);
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
+    let browser = null;
     try {
-      return await puppeteer.connect({
+      browser = await puppeteer.connect({
         browserWSEndpoint: wsEndpoint,
         timeout: 30000,
       });
+      if (driver === 'moli') await ensureMoliLayout(browser, poolUrl);
+      return browser;
     } catch (error) {
+      if (error.moliLayoutMissing) {
+        // Configuration problem, not a transient failure — don't retry.
+        try { await browser?.disconnect(); } catch { /* */ }
+        throw error;
+      }
       if (attempt === retries) {
         throw new Error(`Failed to connect to pool: ${error.message}`);
       }
@@ -459,6 +516,21 @@ export function startPool(config, cwd = null) {
     log('  ', `  ['http://127.0.0.1:${port}']                     # auto-discovers ws endpoint`);
     log('  ', `  ['ws://127.0.0.1:${port}/devtools/browser']       # explicit ws endpoint`);
     log('  ', `Or export CHROME_POOL_URL=http://127.0.0.1:${port}`);
+    return;
+  }
+
+  // Moli is a single Rust binary — no official image, no compose. Print install/run guidance.
+  if (driver === 'moli') {
+    const port = config.poolPort || 9222;
+    log('ℹ️', 'Moli is a local binary, not a Docker pool. Install it once (Linux/macOS):');
+    log('  ', '  curl --proto \'=https\' --tlsv1.2 -fsSL https://github.com/lexmount/moli/releases/latest/download/moli-installer.sh | sh');
+    log('  ', '  # or download a prebuilt archive: https://github.com/lexmount/moli/releases/latest');
+    log('ℹ️', `Then run it (in another shell) — --layout is REQUIRED for clicks and screenshots:`);
+    log('  ', `  moli serve --layout --resource --port ${port}`);
+    log('ℹ️', `Set poolUrls in e2e.config.js: ['http://127.0.0.1:${port}'] (ws endpoint is auto-discovered)`);
+    log('  ', `Or export CHROME_POOL_URL=http://127.0.0.1:${port}`);
+    log('ℹ️', 'Moli runs on the host, not in Docker: use a host-reachable baseUrl (e.g. http://localhost:3000),');
+    log('  ', 'not the default http://host.docker.internal:3000.');
     return;
   }
 
@@ -515,8 +587,9 @@ export function stopPool(config, cwd = null) {
   cwd = cwd || process.cwd();
   const driver = config.poolDriver || 'auto';
 
-  if (driver === 'obscura') {
-    log('ℹ️', 'Obscura runs as a local process — stop it with Ctrl-C in its own shell.');
+  if (driver === 'obscura' || driver === 'moli') {
+    const name = driver === 'moli' ? 'Moli' : 'Obscura';
+    log('ℹ️', `${name} runs as a local process — stop it with Ctrl-C in its own shell.`);
     return;
   }
 
@@ -540,7 +613,7 @@ export function restartPool(config, cwd = null) {
 /**
  * Gets pool status using the appropriate driver.
  * @param {string} poolUrl - WebSocket URL of the pool
- * @param {object} [options] - { poolDriver: 'auto'|'browserless'|'cdp'|'lightpanda'|'obscura'|'steel', maxSessions: number }
+ * @param {object} [options] - { poolDriver: 'auto'|'browserless'|'cdp'|'lightpanda'|'moli'|'obscura'|'steel', maxSessions: number }
  */
 export async function getPoolStatus(poolUrl, options = {}) {
   const { poolDriver = 'auto', maxSessions = 10 } = options;
@@ -551,7 +624,7 @@ export async function getPoolStatus(poolUrl, options = {}) {
     return getPoolStatusViaSteel(poolUrl, maxSessions);
   }
 
-  if (driver === 'lightpanda' || driver === 'obscura' || driver === 'cdp') {
+  if (CDP_FAMILY.has(driver)) {
     return getPoolStatusViaCDP(poolUrl, maxSessions, driver);
   }
 

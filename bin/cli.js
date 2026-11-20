@@ -32,8 +32,8 @@ import path from 'path';
 import http from 'http';
 import { fileURLToPath } from 'url';
 import { loadConfig } from '../src/config.js';
-import { startPool, stopPool, restartPool, connectToPool } from '../src/pool.js';
-import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool, selectPool } from '../src/pool-manager.js';
+import { startPool, stopPool, restartPool, connectToPool, disconnectFromPool } from '../src/pool.js';
+import { getPoolUrls, getAggregatedPoolStatus, waitForAnyPool, selectPool, releasePending } from '../src/pool-manager.js';
 import { runTestsParallel, loadTestFile, loadTestSuite, loadAllSuites, listSuites } from '../src/runner.js';
 import { looksLikeBlankCapture } from '../src/actions.js';
 import { generateReport, saveReport, printReport, persistRun, printInsights } from '../src/reporter.js';
@@ -59,6 +59,7 @@ import {
   getInstance,
   listInstances,
   updateInstanceStatus,
+  updateInstanceRole,
   getHubConnection,
   getQueueStats,
   getSyncClient,
@@ -177,6 +178,7 @@ ${C.bold}Usage:${C.reset}
   e2e-runner sync add-instance          Register new agent (hub mode)
   e2e-runner sync list-instances        List registered agents (hub mode)
   e2e-runner sync approve <id>          Approve pending agent (hub mode)
+  e2e-runner sync set-role <id> <role>  Set agent role: admin|member|readonly (hub mode)
   e2e-runner sync revoke <id>           Suspend an agent (hub mode)
   e2e-runner sync push                  Process sync queue (agent mode)
   e2e-runner sync pull                  Pull runs from hub (agent mode)
@@ -208,7 +210,7 @@ ${C.bold}Options:${C.reset}
   --auth-login-endpoint <url>  Auto-login: POST credentials to this URL to get auth token
   --auth-token-path <path>     Dot-path to token in auth response (default: token)
   --verification-strictness <level>  Visual verification: strict, moderate (default), lenient
-  --driver <name>          Force pool driver for this run: browserless, cdp, lightpanda, obscura, steel
+  --driver <name>          Force pool driver for this run: browserless, cdp, lightpanda, moli, obscura, steel
                            (overrides per-test "driver" field; useful for A/B benchmarks)
   --fallback-driver <name> Explicit fallback if no pool with --driver is reachable (overrides per-test "fallbackDriver")
 
@@ -235,7 +237,7 @@ async function cmdRun() {
 
   // Validate CLI driver overrides up-front (clearer error than waiting for first test)
   if (config.cliDriverOverride || config.cliFallbackDriverOverride) {
-    const allowed = ['browserless', 'cdp', 'lightpanda', 'obscura', 'steel'];
+    const allowed = ['browserless', 'cdp', 'lightpanda', 'moli', 'obscura', 'steel'];
     for (const [flag, val] of [['--driver', config.cliDriverOverride], ['--fallback-driver', config.cliFallbackDriverOverride]]) {
       if (val && !allowed.includes(val)) {
         console.error(`${C.red}Invalid value for ${flag}: "${val}". Allowed: ${allowed.join(', ')}.${C.reset}`);
@@ -563,10 +565,13 @@ async function cmdCapture() {
   await waitForAnyPool(capturePoolUrls, 30000, captureDriverOpts);
 
   let browser;
+  let context;
+  let capturePool = null;
   try {
-    const capturePool = await selectPool(capturePoolUrls, 2000, 60000, captureDriverOpts);
-    browser = await connectToPool(capturePool);
-    const page = await browser.newPage();
+    capturePool = await selectPool(capturePoolUrls, 2000, 60000, captureDriverOpts);
+    browser = await connectToPool(capturePool, config.connectRetries, config.connectRetryDelay);
+    context = await browser.createBrowserContext();
+    const page = await context.newPage();
     await page.setViewport(config.viewport);
 
     log('📸', `Navigating to ${C.cyan}${url}${C.reset}`);
@@ -616,7 +621,9 @@ async function cmdCapture() {
     log('🏷️', `Hash:  ${C.bold}ss:${hash}${C.reset}`);
     console.log('');
   } finally {
-    if (browser) browser.disconnect();
+    if (context) try { await context.close(); } catch { /* */ }
+    if (browser) try { await disconnectFromPool(browser, capturePool); } catch { /* */ }
+    if (capturePool) releasePending(capturePool);
   }
 }
 
@@ -979,14 +986,16 @@ async function cmdSync() {
         apiKeyHash: hashApiKey(apiKey),
         totpSecret,
         role,
-        status: config.sync?.hub?.requireApproval ? 'pending' : 'active',
+        // Created locally by the hub operator, who is the approver: active right away.
+        // (requireApproval only gates self-registration through /api/sync/register.)
+        status: 'active',
       });
       
       console.log(`\n${C.green}${C.bold}Instance created successfully!${C.reset}\n`);
       console.log(`${C.bold}Instance ID:${C.reset}    ${instanceId}`);
       console.log(`${C.bold}Display Name:${C.reset}   ${displayName}`);
       console.log(`${C.bold}Role:${C.reset}           ${role}`);
-      console.log(`${C.bold}Status:${C.reset}         ${config.sync?.hub?.requireApproval ? 'pending' : 'active'}`);
+      console.log(`${C.bold}Status:${C.reset}         active`);
       console.log('');
       console.log(`${C.bold}${C.yellow}SAVE THESE CREDENTIALS (shown only once):${C.reset}`);
       console.log(`${C.bold}API Key:${C.reset}        ${apiKey}`);
@@ -1019,10 +1028,12 @@ async function cmdSync() {
           const statusColor = inst.status === 'active' ? C.green : inst.status === 'pending' ? C.yellow : C.red;
           const onlineIndicator = isOnline ? `${C.green}*${C.reset}` : ' ';
           
-          console.log(`  ${onlineIndicator} ${C.bold}${inst.instance_id}${C.reset}`);
-          console.log(`      Name:   ${inst.display_name}`);
+          const clean = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+          console.log(`  ${onlineIndicator} ${C.bold}${clean(inst.instance_id)}${C.reset}`);
+          console.log(`      Name:   ${clean(inst.display_name)}`);
           console.log(`      Status: ${statusColor}${inst.status}${C.reset}`);
-          console.log(`      Role:   ${inst.role}`);
+          console.log(`      Role:   ${inst.role === 'admin' ? C.red + C.bold : ''}${clean(inst.role)}${C.reset}`);
+          console.log(`      Env:    ${clean(inst.environment)}${inst.hostname ? ` @ ${clean(inst.hostname)}` : ''}`);
           console.log(`      Seen:   ${inst.last_seen || 'never'}`);
           console.log('');
         }
@@ -1048,11 +1059,46 @@ async function cmdSync() {
         process.exit(1);
       }
       
+      // Show what is being approved: role and self-reported details
+      const clean = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+      console.log(`  Name:        ${clean(instance.display_name)}`);
+      console.log(`  Role:        ${instance.role === 'admin' ? C.red + C.bold : ''}${clean(instance.role)}${C.reset}`);
+      console.log(`  Environment: ${clean(instance.environment)}`);
+      console.log(`  Hostname:    ${clean(instance.hostname) || '-'}`);
+      console.log(`  Registered:  ${clean(instance.created_at) || '-'}`);
+      if (instance.role === 'admin') {
+        console.log(`${C.yellow}  Warning: this instance has the admin role. Use 'e2e-runner sync set-role ${instanceId} member' to demote it.${C.reset}`);
+      }
       updateInstanceStatus(instanceId, 'active');
-      console.log(`${C.green}Instance '${instanceId}' approved and activated${C.reset}`);
+      console.log(`${C.green}Instance '${instanceId}' approved and activated (role: ${clean(instance.role)})${C.reset}`);
       break;
     }
     
+    case 'set-role': {
+      if (config.sync?.mode !== 'hub') {
+        console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
+        process.exit(1);
+      }
+      const instanceId = args[2];
+      const role = args[3];
+      if (!instanceId || !role) {
+        console.error(`${C.red}Usage: e2e-runner sync set-role <id> <admin|member|readonly>${C.reset}`);
+        process.exit(1);
+      }
+      if (!getInstance(instanceId)) {
+        console.error(`${C.red}Error: Instance '${instanceId}' not found${C.reset}`);
+        process.exit(1);
+      }
+      try {
+        updateInstanceRole(instanceId, role);
+      } catch (err) {
+        console.error(`${C.red}Error: ${err.message}${C.reset}`);
+        process.exit(1);
+      }
+      console.log(`${C.green}Instance '${instanceId}' role set to ${role}${C.reset}`);
+      break;
+    }
+
     case 'revoke': {
       if (config.sync?.mode !== 'hub') {
         console.error(`${C.red}Error: This command only works in hub mode${C.reset}`);
